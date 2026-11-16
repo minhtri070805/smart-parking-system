@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout.jsx";
+import PasswordInput from "../components/PasswordInput.jsx";
+import PolicyModal from "../components/PolicyModal.jsx";
 import { apiRequest } from "../services/api.js";
 
 const RESEND_COOLDOWN_SECONDS = 60;
@@ -15,6 +17,9 @@ export default function Register() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [policyAccepted, setPolicyAccepted] = useState(false);
+  const [policyModalOpen, setPolicyModalOpen] = useState(false);
+  const [policyError, setPolicyError] = useState("");
 
   useEffect(() => {
     if (cooldown <= 0) return undefined;
@@ -36,6 +41,10 @@ export default function Register() {
   };
 
   const sendOtp = async () => {
+    if (!policyAccepted) {
+      setPolicyError("Vui lòng đọc và đồng ý với Điều khoản dịch vụ và Chính sách bảo mật.");
+      return;
+    }
     const problem = validateAccount();
     if (problem) {
       setError(problem);
@@ -73,6 +82,10 @@ export default function Register() {
 
   const onSubmit = async (event) => {
     event.preventDefault();
+    if (!policyAccepted) {
+      setPolicyError("Vui lòng đọc và đồng ý với Điều khoản dịch vụ và Chính sách bảo mật.");
+      return;
+    }
     if (!otpSent) {
       setError("Vui lòng bấm “Gửi mã” để nhận OTP qua email.");
       return;
@@ -121,9 +134,8 @@ export default function Register() {
         <div className="auth-form__row">
           <div>
             <label htmlFor="register-password">Mật khẩu</label>
-            <input
+            <PasswordInput
               id="register-password"
-              type="password"
               name="password"
               placeholder="Tối thiểu 8 ký tự"
               autoComplete="new-password"
@@ -135,9 +147,8 @@ export default function Register() {
           </div>
           <div>
             <label htmlFor="register-confirm">Nhập lại mật khẩu</label>
-            <input
+            <PasswordInput
               id="register-confirm"
-              type="password"
               name="confirmPassword"
               placeholder="Nhập lại mật khẩu"
               autoComplete="new-password"
@@ -172,6 +183,35 @@ export default function Register() {
           </button>
         </div>
 
+        <div className="policy-consent">
+          <input
+            id="register-policy-consent"
+            type="checkbox"
+            aria-label="Tôi đã đọc và đồng ý với Điều khoản dịch vụ và Chính sách bảo mật."
+            checked={policyAccepted}
+            onChange={(event) => {
+              setPolicyAccepted(event.target.checked);
+              setPolicyError("");
+            }}
+          />
+          <p>
+            Tôi đã đọc và đồng ý với{" "}
+            <button type="button" className="policy-consent__link" onClick={() => setPolicyModalOpen(true)}>
+              Điều khoản dịch vụ
+            </button>{" "}
+            và{" "}
+            <button type="button" className="policy-consent__link" onClick={() => setPolicyModalOpen(true)}>
+              Chính sách bảo mật
+            </button>
+            .
+          </p>
+        </div>
+        {policyError && (
+          <p className="auth-form__message auth-form__message--error policy-consent__error" role="alert">
+            {policyError}
+          </p>
+        )}
+
         {info && !error && (
           <p className="auth-form__message auth-form__message--success" role="status">{info}</p>
         )}
@@ -179,7 +219,7 @@ export default function Register() {
           <p className="auth-form__message auth-form__message--error" role="alert">{error}</p>
         )}
 
-        <button type="submit" className="auth-submit" disabled={busy}>
+        <button type="submit" className="auth-submit" disabled={busy || !policyAccepted}>
           {submitting ? "Đang xác minh..." : "Đăng ký"}
           {!submitting && <span aria-hidden="true">→</span>}
         </button>
@@ -187,6 +227,14 @@ export default function Register() {
       <p className="auth-switch">
         Đã có tài khoản? <Link to="/login">Đăng nhập</Link>
       </p>
+      <PolicyModal
+        isOpen={policyModalOpen}
+        onClose={() => setPolicyModalOpen(false)}
+        onAccept={() => {
+          setPolicyAccepted(true);
+          setPolicyError("");
+        }}
+      />
     </AuthLayout>
   );
 }
