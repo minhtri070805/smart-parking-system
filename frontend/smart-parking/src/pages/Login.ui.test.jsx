@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import Login from "./Login.jsx";
 import { clearAuthSession, getAuthSession } from "../services/authSession.js";
@@ -8,6 +8,22 @@ afterEach(() => {
   cleanup();
   clearAuthSession();
   vi.unstubAllGlobals();
+});
+
+it("allows the login password to be shown and hidden", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ data: { enabled: false } })));
+
+  render(<MemoryRouter initialEntries={["/login"]} future={{v7_startTransition:true,v7_relativeSplatPath:true}}>
+    <Routes><Route path="/login" element={<Login />} /></Routes>
+  </MemoryRouter>);
+
+  const password = document.getElementById("login-password");
+  await screen.findByRole("button", { name: "Hiện mật khẩu" });
+  expect(password.type).toBe("password");
+  fireEvent.click(screen.getByRole("button", { name: "Hiện mật khẩu" }));
+  expect(password.type).toBe("text");
+  fireEvent.click(screen.getByRole("button", { name: "Ẩn mật khẩu" }));
+  expect(password.type).toBe("password");
 });
 
 it("exchanges Google's credential and challenge for an application session", async () => {

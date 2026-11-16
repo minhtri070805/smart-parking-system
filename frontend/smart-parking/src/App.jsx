@@ -21,11 +21,12 @@ import StaffWorkspace from "./pages/StaffWorkspace.jsx";
 import AdminPeople from "./pages/AdminPeople.jsx";
 import CustomerSessions from "./pages/CustomerSessions.jsx";
 import ProjectInformation from "./pages/ProjectInformation.jsx";
+import BookingWorkflowDemo from "./pages/BookingWorkflowDemo.jsx";
 
 export default function App() {
   const { pathname, hash } = useLocation();
   const session = useSyncExternalStore(subscribeAuthSession, getAuthSession, getAuthSession);
-  const workspace = ["/admin", "/manager", "/staff", "/customer", "/parking"].some(p => pathname.startsWith(p));
+  const workspace = ["/admin", "/manager", "/staff", "/customer", "/parking", "/booking-demo"].some(p => pathname.startsWith(p));
   const authPage = pathname === "/login" || pathname === "/register";
   useEffect(() => {
     if (hash)
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/thong-tin/:topic" element={<ProjectInformation />} />
+          <Route path="/booking-demo" element={<BookingWorkflowDemo />} />
           <Route path="/customer" element={<CustomerDashboard />} />
           <Route path="/parking" element={<ParkingScene />} />
           <Route path="/parking/3d" element={<ParkingScene />} />
