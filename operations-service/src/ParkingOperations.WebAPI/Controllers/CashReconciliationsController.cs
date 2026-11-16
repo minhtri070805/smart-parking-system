@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using ParkingOperations.Application.CashHandovers;
+using ParkingOperations.Application.UseCases.CashReconciliation;
 
 namespace ParkingOperations.WebAPI.Controllers;
 
@@ -11,14 +11,13 @@ namespace ParkingOperations.WebAPI.Controllers;
 [Authorize(Roles = "MANAGER")]
 public sealed class CashReconciliationsController(ICashReconciliationService service, ILogger<CashReconciliationsController> logger) : ControllerBase
 {
-    [HttpGet]
-    public async Task<IActionResult> List([FromQuery] int lotId, CancellationToken ct)
+    [HttpGet("workspace")]
+    public async Task<IActionResult> Workspace([FromQuery] int lotId, CancellationToken ct)
     {
         if (lotId <= 0) return BadRequest(new { message = "lotId không hợp lệ." });
         try
         {
-            var (items, total) = await service.ListAsync(lotId, Token(), ct);
-            return Ok(new { data = new { items, totalCount = total } });
+            return Ok(new { data = await service.LoadWorkspaceAsync(lotId, Token(), ct) });
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (HttpRequestException ex) { logger.LogWarning(ex, "Cannot verify manager lot assignment for reconciliation list"); return StatusCode(503, new { message = "Không xác minh được quyền với Core. Hãy thử lại sau." }); }

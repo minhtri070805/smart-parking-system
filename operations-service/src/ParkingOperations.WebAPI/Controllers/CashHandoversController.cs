@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using ParkingOperations.Application.CashHandovers;
+using ParkingOperations.Application.UseCases.CashHandovers;
 
 namespace ParkingOperations.WebAPI.Controllers;
 
@@ -10,21 +10,18 @@ namespace ParkingOperations.WebAPI.Controllers;
 [Produces("application/json")]
 public sealed class CashHandoversController(ICashHandoverService handoverService, ILogger<CashHandoversController> logger) : ControllerBase
 {
-    [HttpGet]
+    [HttpGet("workspace")]
     [Authorize(Roles = "MANAGER,STAFF")]
-    public async Task<IActionResult> List([FromQuery] int lotId, [FromQuery] DateOnly? businessDate,
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    public async Task<IActionResult> Workspace([FromQuery] int lotId, CancellationToken ct)
     {
-        if (lotId <= 0 || page <= 0 || pageSize is < 1 or > 100)
-            return BadRequest(new { message = "lotId, page hoặc pageSize không hợp lệ." });
+        if (lotId <= 0) return BadRequest(new { message = "lotId không hợp lệ." });
         if (!TryActor(out var actorId))
             return Unauthorized(new { message = "Không xác định được người dùng từ access token." });
 
         try
         {
-            var (items, total) = await handoverService.ListAsync(lotId, businessDate, page, pageSize,
-                AccessToken(), actorId, User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty, ct);
-            return Ok(new { data = new { items, totalCount = total, pageNumber = page, pageSize } });
+            return Ok(new { data = await handoverService.LoadWorkspaceAsync(lotId, AccessToken(), actorId,
+                User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty, ct) });
         }
         catch (UnauthorizedAccessException)
         {
@@ -49,7 +46,7 @@ public sealed class CashHandoversController(ICashHandoverService handoverService
             var result = await handoverService.CreateAsync(request, managerId, AccessToken(), ct);
             if (!result.Success)
                 return StatusCode(result.StatusCode, new { message = result.Message });
-            return CreatedAtAction(nameof(List), new { lotId = result.Data!.LotId, businessDate = result.Data.BusinessDate },
+            return CreatedAtAction(nameof(Workspace), new { lotId = result.Data!.LotId },
                 new { message = result.Message, data = result.Data });
         }
         catch (HttpRequestException ex)

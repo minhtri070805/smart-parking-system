@@ -17,6 +17,7 @@ namespace ParkingOperations.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
+                .HasDefaultSchema("operations")
                 .HasAnnotation("ProductVersion", "10.0.4")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
@@ -135,7 +136,7 @@ namespace ParkingOperations.Persistence.Migrations
                     b.HasIndex("LotId", "BusinessDate", "Status")
                         .HasDatabaseName("ix_cash_handovers_lot_date_status");
 
-                    b.ToTable("cash_handovers", (string)null);
+                    b.ToTable("cash_handovers", "operations");
                 });
 
             modelBuilder.Entity("ParkingOperations.Domain.Entities.CashReconciliation", b =>
@@ -239,7 +240,7 @@ namespace ParkingOperations.Persistence.Migrations
                     b.HasIndex("Status", "SubmittedAtUtc")
                         .HasDatabaseName("ix_cash_reconciliations_status_submitted_at");
 
-                    b.ToTable("cash_reconciliations", (string)null);
+                    b.ToTable("cash_reconciliations", "operations");
                 });
 
             modelBuilder.Entity("ParkingOperations.Domain.Entities.ParkingShift", b =>
@@ -303,7 +304,7 @@ namespace ParkingOperations.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_shifts_lot_business_date_code");
 
-                    b.ToTable("shifts", (string)null);
+                    b.ToTable("shifts", "operations");
                 });
 
             modelBuilder.Entity("ParkingOperations.Domain.Entities.ShiftAssignment", b =>
@@ -340,7 +341,7 @@ namespace ParkingOperations.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_shift_assignments_shift_staff");
 
-                    b.ToTable("shift_assignments", (string)null);
+                    b.ToTable("shift_assignments", "operations");
                 });
 
             modelBuilder.Entity("ParkingOperations.Domain.Entities.CashHandover", b =>

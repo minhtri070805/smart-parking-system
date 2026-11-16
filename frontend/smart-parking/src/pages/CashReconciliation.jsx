@@ -33,9 +33,9 @@ export default function CashReconciliation() {
   useEffect(() => {
     if (!lotId) return;
     let active = true; setError("");
-    Promise.all([operationsRequest(`/reconciliations?lotId=${lotId}`), operationsRequest(`/shifts?lotId=${lotId}&page=1&pageSize=100`)]).then(([r, s]) => {
+    operationsRequest(`/reconciliations/workspace?lotId=${lotId}`).then((r) => {
       if (!active) return;
-      const rows = itemsOf(r?.data?.items); setItems(rows); setShifts(itemsOf(s?.data?.items));
+      const rows = itemsOf(r?.data?.reconciliations); setItems(rows); setShifts(itemsOf(r?.data?.completedShifts));
       setShiftId((current) => rows.some((x) => x.shiftId === current) ? "" : "");
     }).catch((e) => active && setError(e.message));
     return () => { active = false; };
