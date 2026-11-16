@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using ParkingOperations.Application.CashHandovers;
+using ParkingOperations.Application.Common.Interfaces;
+using ParkingOperations.Application.UseCases.CashReconciliation;
+using ParkingOperations.Application.UseCases.ShiftManagement;
 using ParkingOperations.Domain.Entities;
 using ParkingOperations.Persistence.Data;
 
@@ -7,14 +9,20 @@ namespace ParkingOperations.Infrastructure;
 
 public sealed class CashReconciliationService(OperationsDbContext db, ICoreStaffAccessClient coreAccess) : ICashReconciliationService
 {
-    public async Task<(IReadOnlyList<CashReconciliationDto> Items, int TotalCount)> ListAsync(int lotId, string token, CancellationToken ct)
+    public async Task<ReconciliationWorkspaceDto> LoadWorkspaceAsync(int lotId, string token, CancellationToken ct)
     {
         if (!await coreAccess.IsCallerAssignedToLotAsync(token, lotId, ct)) throw new UnauthorizedAccessException();
         var query = db.CashReconciliations.AsNoTracking().Include(x => x.Shift).Where(x => x.Shift.LotId == lotId);
         var total = await query.CountAsync(ct);
         var entities = await query.OrderByDescending(x => x.Shift.BusinessDate).ThenByDescending(x => x.SubmittedAtUtc)
             .Take(100).ToListAsync(ct);
-        return (entities.Select(CashReconciliationDto.From).ToList(), total);
+        var reconciledShiftIds = db.CashReconciliations.Where(x => x.Shift.LotId == lotId).Select(x => x.ShiftId);
+        var completedShifts = await db.ParkingShifts.AsNoTracking().Include(x => x.Assignments)
+            .Where(x => x.LotId == lotId && x.Status == ParkingShiftStatuses.Completed && !reconciledShiftIds.Contains(x.Id))
+            .OrderByDescending(x => x.BusinessDate).ThenBy(x => x.StartsAtUtc).Take(100).ToListAsync(ct);
+        return new ReconciliationWorkspaceDto(
+            entities.Select(CashReconciliationDto.From).ToList(),
+            completedShifts.Select(ParkingShiftDto.From).ToList(), total);
     }
 
     public async Task<CashReconciliationOperationResult> SubmitAsync(SubmitCashReconciliationRequest request, long managerId, string token, CancellationToken ct)

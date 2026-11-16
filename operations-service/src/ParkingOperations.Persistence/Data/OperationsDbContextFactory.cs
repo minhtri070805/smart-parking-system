@@ -7,12 +7,12 @@ public sealed class OperationsDbContextFactory : IDesignTimeDbContextFactory<Ope
 {
     public OperationsDbContext CreateDbContext(string[] args)
     {
-        var connection = Environment.GetEnvironmentVariable("ConnectionStrings__OperationsConnection");
+        var connection = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
         if (string.IsNullOrWhiteSpace(connection))
-            connection = "Host=localhost;Database=operations_service;Username=postgres;Password=postgres";
+            connection = "Host=localhost;Database=smartparking;Username=postgres;Password=postgres";
 
         var options = new DbContextOptionsBuilder<OperationsDbContext>()
-            .UseNpgsql(connection)
+            .UseNpgsql(connection, npgsql => npgsql.MigrationsHistoryTable("__OperationsMigrationsHistory"))
             .Options;
         return new OperationsDbContext(options);
     }

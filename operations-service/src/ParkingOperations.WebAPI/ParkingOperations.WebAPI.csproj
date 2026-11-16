@@ -19,7 +19,6 @@
   <ItemGroup>
     <ProjectReference Include="..\ParkingOperations.Application\ParkingOperations.Application.csproj" />
     <ProjectReference Include="..\ParkingOperations.Infrastructure\ParkingOperations.Infrastructure.csproj" />
-    <ProjectReference Include="..\ParkingOperations.Persistence\ParkingOperations.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

@@ -46,14 +46,11 @@ export default function ShiftManagement() {
     if (!lotId) return;
     let active = true;
     setError("");
-    Promise.all([
-      operationsRequest(`/shifts?lotId=${lotId}&page=1&pageSize=100`),
-      apiRequest(`/v1/staff-assignments?LotId=${lotId}&IsActive=true&Page=1&PageSize=100`),
-    ]).then(([shiftResult, staffResult]) => {
+    operationsRequest(`/shifts/workspace?lotId=${lotId}`).then((result) => {
       if (!active) return;
-      const values = itemsOf(shiftResult?.data?.items);
+      const values = itemsOf(result?.data?.shifts);
       setRecords(values);
-      setStaff(itemsOf(staffResult?.data?.items).filter((x) => x.userRole === "STAFF"));
+      setStaff(itemsOf(result?.data?.staff));
       setDrafts((current) => {
         const next = { ...current };
         values.forEach((shift) => {

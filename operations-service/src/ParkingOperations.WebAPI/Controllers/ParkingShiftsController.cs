@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using ParkingOperations.Application.CashHandovers;
+using ParkingOperations.Application.UseCases.ShiftManagement;
 
 namespace ParkingOperations.WebAPI.Controllers;
 
@@ -10,20 +10,14 @@ namespace ParkingOperations.WebAPI.Controllers;
 [Produces("application/json")]
 public sealed class ParkingShiftsController(IParkingShiftService shiftService, ILogger<ParkingShiftsController> logger) : ControllerBase
 {
-    [HttpGet]
-    [Authorize(Roles = "MANAGER,STAFF")]
-    public async Task<IActionResult> List([FromQuery] int lotId, [FromQuery] DateOnly? businessDate,
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
+    [HttpGet("workspace")]
+    [Authorize(Roles = "MANAGER")]
+    public async Task<IActionResult> Workspace([FromQuery] int lotId, CancellationToken ct)
     {
-        if (lotId <= 0 || page <= 0 || pageSize is < 1 or > 100)
-            return BadRequest(new { message = "lotId, page hoặc pageSize không hợp lệ." });
-        if (!TryActor(out var actorId))
-            return Unauthorized(new { message = "Không xác định được người dùng từ access token." });
+        if (lotId <= 0) return BadRequest(new { message = "lotId không hợp lệ." });
         try
         {
-            var (items, total) = await shiftService.ListAsync(lotId, businessDate, page, pageSize, actorId,
-                User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty, AccessToken(), ct);
-            return Ok(new { data = new { items, totalCount = total, pageNumber = page, pageSize } });
+            return Ok(new { data = await shiftService.LoadManagerWorkspaceAsync(lotId, AccessToken(), ct) });
         }
         catch (UnauthorizedAccessException)
         {
@@ -68,8 +62,7 @@ public sealed class ParkingShiftsController(IParkingShiftService shiftService, I
     [Authorize(Roles = "MANAGER")]
     public async Task<IActionResult> Start(Guid id, CancellationToken ct)
     {
-        if (!TryActor(out var managerId)) return Unauthorized();
-        try { return ToActionResult(await shiftService.StartAsync(id, managerId, AccessToken(), ct)); }
+        try { return ToActionResult(await shiftService.StartAsync(id, AccessToken(), ct)); }
         catch (HttpRequestException ex)
         {
             logger.LogWarning(ex, "Core authorization check failed while starting shift {ShiftId}", id);
@@ -81,8 +74,7 @@ public sealed class ParkingShiftsController(IParkingShiftService shiftService, I
     [Authorize(Roles = "MANAGER")]
     public async Task<IActionResult> Complete(Guid id, CancellationToken ct)
     {
-        if (!TryActor(out var managerId)) return Unauthorized();
-        try { return ToActionResult(await shiftService.CompleteAsync(id, managerId, AccessToken(), ct)); }
+        try { return ToActionResult(await shiftService.CompleteAsync(id, AccessToken(), ct)); }
         catch (HttpRequestException ex)
         {
             logger.LogWarning(ex, "Core authorization check failed while completing shift {ShiftId}", id);

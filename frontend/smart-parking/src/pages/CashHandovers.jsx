@@ -123,14 +123,10 @@ export default function CashHandovers() {
     if (!lotId) return;
     let active = true;
     setError("");
-    const jobs = [
-      operationsRequest(`/handovers?lotId=${lotId}&page=1&pageSize=50`),
-      operationsRequest(`/shifts?lotId=${lotId}&page=1&pageSize=100`),
-    ];
-    Promise.all(jobs).then(([handoverResult, shiftResult]) => {
+    operationsRequest(`/handovers/workspace?lotId=${lotId}`).then((result) => {
       if (!active) return;
-      setItems(itemsOf(handoverResult?.data?.items));
-      const shiftValues = itemsOf(shiftResult?.data?.items);
+      setItems(itemsOf(result?.data?.handovers));
+      const shiftValues = itemsOf(result?.data?.shifts);
       setShiftRecords(shiftValues);
       const eligibleOutgoing = shiftValues.find((item) => item.status === "IN_PROGRESS" && nextShift(item, shiftValues)?.status === "PLANNED");
       setOutgoingShiftId((current) => shiftValues.some((item) => item.id === current) ? current : eligibleOutgoing?.id || "");

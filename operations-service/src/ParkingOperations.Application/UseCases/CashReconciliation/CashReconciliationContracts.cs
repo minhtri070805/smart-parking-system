@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using ParkingOperations.Application.UseCases.ShiftManagement;
 using ParkingOperations.Domain.Entities;
+using CashReconciliationEntity = ParkingOperations.Domain.Entities.CashReconciliation;
 
-namespace ParkingOperations.Application.CashHandovers;
+namespace ParkingOperations.Application.UseCases.CashReconciliation;
 
 public sealed class SubmitCashReconciliationRequest : IValidatableObject
 {
@@ -38,7 +40,7 @@ public sealed record CashReconciliationDto(Guid Id, Guid ShiftId, int LotId, Dat
     DateTime PaymentSummaryCapturedAtUtc, string? VarianceReason, string Status, long SubmittedByManagerId,
     DateTime SubmittedAtUtc, long? ApprovedByManagerId, DateTime? ApprovedAtUtc, string? ApprovalNote, int Version)
 {
-    public static CashReconciliationDto From(CashReconciliation x) => new(x.Id, x.ShiftId, x.Shift.LotId,
+    public static CashReconciliationDto From(CashReconciliationEntity x) => new(x.Id, x.ShiftId, x.Shift.LotId,
         x.Shift.BusinessDate, x.Shift.Code, x.OpeningCash, x.CashReceipts, x.CashRefunds, x.CashDisbursements,
         x.ExpectedClosingCash, x.CountedClosingCash, x.Variance, x.PaymentSummaryReference,
         x.PaymentSummaryCapturedAtUtc, x.VarianceReason, x.Status, x.SubmittedByManagerId, x.SubmittedAtUtc,
@@ -46,10 +48,11 @@ public sealed record CashReconciliationDto(Guid Id, Guid ShiftId, int LotId, Dat
 }
 
 public sealed record CashReconciliationOperationResult(bool Success, int StatusCode, string Message, CashReconciliationDto? Data = null);
+public sealed record ReconciliationWorkspaceDto(IReadOnlyList<CashReconciliationDto> Reconciliations, IReadOnlyList<ParkingShiftDto> CompletedShifts, int TotalCount);
 
 public interface ICashReconciliationService
 {
-    Task<(IReadOnlyList<CashReconciliationDto> Items, int TotalCount)> ListAsync(int lotId, string token, CancellationToken ct);
+    Task<ReconciliationWorkspaceDto> LoadWorkspaceAsync(int lotId, string token, CancellationToken ct);
     Task<CashReconciliationOperationResult> SubmitAsync(SubmitCashReconciliationRequest request, long managerId, string token, CancellationToken ct);
     Task<CashReconciliationOperationResult> ApproveAsync(Guid id, ApproveCashReconciliationRequest request, long managerId, string token, CancellationToken ct);
 }

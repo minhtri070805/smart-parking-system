@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using ParkingOperations.Application.CashHandovers;
+using ParkingOperations.Application.Common.Interfaces;
+using ParkingOperations.Application.UseCases.CashHandovers;
+using ParkingOperations.Application.UseCases.ShiftManagement;
 using ParkingOperations.Domain.Entities;
 using ParkingOperations.Persistence.Data;
 
@@ -60,7 +62,7 @@ public sealed class CashHandoverService(OperationsDbContext db, ICoreStaffAccess
         return Ok(handover, "Đã tạo handover. Chờ nhân viên giao và nhận tự xác nhận số tiền.");
     }
 
-    public async Task<(IReadOnlyList<CashHandoverDto> Items, int TotalCount)> ListAsync(int lotId, DateOnly? businessDate, int page, int pageSize, string token, long actorId, string role, CancellationToken ct)
+    public async Task<HandoverWorkspaceDto> LoadWorkspaceAsync(int lotId, string token, long actorId, string role, CancellationToken ct)
     {
         if (role is not ("MANAGER" or "STAFF") || !await coreAccess.IsCallerAssignedToLotAsync(token, lotId, ct))
             throw new UnauthorizedAccessException("Bạn không có quyền xem handover của bãi này.");
@@ -68,15 +70,15 @@ public sealed class CashHandoverService(OperationsDbContext db, ICoreStaffAccess
         var query = db.CashHandovers.AsNoTracking().Where(x => x.LotId == lotId);
         if (role == "STAFF")
             query = query.Where(x => x.OutgoingStaffId == actorId || x.IncomingStaffId == actorId);
-        if (businessDate.HasValue)
-            query = query.Where(x => x.BusinessDate == businessDate.Value);
 
         var total = await query.CountAsync(ct);
-        var entities = await query.OrderByDescending(x => x.BusinessDate).ThenByDescending(x => x.CreatedAtUtc)
-            .Skip((page - 1) * pageSize).Take(pageSize)
-            .ToListAsync(ct);
-        var items = entities.Select(CashHandoverDto.From).ToList();
-        return (items, total);
+        var handovers = await query.OrderByDescending(x => x.BusinessDate).ThenByDescending(x => x.CreatedAtUtc)
+            .Take(100).ToListAsync(ct);
+        var shifts = await db.ParkingShifts.AsNoTracking().Include(x => x.Assignments)
+            .Where(x => x.LotId == lotId)
+            .OrderByDescending(x => x.BusinessDate).ThenBy(x => x.StartsAtUtc)
+            .Take(100).ToListAsync(ct);
+        return new HandoverWorkspaceDto(handovers.Select(CashHandoverDto.From).ToList(), shifts.Select(ParkingShiftDto.From).ToList(), total);
     }
 
     public async Task<CashHandoverOperationResult> ConfirmAsync(Guid id, decimal countedAmount, long actorId, string role, string token, CancellationToken ct)
