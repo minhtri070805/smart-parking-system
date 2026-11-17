@@ -98,8 +98,12 @@ public static class ParkingLotCapacityHelper
                              (s.CurrentSlotId == null || s.CurrentSlot!.PhysicalStatus != SlotPhysicalStatuses.Occupied), ct);
 
         // 3. Active unconsumed reservation holds (only PENDING bookings await check-in; CHECKED_IN/CANCELLED/EXPIRED excluded)
-        var pendingBookingsCount = await context.Bookings
-            .CountAsync(b => b.LotId == lotId && b.Status == BookingStatuses.Pending, ct);
+        // Booking không có ZoneId nên KHÔNG thể quy cho một khu cụ thể. Khi tính theo khu, không trừ toàn bộ
+        // PENDING của bãi vào từng khu (trừ quá tay); thay vào đó giữ chỗ được áp ở mức bãi (xem guard bên dưới).
+        var pendingBookingsCount = zoneId.HasValue
+            ? 0
+            : await context.Bookings
+                .CountAsync(b => b.LotId == lotId && b.Status == BookingStatuses.Pending, ct);
 
         // 4. Conservative IoT Capacity Guard:
         // Công thức bảo tồn sức chứa không bỏ sót (chống undercount) và không đếm kép (chống double-count):
@@ -124,6 +128,12 @@ public static class ParkingLotCapacityHelper
 
         int totalOccupiedOrReserved = effectiveOccupied + pendingBookingsCount;
         int availableCapacity = Math.Max(0, totalCapacity - totalOccupiedOrReserved);
+        if (zoneId.HasValue)
+        {
+            // Không oversell: chỗ trống của khu không được vượt chỗ trống cấp bãi (đã trừ mọi booking PENDING).
+            var lotWide = await CalculateAsync(context, lotId, lot, ct);
+            availableCapacity = Math.Min(availableCapacity, lotWide.AvailableCapacity);
+        }
         var policy = await ParkingPolicyResolver.ResolveAsync(context, lotId, zoneId, DateTime.UtcNow, ct);
 
         // Proposed safety buffer (proposal only, non-blocking until Owner approves enforcement)
