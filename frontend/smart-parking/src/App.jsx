@@ -13,7 +13,6 @@ import Register from "./pages/Register.jsx";
 import CustomerDashboard from "./pages/CustomerDashboard.jsx";
 import CustomerProfile from "./pages/CustomerProfile.jsx";
 import ManagerWorkspace from "./pages/ManagerWorkspace.jsx";
-import ManagerStaffAssignments from "./pages/ManagerStaffAssignments.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import AdminParkingSettings from "./pages/AdminParkingSettings.jsx";
 import AdminPolicies from "./pages/AdminPolicies.jsx";
@@ -28,7 +27,7 @@ import CashReconciliation from "./pages/CashReconciliation.jsx";
 export default function App() {
   const { pathname, hash } = useLocation();
   const session = useSyncExternalStore(subscribeAuthSession, getAuthSession, getAuthSession);
-  const workspace = ["/admin", "/manager", "/staff", "/customer", "/parking"].some(p => pathname.startsWith(p));
+  const workspace = ["/admin", "/manager", "/staff", "/customer", "/parking", "/handovers"].some(p => pathname.startsWith(p));
   const authPage = pathname === "/login" || pathname === "/register";
   useEffect(() => {
     if (hash)
@@ -61,7 +60,6 @@ export default function App() {
           <Route path="/handovers" element={<RequireRole role={["MANAGER", "STAFF"]}><CashHandovers /></RequireRole>} />
           <Route path="/manager/shifts" element={<RequireRole role="MANAGER"><ShiftManagement /></RequireRole>} />
           <Route path="/manager/reconciliation" element={<RequireRole role="MANAGER"><CashReconciliation /></RequireRole>} />
-          <Route path="/manager/assignments" element={<ManagerStaffAssignments />} />
           <Route path="/staff" element={<StaffWorkspace />} />
           <Route
             path="*"

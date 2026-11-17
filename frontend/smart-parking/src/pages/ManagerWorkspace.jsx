@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import RequireRole from "../components/RequireRole.jsx";
+import OperationsOverviewSummary from "../components/OperationsOverviewSummary.jsx";
 import { apiRequest } from "../services/api.js";
 import { staffApi } from "../services/staffApi.js";
 import {
@@ -117,48 +118,51 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
         </article>
       </div>
       {view === "overview" && (
-        <section className="workspace-panel">
-          <div className="workspace-heading">
-            <div>
-              <h2>{lot.data?.name || "Thông tin bãi"}</h2>
-              <p>{lot.data?.address}</p>
+        <>
+          <section className="workspace-panel">
+            <div className="workspace-heading">
+              <div>
+                <h2>{lot.data?.name || "Thông tin bãi"}</h2>
+                <p>{lot.data?.address}</p>
+              </div>
+              <button
+                className="btn btn--outline"
+                disabled={busy || !lot.data}
+                onClick={() =>
+                  selectChange({
+                    kind: "lot",
+                    value: !lot.data.isActive,
+                    label: lot.data.name,
+                  })
+                }
+              >
+                {lot.data?.isActive ? "Đóng tiếp nhận" : "Mở tiếp nhận"}
+              </button>
             </div>
-            <button
-              className="btn btn--outline"
-              disabled={busy || !lot.data}
-              onClick={() =>
-                selectChange({
-                  kind: "lot",
-                  value: !lot.data.isActive,
-                  label: lot.data.name,
-                })
-              }
-            >
-              {lot.data?.isActive ? "Đóng tiếp nhận" : "Mở tiếp nhận"}
-            </button>
-          </div>
-          <dl className="workspace-detail">
-            <div>
-              <dt>Tổng sức chứa</dt>
-              <dd>{c?.totalCapacity ?? "—"}</dd>
-            </div>
-            <div>
-              <dt>Ô cảm biến báo có xe</dt>
-              <dd>{c?.physicalOccupiedSlotsCount ?? "—"}</dd>
-            </div>
-          </dl>
-          <p className="workspace-note">
-            Đóng tiếp nhận ngăn xe vào mới. Các phiên đang gửi vẫn cần được theo
-            dõi và xử lý tại cổng.
-          </p>
-          {c?.discrepancyNotes && (
+            <dl className="workspace-detail">
+              <div>
+                <dt>Tổng sức chứa</dt>
+                <dd>{c?.totalCapacity ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>Ô cảm biến báo có xe</dt>
+                <dd>{c?.physicalOccupiedSlotsCount ?? "—"}</dd>
+              </div>
+            </dl>
             <p className="workspace-note">
-              {Array.isArray(c.discrepancyNotes)
-                ? c.discrepancyNotes.join(" · ")
-                : c.discrepancyNotes}
+              Đóng tiếp nhận ngăn xe vào mới. Các phiên đang gửi vẫn cần được theo
+              dõi và xử lý tại cổng.
             </p>
-          )}
-        </section>
+            {c?.discrepancyNotes && (
+              <p className="workspace-note">
+                {Array.isArray(c.discrepancyNotes)
+                  ? c.discrepancyNotes.join(" · ")
+                  : c.discrepancyNotes}
+              </p>
+            )}
+          </section>
+          <OperationsOverviewSummary lotId={lotId} revision={revision} />
+        </>
       )}
       {view === "slots" && (
         <section className="workspace-panel">

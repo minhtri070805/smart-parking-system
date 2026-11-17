@@ -7,6 +7,10 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": "http://localhost:5295",
+      "/ops-api": {
+        target: "http://localhost:5174",
+        rewrite: (path) => path.replace(/^\/ops-api/, ""),
+      },
     },
   },
   build: {

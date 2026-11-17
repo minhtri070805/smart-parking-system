@@ -1,14 +1,12 @@
 import { getAuthSession } from "./authSession.js";
 import { apiRequest } from "./api.js";
 
-const baseUrl = import.meta.env.VITE_OPERATIONS_API_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5174" : "");
+const baseUrl = import.meta.env.VITE_OPERATIONS_API_BASE_URL || "";
 
 export async function operationsRequest(path, options = {}) {
-  if (!baseUrl)
-    throw new Error("Operations API chưa được cấu hình cho môi trường này.");
   const token = getAuthSession()?.accessToken;
-  const response = await fetch(`${baseUrl}/api/v1/operations${path}`, {
+  const url = `${baseUrl}/api/v1/operations${path}`;
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
@@ -25,7 +23,7 @@ export async function operationsRequest(path, options = {}) {
 }
 
 export function operationsApiBaseConfigured() {
-  return Boolean(baseUrl);
+  return true;
 }
 
 // Preserve the Core-backed Staff Operations adapter already used for tickets.

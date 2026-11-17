@@ -27,7 +27,11 @@ public static class InfrastructureDependencyInjection
         {
             client.BaseAddress = new Uri(coreUri.ToString().TrimEnd('/') + "/");
             client.Timeout = TimeSpan.FromSeconds(10);
-        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AllowAutoRedirect = true,
+            ServerCertificateCustomValidationCallback = coreUri.IsLoopback ? HttpClientHandler.DangerousAcceptAnyServerCertificateValidator : null
+        });
 
         return services;
     }
