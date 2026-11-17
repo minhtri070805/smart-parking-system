@@ -39,7 +39,7 @@ public class DependencyInjectionTests
     {
         // Arrange
         var services = new ServiceCollection();
-        var configuration = new ConfigurationBuilder().Build();
+        var configuration = RecognitionConfiguration("recognition_test");
 
         // Act
         var result = services.AddInfrastructureServices(configuration);
@@ -50,7 +50,7 @@ public class DependencyInjectionTests
     }
 
     [Fact]
-    public void Core_UsesExistingDatabaseAndRemoteRecognition()
+    public void Core_UsesExistingAndRecognitionDatabasesAndCallsAiServiceDirectly()
     {
         var configuration = RecognitionConfiguration("recognition_test");
         using var provider = new ServiceCollection().AddParkingPersistence(configuration)
@@ -59,8 +59,8 @@ public class DependencyInjectionTests
 
         var db = scope.ServiceProvider.GetRequiredService<SmartParkingDbContext>();
         Assert.Equal("smartparking", db.Database.GetDbConnection().Database);
-        Assert.Null(scope.ServiceProvider.GetService<AiRecognitionDbContext>());
-        Assert.IsType<RecognitionServiceClient>(scope.ServiceProvider.GetRequiredService<IStaffDetectionService>());
+        Assert.Equal("recognition_test", scope.ServiceProvider.GetRequiredService<AiRecognitionDbContext>().Database.GetDbConnection().Database);
+        Assert.IsType<StaffDetectionService>(scope.ServiceProvider.GetRequiredService<IStaffDetectionService>());
     }
 
     [Fact]
@@ -84,8 +84,7 @@ public class DependencyInjectionTests
     private static IConfiguration RecognitionConfiguration(string database) =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Recognition:BaseUrl"] = "http://127.0.0.1:5296/",
-            ["Recognition:InternalKey"] = new string('x', 32),
+            ["AiService:BaseUrl"] = "http://127.0.0.1:8000/",
             ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=smartparking;Username=test",
             ["ConnectionStrings:AiRecognitionConnection"] = $"Host=localhost;Database={database};Username=test"
         }).Build();
