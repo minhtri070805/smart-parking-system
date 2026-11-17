@@ -20,6 +20,7 @@ const viewRules = {
   verify: canArea,
   sessions: canArea,
   dispatches: canArea,
+  handovers: () => true,
 };
 
 // Duty chưa biết (API cũ, dữ liệu thiếu) -> không ẩn gì, backend vẫn là nơi quyết định quyền.
@@ -44,6 +45,7 @@ const staffNavItems = [
   ["verify", "/staff?view=verify", "Xác minh ô"],
   ["sessions", "/staff?view=sessions", "Xe đang gửi"],
   ["dispatches", "/staff?view=dispatches", "Điều phối"],
+  ["handovers", "/handovers", "Bàn giao ca"],
 ];
 
 // Menu của Staff chỉ chứa chức năng thuộc loại phân công của họ.
