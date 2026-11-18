@@ -1,10 +1,10 @@
-using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SmartParking.Application.Common.Interfaces;
 using SmartParking.Application.Common.Options;
 using SmartParking.Infrastructure.Repositories;
 using SmartParking.Infrastructure.Services;
+using SmartParking.Persistence;
 
 namespace SmartParking.Infrastructure;
 
@@ -46,29 +46,15 @@ public static class DependencyInjection
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IBookingService, BookingService>();
         services.AddScoped<IImageService, ImageService>();
-        var url = configuration["Recognition:BaseUrl"];
-        var key = configuration["Recognition:InternalKey"];
-        Uri? recognitionUri = null;
-        if (!string.IsNullOrWhiteSpace(url) || !string.IsNullOrWhiteSpace(key))
+        services.AddRecognitionPersistence(configuration);
+        var aiServiceUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8000/";
+        if (!Uri.TryCreate(aiServiceUrl.TrimEnd('/') + "/", UriKind.Absolute, out var aiServiceUri) || aiServiceUri.Scheme is not ("http" or "https"))
+            throw new InvalidOperationException("AiService:BaseUrl must be an HTTP or HTTPS URL.");
+        services.AddHttpClient<IStaffDetectionService, StaffDetectionService>(client =>
         {
-            if (string.IsNullOrWhiteSpace(url) ||
-                !Uri.TryCreate(url.TrimEnd('/') + "/", UriKind.Absolute, out recognitionUri) ||
-                (recognitionUri.Scheme != Uri.UriSchemeHttps && !(recognitionUri.Scheme == Uri.UriSchemeHttp && recognitionUri.IsLoopback)) ||
-                !string.IsNullOrEmpty(recognitionUri.UserInfo) || recognitionUri.AbsolutePath != "/" ||
-                recognitionUri.Query != "" || recognitionUri.Fragment != "")
-                throw new InvalidOperationException("Recognition:BaseUrl must be a service origin using HTTPS or loopback HTTP.");
-            if (string.IsNullOrWhiteSpace(key) || Encoding.UTF8.GetByteCount(key) < 32)
-                throw new InvalidOperationException("Recognition:InternalKey requires at least 32 bytes.");
-        }
-
-        services.AddHttpClient<RecognitionServiceClient>(client =>
-        {
-            client.BaseAddress = recognitionUri;
-            client.Timeout = TimeSpan.FromSeconds(65);
-            if (recognitionUri is not null)
-                client.DefaultRequestHeaders.Add(RecognitionServiceClient.KeyHeader, key!);
-        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
-        services.AddTransient<IStaffDetectionService>(provider => provider.GetRequiredService<RecognitionServiceClient>());
+            client.BaseAddress = aiServiceUri;
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
         var relativePath = configuration["ParkingLots:DataFile"] ?? "Data/parking-lots.json";
         var fullPath = Path.Combine(AppContext.BaseDirectory, relativePath);
         if (!File.Exists(fullPath))

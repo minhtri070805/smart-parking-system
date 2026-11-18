@@ -4,4 +4,5 @@
   <Project Path="src/ParkingOperations.Infrastructure/ParkingOperations.Infrastructure.csproj" />
   <Project Path="src/ParkingOperations.Persistence/ParkingOperations.Persistence.csproj" />
   <Project Path="src/ParkingOperations.WebAPI/ParkingOperations.WebAPI.csproj" />
+  <Project Path="tests/ParkingOperations.Tests/ParkingOperations.Tests.csproj" />
 </Solution>
