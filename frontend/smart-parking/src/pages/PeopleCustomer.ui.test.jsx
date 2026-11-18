@@ -399,6 +399,13 @@ it("keeps email registration and OTP requests public", async () => {
   fireEvent.change(screen.getByLabelText("Nhập lại mật khẩu"), {
     target: { value: "Password123!" },
   });
+  fireEvent.click(screen.getByRole("button", { name: "Điều khoản dịch vụ" }));
+  expect(screen.getByRole("dialog", { name: "Điều khoản sử dụng & Chính sách bảo mật" })).toBeTruthy();
+  expect(screen.getByText(/Vị trí đỗ được giữ tối đa 30 phút/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Tôi đã hiểu và Đồng ý" }));
+  expect(screen.getByLabelText(/Tôi đã đọc và đồng ý với Điều khoản dịch vụ/).checked).toBe(true);
+  expect(screen.queryByRole("dialog", { name: "Điều khoản sử dụng & Chính sách bảo mật" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Đăng ký", exact: true }).disabled).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Gửi mã", exact: true }));
   await waitFor(() =>
     expect(screen.getByLabelText("Mã OTP").disabled).toBe(false),
@@ -413,6 +420,18 @@ it("keeps email registration and OTP requests public", async () => {
   expect(writes()[1][0]).toBe("/api/v1/auth/verify-email");
 });
 
+it("blocks registration and shows an error when policies have not been accepted", () => {
+  mount(<Register />);
+
+  expect(screen.getByRole("button", { name: "Đăng ký", exact: true }).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Gửi mã", exact: true }));
+  expect(screen.getByRole("alert").textContent).toContain("Vui lòng đọc và đồng ý");
+  fireEvent.submit(document.querySelector("form"));
+
+  expect(screen.getByRole("alert").textContent).toContain("Vui lòng đọc và đồng ý");
+  expect(writes()).toHaveLength(0);
+});
+
 it("resends OTP after a reopened registration form receives a conflict", async () => {
   const email = "customer@example.com";
   fetcher
@@ -420,6 +439,8 @@ it("resends OTP after a reopened registration form receives a conflict", async (
     .mockResolvedValueOnce(Response.json({ message: "Nếu email chưa xác minh, mã mới sẽ được gửi." }));
 
   mount(<Register />);
+  fireEvent.click(screen.getByRole("button", { name: "Điều khoản dịch vụ" }));
+  fireEvent.click(screen.getByRole("button", { name: "Tôi đã hiểu và Đồng ý" }));
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: email } });
   fireEvent.change(screen.getByLabelText("Mật khẩu", { exact: true }), {
     target: { value: "Password123!" },
