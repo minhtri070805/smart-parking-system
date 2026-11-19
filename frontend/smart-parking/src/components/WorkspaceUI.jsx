@@ -85,6 +85,10 @@ export const statusLabel = (value) =>
     PAID: "Đã thanh toán",
     COMPLETED: "Đã kết thúc",
     CANCELLED: "Đã hủy",
+    PENDING: "Chờ xe đến",
+    CHECKED_IN: "Đã qua cổng",
+    PARKED: "Đang đỗ bãi",
+    EXPIRED: "Đã hết hạn",
   })[value] || value;
 export function Feedback({ loading, error, message }) {
   return (

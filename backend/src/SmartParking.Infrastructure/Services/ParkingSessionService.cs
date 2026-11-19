@@ -314,6 +314,312 @@ public class ParkingSessionService : IParkingSessionService
         }
     }
 
+    public async Task<(bool Success, string Message, ParkingSessionDto? Data)> CheckInBookingAtGateAsync(
+        long bookingId,
+        CheckInBookingRequestDto request,
+        long? actorId,
+        string actorRole,
+        string? ipAddress,
+        CancellationToken ct = default)
+    {
+        var normalizedPlate = PlateNumberHelper.Normalize(request.PlateNumber);
+        if (!PlateNumberHelper.IsValidPlateFormat(normalizedPlate))
+            return (false, "Biển số xe không hợp lệ. Độ dài phải từ 3 đến 20 ký tự.", null);
+
+        var imageUrl = request.CheckInImageUrl?.Trim() ?? string.Empty;
+        var databaseImage = imageUrl.StartsWith("/api/v1/images/content/", StringComparison.Ordinal)
+            && Guid.TryParseExact(imageUrl["/api/v1/images/content/".Length..], "N", out _);
+        var externalImage = Uri.TryCreate(imageUrl, UriKind.Absolute, out var imageUri)
+            && (imageUri.Scheme == Uri.UriSchemeHttps || imageUri.Scheme == Uri.UriSchemeHttp);
+        if (!databaseImage && !externalImage)
+            return (false, "Ảnh biển số xe chưa được lưu hợp lệ.", null);
+        if (databaseImage && !await _context.StoredImages.AnyAsync(
+                image => image.Url == imageUrl && image.Content != null && image.UserId == actorId, ct))
+            return (false, "Ảnh biển số chưa được lưu hoặc không thuộc nhân viên xác nhận.", null);
+
+        var bookingLotId = await _context.Bookings.AsNoTracking()
+            .Where(b => b.Id == bookingId)
+            .Select(b => (int?)b.LotId)
+            .FirstOrDefaultAsync(ct);
+        if (!bookingLotId.HasValue)
+            return (false, $"Không tìm thấy booking với ID: {bookingId}.", null);
+        if (!await _authService.CanOperateGateInAsync(actorId ?? 0, actorRole, bookingLotId.Value, ct))
+            return (false, "Bạn không có quyền thực hiện nghiệp vụ cổng vào (GATE) tại bãi này.", null);
+
+        var lotLock = ParkingLotLockHelper.GetSemaphore(bookingLotId.Value);
+        await lotLock.WaitAsync(ct);
+        try
+        {
+            await using var transaction = await _context.BeginTransactionAsync(ct);
+            try
+            {
+                if (_context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+                    await _context.Database.ExecuteSqlRawAsync(
+                        "SELECT pg_advisory_xact_lock({0});",
+                        new object[] { ParkingLotLockHelper.LotLockBase + bookingLotId.Value },
+                        cancellationToken: ct);
+
+                var booking = await _context.Bookings
+                    .Include(b => b.Lot)
+                    .Include(b => b.Policy)
+                    .Include(b => b.Vehicle)
+                        .ThenInclude(v => v!.User)
+                    .Include(b => b.User)
+                    .FirstOrDefaultAsync(b => b.Id == bookingId, ct);
+                if (booking == null)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, $"Không tìm thấy booking với ID: {bookingId}.", null);
+                }
+                if (booking.Status != BookingStatuses.Pending)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, $"Booking #{booking.Id} không còn chờ xe đến (trạng thái: {booking.Status}).", null);
+                }
+                if (!PlateNumberHelper.IsMatch(booking.PlateNumber, normalizedPlate))
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, "Biển số xe thực tế không khớp với booking. Không thể xác nhận xe.", null);
+                }
+                if (!booking.Lot.IsActive)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, $"Bãi đỗ xe '{booking.Lot.Name}' hiện đang đóng.", null);
+                }
+
+                var now = DateTime.UtcNow;
+                var graceMinutes = booking.Policy?.LateArrivalMinutes ?? BookingStatuses.NoShowGracePeriodMinutes;
+                if (booking.StartTime <= now.AddMinutes(-graceMinutes))
+                {
+                    booking.Status = BookingStatuses.Expired;
+                    booking.UpdatedAt = now;
+                    await LogAuditAsync(
+                        action: "EXPIRE_BOOKING_NO_SHOW",
+                        targetEntity: "bookings",
+                        targetId: booking.Id.ToString(),
+                        oldValues: new { Status = BookingStatuses.Pending },
+                        newValues: new { Status = BookingStatuses.Expired, booking.Id, ExpiredAt = now },
+                        actorId: actorId,
+                        ct: ct);
+                    await _context.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                    return (false, $"Booking đã hết hạn vì quá {graceMinutes} phút kể từ giờ bắt đầu.", null);
+                }
+
+                var activePlateSession = await _context.ParkingSessions.AnyAsync(
+                    s => s.PlateNumber == normalizedPlate
+                        && (s.Status == SessionStatuses.Active || s.Status == SessionStatuses.Paid), ct);
+                if (activePlateSession)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, $"Xe '{normalizedPlate}' đã có phiên gửi đang hoạt động.", null);
+                }
+
+                var vehicle = booking.Vehicle;
+                var session = new ParkingSession
+                {
+                    LotId = booking.LotId,
+                    VehicleId = vehicle.Id,
+                    Vehicle = vehicle,
+                    BookingId = booking.Id,
+                    Booking = booking,
+                    PolicyId = booking.PolicyId,
+                    PlateNumber = normalizedPlate,
+                    CheckInTime = now,
+                    Status = SessionStatuses.Active,
+                    VerificationStatus = "WAITING_SLOT_ASSIGNMENT",
+                    CheckInImageUrl = databaseImage ? imageUrl : imageUri!.AbsoluteUri,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                booking.Status = BookingStatuses.CheckedIn;
+                booking.CheckedInAt = now;
+                booking.UpdatedAt = now;
+                _context.ParkingSessions.Add(session);
+
+                await LogAuditAsync(
+                    action: "CHECK_IN_BOOKING_AT_GATE",
+                    targetEntity: "bookings",
+                    targetId: booking.Id.ToString(),
+                    oldValues: new { Status = BookingStatuses.Pending },
+                    newValues: new
+                    {
+                        BookingId = booking.Id,
+                        SessionId = session.Id,
+                        session.PlateNumber,
+                        session.CheckInTime,
+                        session.CheckInImageUrl,
+                        BookingStatus = booking.Status,
+                        session.VerificationStatus,
+                        ActorRole = actorRole,
+                        IpAddress = ipAddress
+                    },
+                    actorId: actorId,
+                    ct: ct);
+                await _context.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return (true, "Đã xác nhận xe qua cổng và chuyển sang hàng chờ điều phối.", MapToDto(session, booking.Lot.Name, null, null));
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync(ct);
+                _logger.LogError(ex, "Lỗi check-in booking {BookingId} tại cổng", bookingId);
+                throw;
+            }
+        }
+        finally
+        {
+            lotLock.Release();
+        }
+    }
+
+    public async Task<(bool Success, string Message, ParkingSessionDto? Data)> AssignBookingSlotAsync(
+        long sessionId,
+        AssignBookingSlotRequestDto request,
+        long? actorId,
+        string actorRole,
+        string? ipAddress,
+        CancellationToken ct = default)
+    {
+        var lotId = await _context.ParkingSessions.AsNoTracking()
+            .Where(s => s.Id == sessionId)
+            .Select(s => (int?)s.LotId)
+            .FirstOrDefaultAsync(ct);
+        if (!lotId.HasValue)
+            return (false, $"Không tìm thấy phiên gửi xe với ID: {sessionId}.", null);
+        if (!await _authService.CanOperateSlotVerificationAsync(actorId ?? 0, actorRole, lotId.Value, ct))
+            return (false, "Bạn không có quyền điều phối ô đỗ (SLOT_VERIFIER) tại bãi này.", null);
+
+        var lotLock = ParkingLotLockHelper.GetSemaphore(lotId.Value);
+        await lotLock.WaitAsync(ct);
+        try
+        {
+            await using var transaction = await _context.BeginTransactionAsync(ct);
+            try
+            {
+                if (_context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+                    await _context.Database.ExecuteSqlRawAsync(
+                        "SELECT pg_advisory_xact_lock({0});",
+                        new object[] { ParkingLotLockHelper.LotLockBase + lotId.Value },
+                        cancellationToken: ct);
+
+                var session = await _context.ParkingSessions
+                    .Include(s => s.Lot)
+                    .Include(s => s.Vehicle)
+                        .ThenInclude(v => v!.User)
+                    .Include(s => s.Booking)
+                        .ThenInclude(b => b!.User)
+                    .FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+                if (session == null)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, $"Không tìm thấy phiên gửi xe với ID: {sessionId}.", null);
+                }
+                if (session.Status != SessionStatuses.Active || session.BookingId == null
+                    || session.Booking?.Status != BookingStatuses.CheckedIn || session.CurrentSlotId.HasValue)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, "Phiên xe đặt qua web không còn chờ điều phối ô đỗ.", null);
+                }
+
+                var slot = await _context.ParkingSlots
+                    .Include(s => s.Floor)
+                    .Include(s => s.Zone)
+                    .FirstOrDefaultAsync(s => s.Id == request.SlotId, ct);
+                if (slot == null)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, $"Không tìm thấy ô đỗ với ID: {request.SlotId}.", null);
+                }
+                if (!slot.IsActive || !slot.Floor.IsActive || !slot.Zone.IsActive
+                    || slot.Floor.LotId != session.LotId || slot.PhysicalStatus != SlotPhysicalStatuses.Empty)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, "Ô đỗ không còn trống, không hoạt động hoặc không thuộc bãi của booking.", null);
+                }
+                if (!await _authService.CanOperateAreaAsync(actorId ?? 0, actorRole, session.LotId,
+                    StaffDuties.SlotVerifier, slot.FloorId, slot.ZoneId, ct))
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, "Ô nằm ngoài tầng hoặc khu vực được phân công.", null);
+                }
+
+                var slotInUse = await _context.ParkingSessions.AnyAsync(
+                    s => s.Id != session.Id && s.CurrentSlotId == slot.Id
+                        && (s.Status == SessionStatuses.Active || s.Status == SessionStatuses.Paid), ct);
+                var slotAssigned = await _context.ParkingDispatches.AnyAsync(
+                    d => d.AssignedSlotId == slot.Id && d.Status == DispatchStatuses.Assigned, ct);
+                if (slotInUse || slotAssigned)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, $"Ô đỗ '{slot.SlotCode}' vừa được một phương tiện khác sử dụng.", null);
+                }
+
+                var now = DateTime.UtcNow;
+                var booking = session.Booking!;
+                session.CurrentSlotId = slot.Id;
+                session.CurrentSlot = slot;
+                session.ZoneId = slot.ZoneId;
+                session.VerificationStatus = "VERIFIED";
+                session.VerifiedBy = actorId;
+                session.VerifiedAt = now;
+                session.UpdatedAt = now;
+                booking.Status = BookingStatuses.Parked;
+                booking.UpdatedAt = now;
+                slot.PhysicalStatus = SlotPhysicalStatuses.Occupied;
+                slot.UpdatedAt = now;
+                _context.ParkingDispatches.Add(new ParkingDispatch
+                {
+                    SessionId = session.Id,
+                    AssignedSlotId = slot.Id,
+                    ActualSlotId = slot.Id,
+                    Status = DispatchStatuses.Occupied,
+                    DispatchMode = DispatchModes.Manual,
+                    DispatchedAt = now,
+                    ConfirmedAt = now,
+                    Notes = request.Notes?.Trim() ?? "Xe đặt qua web được điều phối vào ô thực tế.",
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+                await LogAuditAsync(
+                    action: "ASSIGN_BOOKING_PARKING_SLOT",
+                    targetEntity: "bookings",
+                    targetId: booking.Id.ToString(),
+                    oldValues: new { BookingStatus = BookingStatuses.CheckedIn, SlotPhysicalStatus = SlotPhysicalStatuses.Empty },
+                    newValues: new
+                    {
+                        BookingId = booking.Id,
+                        SessionId = session.Id,
+                        session.PlateNumber,
+                        BookingStatus = booking.Status,
+                        SlotId = slot.Id,
+                        slot.SlotCode,
+                        slot.PhysicalStatus,
+                        ActorRole = actorRole,
+                        IpAddress = ipAddress
+                    },
+                    actorId: actorId,
+                    ct: ct);
+                await _context.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return (true, $"Đã gán xe {session.PlateNumber} vào ô {slot.SlotCode}.",
+                    MapToDto(session, session.Lot.Name, slot.SlotCode, slot.Floor.FloorNumber));
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync(ct);
+                _logger.LogError(ex, "Lỗi gán ô đỗ cho phiên booking {SessionId}", sessionId);
+                throw;
+            }
+        }
+        finally
+        {
+            lotLock.Release();
+        }
+    }
+
     public async Task<(bool Success, string Message, ParkingSessionDto? Data)> CheckOutAsync(
         long sessionId,
         CheckOutRequestDto request,
@@ -522,6 +828,9 @@ public class ParkingSessionService : IParkingSessionService
             .Include(s => s.CurrentSlot)
                 .ThenInclude(sl => sl!.Floor)
             .Include(s => s.Vehicle)
+                .ThenInclude(v => v!.User)
+            .Include(s => s.Booking)
+                .ThenInclude(b => b!.User)
             .Where(s => s.Status == SessionStatuses.Active || s.Status == SessionStatuses.Paid);
 
         if (currentUserRole == Roles.Admin)
@@ -580,10 +889,25 @@ public class ParkingSessionService : IParkingSessionService
                 LotName = s.Lot.Name,
                 VehicleId = s.VehicleId,
                 PlateNumber = s.PlateNumber,
+                BookingId = s.BookingId,
+                BookingStatus = s.Booking == null ? null : s.Booking.Status,
+                CustomerName = s.Booking != null
+                    ? s.Booking.User.FullName
+                    : s.Vehicle != null && s.Vehicle.User != null ? s.Vehicle.User.FullName : null,
+                CustomerPhoneNumber = s.Booking != null
+                    ? s.Booking.User.PhoneNumber
+                    : s.Vehicle != null && s.Vehicle.User != null ? s.Vehicle.User.PhoneNumber : null,
+                CustomerEmail = s.Booking != null
+                    ? s.Booking.User.Email
+                    : s.Vehicle != null && s.Vehicle.User != null ? s.Vehicle.User.Email : null,
+                VehicleBrand = s.Vehicle == null ? null : s.Vehicle.Brand,
+                VehicleModel = s.Vehicle == null ? null : s.Vehicle.Model,
+                VehicleColor = s.Vehicle == null ? null : s.Vehicle.Color,
                 CheckInTime = s.CheckInTime,
                 CheckOutTime = s.CheckOutTime,
                 CurrentSlotId = s.CurrentSlotId,
                 SlotCode = s.CurrentSlot != null ? s.CurrentSlot.SlotCode : null,
+                SlotPhysicalStatus = s.CurrentSlot != null ? s.CurrentSlot.PhysicalStatus : null,
                 FloorNumber = s.CurrentSlot != null ? s.CurrentSlot.Floor.FloorNumber : (int?)null,
                 Status = s.Status,
                 TotalFee = s.TotalFee,
@@ -672,6 +996,9 @@ public class ParkingSessionService : IParkingSessionService
             .Include(s => s.CurrentSlot)
                 .ThenInclude(sl => sl!.Floor)
             .Include(s => s.Vehicle)
+                .ThenInclude(v => v!.User)
+            .Include(s => s.Booking)
+                .ThenInclude(b => b!.User)
             .Where(s => s.Id == id);
 
         var session = await query.FirstOrDefaultAsync(ct);
@@ -760,6 +1087,8 @@ public class ParkingSessionService : IParkingSessionService
         var sessions = await _context.ParkingSessions
             .AsNoTracking()
             .Include(s => s.Lot)
+            .Include(s => s.Booking)
+                .ThenInclude(b => b!.User)
             .Where(s => s.LotId == lotId && s.Status == SessionStatuses.Active && s.CurrentSlotId == null)
             .OrderBy(s => s.CheckInTime)
             .Select(s => new UnmatchedSessionDto
@@ -771,7 +1100,9 @@ public class ParkingSessionService : IParkingSessionService
                 CheckInTime = s.CheckInTime,
                 Status = s.Status,
                 CheckInImageUrl = s.CheckInImageUrl,
-                BookingId = s.BookingId
+                BookingId = s.BookingId,
+                CustomerName = s.Booking == null ? null : s.Booking.User.FullName,
+                CustomerPhoneNumber = s.Booking == null ? null : s.Booking.User.PhoneNumber
             })
             .ToListAsync(ct);
 
@@ -869,6 +1200,7 @@ public class ParkingSessionService : IParkingSessionService
                 var booking = await _context.Bookings
                     .Include(b => b.Lot)
                     .Include(b => b.Policy)
+                    .Include(b => b.User)
                     .FirstOrDefaultAsync(b => b.Id == bookingId, ct);
                 if (booking == null)
                 {
@@ -970,6 +1302,7 @@ public class ParkingSessionService : IParkingSessionService
                 }
 
                 var vehicle = await _context.Vehicles
+                    .Include(v => v.User)
                     .FirstOrDefaultAsync(v => v.Id == booking.VehicleId, ct);
                 if (vehicle == null)
                 {
@@ -983,7 +1316,9 @@ public class ParkingSessionService : IParkingSessionService
                 {
                     LotId = booking.LotId,
                     VehicleId = vehicle.Id,
+                    Vehicle = vehicle,
                     BookingId = booking.Id,
+                    Booking = booking,
                     PolicyId = booking.PolicyId,
                     ZoneId = slot.ZoneId,
                     VerificationStatus = "VERIFIED",
@@ -992,12 +1327,13 @@ public class ParkingSessionService : IParkingSessionService
                     PlateNumber = normalizedPlate,
                     CheckInTime = now,
                     CurrentSlotId = slot.Id,
+                    CurrentSlot = slot,
                     Status = SessionStatuses.Active,
                     CheckInImageUrl = databaseImage ? imageUrl : imageUri!.AbsoluteUri,
                     CreatedAt = now,
                     UpdatedAt = now
                 };
-                booking.Status = BookingStatuses.CheckedIn;
+                booking.Status = BookingStatuses.Parked;
                 booking.CheckedInAt = now;
                 booking.UpdatedAt = now;
                 slot.PhysicalStatus = SlotPhysicalStatuses.Occupied;
@@ -1433,6 +1769,13 @@ public class ParkingSessionService : IParkingSessionService
             LotName = lotName,
             VehicleId = session.VehicleId,
             BookingId = session.BookingId,
+            BookingStatus = session.Booking?.Status,
+            CustomerName = session.Booking?.User?.FullName ?? session.Vehicle?.User?.FullName,
+            CustomerPhoneNumber = session.Booking?.User?.PhoneNumber ?? session.Vehicle?.User?.PhoneNumber,
+            CustomerEmail = session.Booking?.User?.Email ?? session.Vehicle?.User?.Email,
+            VehicleBrand = session.Vehicle?.Brand,
+            VehicleModel = session.Vehicle?.Model,
+            VehicleColor = session.Vehicle?.Color,
             PlateNumber = session.PlateNumber,
             VerificationStatus = session.VerificationStatus,
             ZoneId = session.ZoneId,
@@ -1442,6 +1785,7 @@ public class ParkingSessionService : IParkingSessionService
             CheckOutTime = session.CheckOutTime,
             CurrentSlotId = session.CurrentSlotId,
             SlotCode = slotCode,
+            SlotPhysicalStatus = session.CurrentSlot?.PhysicalStatus,
             FloorNumber = floorNumber,
             Status = session.Status,
             TotalFee = session.TotalFee,

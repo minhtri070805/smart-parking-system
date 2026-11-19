@@ -7,6 +7,8 @@ public interface IParkingSessionService
 {
     Task<(bool Success, string Message, ParkingSessionDto? Data)> CheckInAsync(CheckInRequestDto request, long? actorId, string actorRole, string? ipAddress, CancellationToken ct = default);
     Task<(bool Success, string Message, ParkingSessionDto? Data)> ConfirmBookingParkedAsync(long bookingId, ConfirmBookingParkedRequestDto request, long? actorId, string actorRole, string? ipAddress, CancellationToken ct = default);
+    Task<(bool Success, string Message, ParkingSessionDto? Data)> CheckInBookingAtGateAsync(long bookingId, CheckInBookingRequestDto request, long? actorId, string actorRole, string? ipAddress, CancellationToken ct = default);
+    Task<(bool Success, string Message, ParkingSessionDto? Data)> AssignBookingSlotAsync(long sessionId, AssignBookingSlotRequestDto request, long? actorId, string actorRole, string? ipAddress, CancellationToken ct = default);
     Task<(bool Success, string Message, ParkingSessionDto? Data)> CheckOutAsync(long sessionId, CheckOutRequestDto request, long? actorId, string actorRole, string? ipAddress, CancellationToken ct = default);
     Task<PagedResult<ParkingSessionDto>> GetActiveSessionsAsync(ParkingSessionFilterDto filter, long? currentUserId, string currentUserRole, CancellationToken ct = default);
     Task<PagedResult<ParkingSessionDto>> GetUserSessionsAsync(long userId, ParkingSessionFilterDto filter, CancellationToken ct = default);
