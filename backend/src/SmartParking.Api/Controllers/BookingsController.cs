@@ -14,11 +14,16 @@ namespace SmartParking.Api.Controllers;
 public class BookingsController : ControllerBase
 {
     private readonly IBookingService _bookingService;
+    private readonly IParkingAuthorizationService _authorizationService;
     private readonly ILogger<BookingsController> _logger;
 
-    public BookingsController(IBookingService bookingService, ILogger<BookingsController> logger)
+    public BookingsController(
+        IBookingService bookingService,
+        IParkingAuthorizationService authorizationService,
+        ILogger<BookingsController> logger)
     {
         _bookingService = bookingService;
+        _authorizationService = authorizationService;
         _logger = logger;
     }
 
@@ -170,6 +175,24 @@ public class BookingsController : ControllerBase
         }
 
         var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? Roles.Staff;
+        if (userRole == Roles.Staff)
+        {
+            if (!filter.LotId.HasValue || string.IsNullOrWhiteSpace(filter.Status))
+                return BadRequest(new { message = "Nhân viên cần chọn bãi và trạng thái hàng chờ được phân công." });
+
+            var status = filter.Status.Trim().ToUpperInvariant();
+            var allowed = status switch
+            {
+                BookingStatuses.Pending => await _authorizationService.CanOperateGateInAsync(
+                    userId.Value, userRole, filter.LotId.Value, ct),
+                BookingStatuses.CheckedIn => await _authorizationService.CanOperateSlotVerificationAsync(
+                    userId.Value, userRole, filter.LotId.Value, ct),
+                _ => false
+            };
+            if (!allowed)
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Bạn không được phân công xử lý hàng chờ booking này tại bãi đã chọn." });
+        }
+
         var data = await _bookingService.GetBookingsAsync(filter, userId.Value, userRole, ct);
 
         return Ok(new

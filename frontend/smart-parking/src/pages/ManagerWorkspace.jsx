@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import RequireRole from "../components/RequireRole.jsx";
+import { SafePhoto } from "../components/staff/StaffUI.jsx";
 import { apiRequest } from "../services/api.js";
 import { staffApi } from "../services/staffApi.js";
 import {
@@ -20,12 +21,25 @@ const labels = {
   MAINTENANCE: "Bảo trì",
   UNAVAILABLE: "Ngừng sử dụng",
 };
+const elapsedLabel = (checkInTime, now) => {
+  const startedAt = new Date(checkInTime).getTime();
+  if (!Number.isFinite(startedAt)) return "—";
+  const minutes = Math.max(0, Math.floor((now - startedAt) / 60_000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const remainingMinutes = minutes % 60;
+  if (days) return `${days} ngày ${hours} giờ ${remainingMinutes} phút`;
+  if (hours) return `${hours} giờ ${remainingMinutes} phút`;
+  return `${remainingMinutes} phút`;
+};
 function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [floorId, setFloorId] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const [change, setChange] = useState(null);
   const [reason, setReason] = useState("");
+  const showActiveSessions = view === "overview" || view === "sessions";
   const lot = useResource(`/v1/parking-lots/${lotId}`, revision);
   const capacity = useResource(`/v1/parking-lots/${lotId}/capacity`, revision);
   const floors = useResource(
@@ -44,7 +58,7 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
     revision,
   );
   const sessions = useResource(
-    `/v1/parking-sessions/active?lotId=${lotId}&page=${view === "sessions" ? page : 1}&pageSize=20`,
+    `/v1/parking-sessions/active?lotId=${lotId}&page=${showActiveSessions ? page : 1}&pageSize=20`,
     revision,
   );
   const session = useResource(
@@ -52,6 +66,10 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
     revision,
   );
   const c = capacity.data;
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const selectChange = (value) => {
     setReason("");
     setChange(value);
@@ -110,6 +128,14 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
         <article>
           <span>Phiên đang hoạt động</span>
           <strong>{sessions.data?.totalCount ?? "—"}</strong>
+        </article>
+        <article>
+          <span>Ô đang có xe</span>
+          <strong>{c?.physicalOccupiedSlotsCount ?? "—"}</strong>
+        </article>
+        <article>
+          <span>Chỗ đang giữ trước</span>
+          <strong>{c?.activeReservationsCount ?? "—"}</strong>
         </article>
         <article>
           <span>Chờ xác minh ô</span>
@@ -270,18 +296,25 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
           />
         </section>
       )}
-      {view === "sessions" && (
+      {showActiveSessions && (
         <section className="workspace-panel">
           <h2>Xe đang gửi tại bãi</h2>
+          <p className="workspace-note">
+            Chỗ trống khả dụng đã trừ giữ chỗ từ lúc khách đặt. Khi xe vào bãi,
+            lượt giữ chỗ được chuyển thành phiên đang gửi; ô có xe và danh sách
+            này tự cập nhật mỗi 15 giây.
+          </p>
           <Feedback loading={sessions.loading} error={sessions.error} />
           <div className="workspace-table">
             <table>
               <thead>
                 <tr>
                   <th>Phiên / Biển số</th>
+                  <th>Chủ xe</th>
                   <th>Ô hiện tại</th>
+                  <th>Trạng thái ô</th>
                   <th>Giờ vào</th>
-                  <th>Trạng thái</th>
+                  <th>Thời gian đã đỗ</th>
                   <th>Chi tiết</th>
                 </tr>
               </thead>
@@ -292,9 +325,27 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
                       #{s.id}
                       <small>{s.plateNumber}</small>
                     </td>
-                    <td>{s.slotCode || "Chờ xác minh"}</td>
+                    <td>
+                      {s.customerName || "—"}
+                      {s.customerPhoneNumber && (
+                        <small>{s.customerPhoneNumber}</small>
+                      )}
+                    </td>
+                    <td>
+                      {s.slotCode || "Chờ phân ô"}
+                      {s.floorNumber != null && (
+                        <small>Tầng {s.floorNumber}</small>
+                      )}
+                    </td>
+                    <td>
+                      {s.slotPhysicalStatus
+                        ? labels[s.slotPhysicalStatus] || s.slotPhysicalStatus
+                        : s.currentSlotId
+                          ? "Chưa đồng bộ"
+                          : "Chờ phân ô"}
+                    </td>
                     <td>{dateLabel(s.checkInTime)}</td>
-                    <td>{statusLabel(s.status)}</td>
+                    <td>{elapsedLabel(s.checkInTime, clockNow)}</td>
                     <td>
                       <button
                         className="btn btn--outline"
@@ -378,10 +429,32 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
             <dl className="workspace-detail">
               {Object.entries({
                 "Biển số": session.data.plateNumber,
+                "Chủ xe": session.data.customerName || "—",
+                "Điện thoại": session.data.customerPhoneNumber || "—",
+                Email: session.data.customerEmail || "—",
+                "Phương tiện":
+                  [session.data.vehicleBrand, session.data.vehicleModel]
+                    .filter(Boolean)
+                    .join(" ") || "—",
+                "Màu xe": session.data.vehicleColor || "—",
                 Bãi: session.data.lotName,
                 "Ô đỗ": session.data.slotCode || "Chờ xác minh",
+                Tầng: session.data.floorNumber ?? "—",
                 "Giờ vào": dateLabel(session.data.checkInTime),
-                "Trạng thái": statusLabel(session.data.status),
+                "Thời gian đã đỗ": elapsedLabel(
+                  session.data.checkInTime,
+                  clockNow,
+                ),
+                "Trạng thái phiên": statusLabel(session.data.status),
+                "Trạng thái ô":
+                  labels[session.data.slotPhysicalStatus] || "—",
+                "Mã booking": session.data.bookingId
+                  ? `#${session.data.bookingId} · ${statusLabel(session.data.bookingStatus)}`
+                  : "Xe vào trực tiếp",
+                "Phí đã ghi nhận": new Intl.NumberFormat("vi-VN", {
+                  style: "currency",
+                  currency: "VND",
+                }).format(session.data.totalFee || 0),
               }).map(([k, v]) => (
                 <div key={k}>
                   <dt>{k}</dt>
@@ -389,6 +462,13 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
                 </div>
               ))}
             </dl>
+          )}
+          {session.data && (
+            <SafePhoto
+              className="manager-session-photo"
+              url={session.data.checkInImageUrl}
+              alt={`Ảnh xe ${session.data.plateNumber} lúc vào bãi`}
+            />
           )}
         </section>
       )}
@@ -407,6 +487,11 @@ function ManagerContent() {
   const assigned = itemsOf(lots.data);
   const lot =
     assigned.find((l) => String(l.lotId) === selectedLot) || assigned[0];
+  useEffect(() => {
+    if (!lot || !["overview", "sessions"].includes(view)) return undefined;
+    const timer = window.setInterval(() => setRevision((n) => n + 1), 15_000);
+    return () => window.clearInterval(timer);
+  }, [lot?.lotId, view]);
   return (
     <section className="workspace container">
       <div className="workspace-actions" style={{ justifyContent: "flex-end", marginBottom: 12 }}>

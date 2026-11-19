@@ -61,6 +61,7 @@ export function People({ assignmentsOnly = false }) {
   });
   const [staffSearch, setStaffSearch] = useState("");
   const [chosenStaff, setChosenStaff] = useState(null);
+  const [candidateRole, setCandidateRole] = useState("STAFF");
   const users = useResource(
     view === "users"
       ? `/v1/admin/users?${query({ page, pageSize: 20, search, role, isActive: active, internalOnly: true })}`
@@ -75,7 +76,7 @@ export function People({ assignmentsOnly = false }) {
   );
   const candidates = useResource(
     view === "assignments" && !chosenStaff && staffSearch.trim()
-      ? `/v1/staff-assignments/candidates?${query({ search: staffSearch, page: 1, pageSize: 100 })}`
+      ? `/v1/staff-assignments/candidates?${query({ search: staffSearch, role: candidateRole, page: 1, pageSize: 100 })}`
       : null,
     revision,
     { allPages: "page" },
@@ -92,14 +93,16 @@ export function People({ assignmentsOnly = false }) {
     revision,
   );
   const locations = useResource(
-    view === "assignments" && assignment.lotId ? `/v1/staff-assignments/locations/${assignment.lotId}` : null,
+    view === "assignments" && candidateRole === "STAFF" && assignment.lotId
+      ? `/v1/staff-assignments/locations/${assignment.lotId}`
+      : null,
     revision,
   );
   const floors = locations.data?.floors || [];
   const selectedFloor = floors.find(f => String(f.id) === assignment.floorId);
   const zones = selectedFloor?.zones || [];
   const requiresZone = assignment.duty === "SLOT_VERIFIER";
-  const eligible = itemsOf(candidates.data).filter((u) => u.role === "STAFF");
+  const eligible = itemsOf(candidates.data).filter((u) => u.role === candidateRole);
   const availableLots = assignmentsOnly
     ? itemsOf(lots.data).filter(l => l.isActive).map(l => ({ id: l.lotId, name: l.lotName }))
     : itemsOf(lots.data);
@@ -247,11 +250,30 @@ export function People({ assignmentsOnly = false }) {
         <section className="workspace-panel">
           <h2>Phân công mới</h2>
           <p className="workspace-note">
-            Chọn Staff, bãi, loại phân công và tầng. Quản lý khu vực cần chọn thêm Zone. Để đổi phân công, thu hồi phân công cũ rồi tạo lại.
+            Chọn nhân sự và bãi cần phân công. Manager được quản lý toàn bãi; Staff cần chọn nhiệm vụ và tầng. Để đổi phân công, thu hồi phân công cũ rồi tạo lại.
           </p>
           <div className="workspace-filters">
+            {!assignmentsOnly && <label>
+              Vai trò nhân sự
+              <select value={candidateRole} onChange={(e) => {
+                const nextRole = e.target.value;
+                setCandidateRole(nextRole);
+                setChosenStaff(null);
+                setStaffSearch("");
+                setAssignment(a => ({
+                  ...a,
+                  userId: "",
+                  duty: nextRole === "MANAGER" ? "GATE" : "",
+                  floorId: "",
+                  zoneId: "",
+                }));
+              }}>
+                <option value="STAFF">Staff</option>
+                <option value="MANAGER">Manager</option>
+              </select>
+            </label>}
             <label>
-              Tìm Staff theo tên/email
+              Tìm nhân sự theo tên/email
               <input
                 role="combobox"
                 aria-autocomplete="list"
@@ -287,9 +309,9 @@ export function People({ assignmentsOnly = false }) {
                   write("/v1/staff-assignments", {
                     userId: Number(assignment.userId),
                     lotId: Number(assignment.lotId),
-                    floorId: Number(assignment.floorId),
+                    floorId: candidateRole === "MANAGER" ? null : Number(assignment.floorId),
                     zoneId: requiresZone ? Number(assignment.zoneId) : null,
-                    duty: assignment.duty,
+                    duty: candidateRole === "MANAGER" ? "GATE" : assignment.duty,
                     notes: assignment.notes || null,
                   }),
                 () => {
@@ -318,28 +340,35 @@ export function People({ assignmentsOnly = false }) {
                   ))}
                 </select>
               </label>
-              <label>
-                Phân công
-                <select
-                  required
-                  disabled={!assignment.lotId}
-                  value={assignment.duty}
-                  onChange={(e) =>
-                    setAssignment({ ...assignment, duty: e.target.value, floorId: "", zoneId: "" })
-                  }
-                >
-                  <option value="">Chọn phân công</option>
-                  {Object.entries(dutyOptions).map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {assignment.duty && <label>Tầng<select required value={assignment.floorId} disabled={!assignment.lotId || locations.loading || Boolean(locations.error)} onChange={e => setAssignment({ ...assignment, floorId: e.target.value, zoneId: "" })}>
+              {candidateRole === "MANAGER" ? (
+                <label>
+                  <span>Phân công</span>
+                  <strong>Quản lý toàn bãi</strong>
+                </label>
+              ) : (
+                <label>
+                  Phân công
+                  <select
+                    required
+                    disabled={!assignment.lotId}
+                    value={assignment.duty}
+                    onChange={(e) =>
+                      setAssignment({ ...assignment, duty: e.target.value, floorId: "", zoneId: "" })
+                    }
+                  >
+                    <option value="">Chọn phân công</option>
+                    {Object.entries(dutyOptions).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {candidateRole === "STAFF" && assignment.duty && <label>Tầng<select required value={assignment.floorId} disabled={!assignment.lotId || locations.loading || Boolean(locations.error)} onChange={e => setAssignment({ ...assignment, floorId: e.target.value, zoneId: "" })}>
                 <option value="">Chọn tầng</option>{floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select></label>}
-              {requiresZone && assignment.floorId && <label>Khu vực (Zone)<select required value={assignment.zoneId} disabled={!selectedFloor || locations.loading || Boolean(locations.error)} onChange={e => setAssignment({ ...assignment, zoneId: e.target.value })}>
+              {candidateRole === "STAFF" && requiresZone && assignment.floorId && <label>Khu vực (Zone)<select required value={assignment.zoneId} disabled={!selectedFloor || locations.loading || Boolean(locations.error)} onChange={e => setAssignment({ ...assignment, zoneId: e.target.value })}>
                 <option value="">Chọn khu vực</option>{zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
               </select></label>}
               <label>
@@ -358,8 +387,8 @@ export function People({ assignmentsOnly = false }) {
                   action.busy ||
                   !chosen ||
                   !assignment.lotId ||
-                  !selectedFloor || (requiresZone && !zones.some(z => String(z.id) === assignment.zoneId)) ||
-                  !assignment.duty ||
+                  (candidateRole !== "MANAGER" && (!selectedFloor || (requiresZone && !zones.some(z => String(z.id) === assignment.zoneId)))) ||
+                  (candidateRole !== "MANAGER" && !assignment.duty) ||
                   Boolean(candidates.error || lots.error || locations.error) || locations.loading ||
                   !availableLots.some(l => String(l.id) === assignment.lotId) ||
                   candidates.loading ||
