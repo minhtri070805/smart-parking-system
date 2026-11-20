@@ -47,3 +47,25 @@ Lưu ý triển khai: endpoint là `AllowAnonymous` + HMAC và hiện đi qua ga
 5. Phí 0 / `NO_PAYMENT_REQUIRED`: Core hiện từ chối amount ≤ 0. Cần quyết định có mở không (và tiêu chí) trước khi nới.
 6. Phí Core: `TotalFee` tại thời điểm clearance có thể 0 (chưa tính) ⇒ Core chưa đối chiếu được amount với phí; cần Quote contract để Core kiểm amount == AmountDue.
 7. Nếu Payment cần `PaidAt` theo thời điểm provider báo thành công, Core phải được sửa để đọc `paidAt` (hiện bỏ qua).
+
+## Dữ kiện tính phí cho Payment (Core đã có)
+`POST /api/internal/payment-billing-context`, ký **giống hệt** endpoint clearance (`X-Payment-Timestamp`, `X-Payment-Signature`, cùng `PaymentService:SharedSecret`). Chỉ đọc, không ghi audit.
+
+Body: `{ "sessionId": 123 }`
+
+Response 200 (thời gian UTC):
+```json
+{ "sessionId": 123, "lotId": 4, "zoneId": 11, "policyId": 7, "bookingId": null,
+  "plateNumber": "51A12345", "status": "ACTIVE", "verificationStatus": "VERIFIED", "ticketed": true,
+  "enteredAt": "2026-11-20T01:00:00Z", "verifiedAt": "2026-11-20T01:05:00Z", "checkedOutAt": null,
+  "totalFee": 0, "paidAt": null, "generatedAt": "2026-11-20T03:00:00Z" }
+```
+| HTTP | code | Ý nghĩa |
+|---|---|---|
+| 200 | – | Dữ kiện của phiên |
+| 400 | INVALID_BODY | thiếu hoặc sai `sessionId` |
+| 401 | INVALID_SIGNATURE | sai chữ ký hoặc hết hạn |
+| 404 | SESSION_NOT_FOUND | |
+| 503 | PAYMENT_INTEGRATION_NOT_CONFIGURED | Core thiếu secret |
+
+Payment dùng dữ kiện này để tự tính `AmountDue` phía server (giải quyết blocker 3). `sessionId` là `long` của Core (blocker 2: Payment cần lưu `CoreSessionId`). Core **chưa** chốt mốc bắt đầu/kết thúc tính phí nên chỉ trả dữ kiện gốc (`enteredAt`, `verifiedAt`, `generatedAt`). Nam Anh và Phụng cần chốt: bắt đầu tính từ `enteredAt` hay `verifiedAt`, kết thúc tại thời điểm báo giá hay khi staff xác nhận ra.
