@@ -1,5 +1,5 @@
 # S5 – Báo cáo phần Phụng (Core: Entry → Verify/Parked → Paid → Checkout)
-Branch `phung/s5-rush`, chưa commit. 18/11/2026. Đối chiếu từ SOURCE, không từ kế hoạch.
+Branch `feat/phung/s5-core-boundary` (PR vào `s5/demo`). Cập nhật 20/11/2026. Đối chiếu từ SOURCE, không từ kế hoạch.
 
 ## 1. Checklist một lượt vãng lai (theo code)
 | # | Transition | API thật | Guard / chống lặp | Trạng thái |
