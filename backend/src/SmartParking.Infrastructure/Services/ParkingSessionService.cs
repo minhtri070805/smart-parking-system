@@ -1,4 +1,4 @@
-﻿using SmartParking.Persistence.Data;
+﻿using SmartParking.Persistence.Data; // ParkingLotLockHelper
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -17,7 +17,7 @@ public class ParkingSessionService : IParkingSessionService
     private readonly IApplicationDbContext _context;
     private readonly IParkingAuthorizationService _authService;
     private readonly ILogger<ParkingSessionService> _logger;
-    private readonly AiRecognitionDbContext _aiRecognitionDb;
+    private readonly IExitRecognitionLookup? _exitRecognition;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,12 +29,12 @@ public class ParkingSessionService : IParkingSessionService
         IApplicationDbContext context,
         IParkingAuthorizationService authService,
         ILogger<ParkingSessionService> logger,
-        AiRecognitionDbContext? aiRecognitionDb = null)
+        IExitRecognitionLookup? exitRecognition = null)
     {
         _context = context;
         _authService = authService;
         _logger = logger;
-        _aiRecognitionDb = aiRecognitionDb!;
+        _exitRecognition = exitRecognition;
     }
 
     public async Task<MonthlyTrafficStatsDto> GetMonthlyTrafficStatsAsync(int year, int month, int? lotId, CancellationToken ct = default)
@@ -161,10 +161,13 @@ public class ParkingSessionService : IParkingSessionService
             return (false, "Phiên xe nằm ngoài tầng hoặc khu vực được phân công.", null);
         if (request.ExitRecognitionId.HasValue)
         {
-            if (_aiRecognitionDb is null)
-                return (false, "AI recognition database is not configured.", null);
-            var recognition = await _aiRecognitionDb.RecognitionRecords
-                .FirstOrDefaultAsync(x => x.Id == request.ExitRecognitionId.Value, ct);
+            // Kết quả nhận diện thuộc Recognition Service: Core chỉ hỏi qua API, không đọc DB của service khác.
+            if (_exitRecognition is null)
+                return (false, "Chưa cấu hình tra cứu kết quả nhận diện (Recognition Service); cho xe ra không kèm kết quả AI.", null);
+            var lookup = await _exitRecognition.FindAsync(request.ExitRecognitionId.Value, ct);
+            if (!lookup.ServiceAvailable)
+                return (false, "Không xác minh được kết quả AI tại cổng ra vì Recognition Service không phản hồi. Thử lại sau.", null);
+            var recognition = lookup.Record;
             if (recognition is null || recognition.Purpose != "EXIT"
                 || recognition.ParkingLotId != session.LotId
                 || recognition.StaffUserId != actorId
@@ -1264,6 +1267,14 @@ public class ParkingSessionService : IParkingSessionService
             CreatedAt = session.CreatedAt
         };
     }
+
+    public async Task<PaymentBillingContextDto?> GetPaymentBillingContextAsync(long sessionId, CancellationToken ct = default) =>
+        await _context.ParkingSessions.AsNoTracking()
+            .Where(s => s.Id == sessionId)
+            .Select(s => new PaymentBillingContextDto(
+                s.Id, s.LotId, s.ZoneId, s.PolicyId, s.BookingId, s.PlateNumber, s.Status, s.VerificationStatus,
+                s.EntryEventId != null, s.CheckInTime, s.VerifiedAt, s.CheckOutTime, s.TotalFee, s.PaidAt, DateTime.UtcNow))
+            .FirstOrDefaultAsync(ct);
 
     public async Task<(bool Success, string Message, ParkingSessionDto? Data)> RecordPaymentClearanceAsync(
         long sessionId,

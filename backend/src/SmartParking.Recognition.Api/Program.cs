@@ -6,6 +6,7 @@ using Npgsql;
 using SmartParking.Application.Common.Exceptions;
 using SmartParking.Application.Common.Interfaces;
 using SmartParking.Persistence;
+using SmartParking.Persistence.Data;
 using SmartParking.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -49,6 +50,20 @@ recognition.AddEndpointFilter(async (context, next) =>
     catch (InvalidDataException) { return Results.BadRequest(new { message = "Invalid or oversized upload." }); }
     catch (Exception error) when (error is NpgsqlException or DbUpdateException)
     { return Results.Json(new { message = "Recognition database is unavailable." }, statusCode: 503); }
+});
+
+// Chỉ đọc: Core tra cứu kết quả nhận diện lúc xe ra qua API này thay vì đọc thẳng DB của Recognition Service.
+recognition.MapGet("/{id:long}", async (long id, AiRecognitionDbContext db, CancellationToken ct) =>
+{
+    var record = await db.RecognitionRecords.AsNoTracking()
+        .Where(x => x.Id == id)
+        .Select(x => new
+        {
+            x.Id, x.Purpose, x.ParkingLotId, x.StaffUserId,
+            x.MatchedParkingSessionId, x.ConfirmedPlateNumber, x.ConfirmedAt
+        })
+        .FirstOrDefaultAsync(ct);
+    return record is null ? Results.NotFound() : Results.Ok(record);
 });
 
 recognition.MapPost("/detect", async (

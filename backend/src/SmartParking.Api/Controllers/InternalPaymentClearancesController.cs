@@ -36,19 +36,51 @@ public class InternalPaymentClearancesController : ControllerBase
         _config = config;
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Receive(CancellationToken ct)
+    /// <summary>Đọc body thô và kiểm chữ ký HMAC của Payment Service. Trả lỗi (503/401) hoặc body đã xác thực.</summary>
+    private async Task<(IActionResult? Error, string Raw)> ReadSignedBodyAsync(CancellationToken ct)
     {
         var secret = _config[$"{PaymentServiceSignature.SectionName}:SharedSecret"];
         if (!PaymentServiceSignature.IsSecretUsable(secret))
-            return StatusCode(503, new { code = "PAYMENT_INTEGRATION_NOT_CONFIGURED", message = "Core chưa cấu hình PaymentService:SharedSecret." });
+            return (StatusCode(503, new { code = "PAYMENT_INTEGRATION_NOT_CONFIGURED", message = "Core chưa cấu hình PaymentService:SharedSecret." }), "");
 
         using var reader = new StreamReader(Request.Body);
         var raw = await reader.ReadToEndAsync(ct);
         if (!PaymentServiceSignature.Verify(secret,
                 Request.Headers[PaymentServiceSignature.TimestampHeader], Request.Headers[PaymentServiceSignature.SignatureHeader],
                 raw, DateTimeOffset.UtcNow))
-            return Unauthorized(new { code = "INVALID_SIGNATURE", message = "Chữ ký Payment Service không hợp lệ hoặc hết hạn." });
+            return (Unauthorized(new { code = "INVALID_SIGNATURE", message = "Chữ ký Payment Service không hợp lệ hoặc hết hạn." }), "");
+        return (null, raw);
+    }
+
+    /// <summary>
+    /// Payment lấy dữ kiện tính phí của một phiên (chỉ đọc). Ký giống endpoint clearance; body: { "sessionId": 123 }.
+    /// </summary>
+    [HttpPost("/api/internal/payment-billing-context")]
+    public async Task<IActionResult> BillingContext(CancellationToken ct)
+    {
+        var (error, raw) = await ReadSignedBodyAsync(ct);
+        if (error != null) return error;
+
+        long sessionId;
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (!doc.RootElement.TryGetProperty("sessionId", out var idElement) || !idElement.TryGetInt64(out sessionId) || sessionId <= 0)
+                return BadRequest(new { code = "INVALID_BODY", message = "Cần sessionId (số nguyên dương)." });
+        }
+        catch (JsonException) { return BadRequest(new { code = "INVALID_BODY", message = "Body không hợp lệ." }); }
+
+        var context = await _sessions.GetPaymentBillingContextAsync(sessionId, ct);
+        return context is null
+            ? NotFound(new { code = "SESSION_NOT_FOUND", message = $"Không tìm thấy phiên gửi xe với ID: {sessionId}." })
+            : Ok(context);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Receive(CancellationToken ct)
+    {
+        var (signatureError, raw) = await ReadSignedBodyAsync(ct);
+        if (signatureError != null) return signatureError;
 
         PaymentServiceClearanceDto? dto;
         try { dto = JsonSerializer.Deserialize<PaymentServiceClearanceDto>(raw, Json); }
