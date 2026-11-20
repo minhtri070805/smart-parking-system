@@ -4,6 +4,7 @@ import {
   formatTime,
   Notice,
   StaffError,
+  StatusBadge,
   useStaffAction,
 } from "./StaffUI.jsx";
 import PlateCapture, {
@@ -24,7 +25,7 @@ export default function StaffBookings({
   onChanged,
   onBusyChange,
   onNewBookingsChange,
-  onConfirmed,
+  onOpenSession,
 }) {
   const [bookings, setBookings] = useState(null);
   const [error, setError] = useState(null);
@@ -39,6 +40,7 @@ export default function StaffBookings({
   const [slotOptions, setSlotOptions] = useState(null);
   const [slotError, setSlotError] = useState(null);
   const [slotId, setSlotId] = useState("");
+  const [slotReload, setSlotReload] = useState(0);
   const previousIds = useRef(null);
   const dataRef = useRef(null);
   const action = useStaffAction(onBusyChange);
@@ -128,7 +130,7 @@ export default function StaffBookings({
         if (!controller.signal.aborted) setSlotError(requestError);
       });
     return () => controller.abort();
-  }, [lotId, selectedBookingId]);
+  }, [lotId, selectedBookingId, slotReload]);
 
   const items = bookings?.items || [];
   const newBookings = items.filter((booking) =>
@@ -168,12 +170,21 @@ export default function StaffBookings({
       const imageUrl = await prepareCapture(capture, setCapture, lotId);
       if (!imageUrl) throw new Error("Chưa lưu được ảnh biển số xe.");
 
-      const result = await staffApi.confirmBookingParked(
-        selectedBooking.id,
-        plate,
-        Number(slotId),
-        imageUrl,
-      );
+      let result;
+      try {
+        result = await staffApi.confirmBookingParked(
+          selectedBooking.id,
+          plate,
+          Number(slotId),
+          imageUrl,
+        );
+      } catch (error) {
+        // Phản hồi có thể đã mất sau khi server ghi nhận, hoặc ô/booking đã đổi:
+        // tải lại booking, ô và công suất thay vì để Staff gửi lại trên dữ liệu cũ.
+        setSlotReload((value) => value + 1);
+        onChanged?.();
+        throw error;
+      }
       if (
         !result?.data?.id ||
         Number(result.data.bookingId) !== Number(selectedBooking.id) ||
@@ -187,6 +198,7 @@ export default function StaffBookings({
         ...selectedBooking,
         sessionId: result.data.id,
         slotCode: result.data.slotCode,
+        sessionStatus: result.data.status,
       });
       setSelectedBookingId(null);
       setCapture(emptyCapture());
@@ -194,7 +206,6 @@ export default function StaffBookings({
         current.filter((id) => id !== String(selectedBooking.id)),
       );
       onChanged?.();
-      onConfirmed?.(result.data);
     });
   };
 
@@ -222,9 +233,26 @@ export default function StaffBookings({
           Đã xác nhận xe {completedBooking.plateNumber} từ booking #
           {completedBooking.id} đỗ tại ô {completedBooking.slotCode}. Ảnh biển
           số đã lưu cùng phiên #{completedBooking.sessionId}; ô đã chuyển sang
-          trạng thái có xe (OCCUPIED).
+          trạng thái có xe (OCCUPIED).{" "}
+          Phiên đang ở trạng thái{" "}
+          <StatusBadge status={completedBooking.sessionStatus} />. Xe chỉ được
+          ra bãi sau khi Payment Service xác nhận thanh toán (PAID); màn hình
+          này không tự đặt trạng thái thanh toán.
+          {onOpenSession && (
+            <>
+              {" "}
+              <button
+                type="button"
+                className="staff-text-button"
+                onClick={() => onOpenSession(completedBooking.sessionId)}
+              >
+                Xem trong Xe đang gửi
+              </button>
+            </>
+          )}
         </Notice>
       )}
+      {!selectedBooking && <StaffError error={action.error} />}
       <StaffError error={error} />
       {error && (
         <button

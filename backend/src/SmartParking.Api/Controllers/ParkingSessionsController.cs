@@ -52,6 +52,10 @@ public class ParkingSessionsController : ControllerBase
         var (success, message, session) = await _sessionService.CheckInAsync(request, actorId, actorRole, clientIp, ct);
         if (!success)
         {
+            if (message == SmartParking.Infrastructure.Services.ParkingSessionService.LegacyCheckInRetiredMessage)
+            {
+                return StatusCode(StatusCodes.Status410Gone, new { code = "LEGACY_CHECKIN_RETIRED", message });
+            }
             if (message.Contains("không có quyền"))
             {
                 return StatusCode(StatusCodes.Status403Forbidden, new { message });
