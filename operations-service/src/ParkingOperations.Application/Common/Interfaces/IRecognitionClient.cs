@@ -41,4 +41,9 @@ public interface IRecognitionClient
         string? ticketId = null,
         string? correlationId = null,
         CancellationToken cancellationToken = default);
+
+    Task<RecognitionResultDto?> GetByIdAsync(
+        long recognitionId,
+        string? correlationId = null,
+        CancellationToken cancellationToken = default);
 }
