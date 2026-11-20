@@ -408,6 +408,15 @@ public class ParkingSessionService : IParkingSessionService
                     return (false, $"Phiên gửi xe này đã kết thúc trước đó với trạng thái: {session.Status}.", null);
                 }
 
+                // P0: chỉ cho xe ra khi Payment Service đã xác nhận thanh toán (status PAID, đặt qua
+                // RecordPaymentClearanceAsync trusted flow). Kiểm tra lại dưới lock/transaction sau reload.
+                // AllowExitWithoutPayment từ client KHÔNG phải bypass; ngoại lệ phí 0 cần contract được duyệt.
+                if (session.Status != SessionStatuses.Paid)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, "Chưa có xác nhận thanh toán (payment clearance) từ Payment Service; không thể cho xe ra hoặc giải phóng ô đỗ.", null);
+                }
+
                 var oldStatus = session.Status;
                 // Ticketed admissions cannot exit before slot verification and a valid ticket check.
                 if (session.EntryEventId.HasValue)
@@ -1472,7 +1481,7 @@ public class ParkingSessionService : IParkingSessionService
         }
 
         // 1. Phân quyền: Chỉ Quản trị viên (ADMIN) hoặc Dịch vụ Thanh toán hệ thống mới có quyền ghi nhận xác nhận tài chính
-        if (actorRole != Roles.Admin)
+        if (actorRole != Roles.Admin && actorRole != SmartParking.Application.Common.Security.PaymentServiceSignature.ServiceActorRole)
         {
             return (false, "Chỉ Quản trị viên (ADMIN) hoặc Dịch vụ Thanh toán của hệ thống mới có quyền ghi nhận xác nhận tài chính (Financial Clearance). Nhân viên cổng hoặc tài khoản khác không có thẩm quyền.", null);
         }
@@ -1489,79 +1498,150 @@ public class ParkingSessionService : IParkingSessionService
         }
 
         var trimmedRef = transactionRef.Trim();
+        if (trimmedRef.Length > 100 || !System.Text.RegularExpressions.Regex.IsMatch(trimmedRef, @"^[A-Za-z0-9._:\-]+$"))
+        {
+            return (false, "Mã giao dịch thanh toán (transactionRef) chỉ gồm chữ, số, '.', '_', ':', '-' và tối đa 100 ký tự.", null);
+        }
 
-        var session = await _context.ParkingSessions
-            .Include(s => s.Lot)
-            .Include(s => s.CurrentSlot)
-                .ThenInclude(slot => slot != null ? slot.Floor : null!)
-            .FirstOrDefaultAsync(s => s.Id == sessionId, ct);
-
-        if (session == null)
+        var lotId = await _context.ParkingSessions.Where(s => s.Id == sessionId).Select(s => (int?)s.LotId).FirstOrDefaultAsync(ct);
+        if (lotId == null)
         {
             return (false, $"Không tìm thấy phiên gửi xe với ID: {sessionId}.", null);
         }
 
-        var lotName = session.Lot?.Name ?? string.Empty;
-        var slotCode = session.CurrentSlot?.SlotCode;
-        var floorNumber = session.CurrentSlot?.Floor?.FloorNumber;
-
-        // 3. Vòng đời phiên: Phiên đã kết thúc hoặc bị hủy không thể ghi nhận thanh toán
-        if (session.Status == SessionStatuses.Completed)
+        // Thứ tự khóa cố định: (1) khóa clearance toàn cục (ref là duy nhất xuyên bãi; DB chưa có unique constraint
+        // vì chưa được duyệt migration) -> (2) khóa bãi (cùng khóa với checkout/verify). Checkout chỉ lấy khóa bãi nên không deadlock.
+        await ClearanceGate.WaitAsync(ct);
+        try
         {
-            return (false, $"Phiên gửi xe #{sessionId} đã kết thúc trước đó, không thể ghi nhận thanh toán.", null);
-        }
-
-        if (session.Status == SessionStatuses.Cancelled)
-        {
-            return (false, $"Phiên gửi xe #{sessionId} đã bị hủy, không thể ghi nhận thanh toán.", null);
-        }
-
-        // 4. Authoritative TotalFee Invariant: Không cho phép số tiền ghi nhận thấp hơn phí đã được tính của phiên
-        if (session.TotalFee > 0 && amountPaid < session.TotalFee)
-        {
-            return (false, $"Số tiền thanh toán ({amountPaid:N0} VNĐ) không đủ so với phí gửi xe cần thanh toán ({session.TotalFee:N0} VNĐ).", null);
-        }
-
-        // 5. Idempotency & Duplicate Reference Invariant:
-        // Nếu phiên đã PAID, kiểm tra xem có phải gọi lại cùng mã giao dịch hay không (idempotent retry)
-        if (session.Status == SessionStatuses.Paid)
-        {
-            var existingClearance = await _context.AuditLogs
-                .FirstOrDefaultAsync(a => a.Action == "PAYMENT_CLEARED" && a.TargetId == session.Id.ToString() && a.NewValues != null && a.NewValues.Contains(trimmedRef), ct);
-
-            if (existingClearance != null)
+            var lotLock = ParkingLotLockHelper.GetSemaphore(lotId.Value);
+            await lotLock.WaitAsync(ct);
+            try
             {
-                return (true, $"Phiên gửi xe #{session.Id} đã được ghi nhận thanh toán hợp lệ trước đó với mã giao dịch '{trimmedRef}'.", MapToDto(session, lotName, slotCode, floorNumber));
+                await using var transaction = await _context.BeginTransactionAsync(ct);
+                try
+                {
+                    if (_context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        await _context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0});", new object[] { PaymentClearanceLockKey }, cancellationToken: ct);
+                        await _context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0});", new object[] { ParkingLotLockHelper.LotLockBase + lotId.Value }, cancellationToken: ct);
+                    }
+
+                    var session = await _context.ParkingSessions
+                        .Include(s => s.Lot)
+                        .Include(s => s.CurrentSlot)
+                            .ThenInclude(slot => slot != null ? slot.Floor : null!)
+                        .FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+                    if (session == null)
+                    {
+                        return (false, $"Không tìm thấy phiên gửi xe với ID: {sessionId}.", null);
+                    }
+                    // Đọc lại trạng thái mới nhất dưới khóa (có thể vừa bị checkout/clearance khác đổi).
+                    if (_context is DbContext freshCtx) await freshCtx.Entry(session).ReloadAsync(ct);
+
+                    var lotName = session.Lot?.Name ?? string.Empty;
+                    var slotCode = session.CurrentSlot?.SlotCode;
+                    var floorNumber = session.CurrentSlot?.Floor?.FloorNumber;
+
+                    if (session.Status == SessionStatuses.Completed)
+                        return (false, $"Phiên gửi xe #{sessionId} đã kết thúc trước đó, không thể ghi nhận thanh toán.", null);
+                    if (session.Status == SessionStatuses.Cancelled)
+                        return (false, $"Phiên gửi xe #{sessionId} đã bị hủy, không thể ghi nhận thanh toán.", null);
+
+                    // Exact-match theo TransactionRef (không dùng Contains thô: "TX-1" không được khớp "TX-10").
+                    // Prefilter Contains an toàn vì ref đã bị giới hạn ký tự không bị JSON-escape.
+                    var candidates = await _context.AuditLogs
+                        .Where(a => a.Action == "PAYMENT_CLEARED" && a.NewValues != null && a.NewValues.Contains(trimmedRef))
+                        .Select(a => new { a.TargetId, a.NewValues })
+                        .ToListAsync(ct);
+                    var sameRef = candidates
+                        .Select(a => new { a.TargetId, Parsed = ParseClearance(a.NewValues, trimmedRef) })
+                        .Where(x => x.Parsed.Matched)
+                        .ToList();
+
+                    if (sameRef.Any(x => x.TargetId != session.Id.ToString()))
+                        return (false, $"Mã giao dịch '{trimmedRef}' đã được sử dụng cho một phiên gửi xe khác.", null);
+
+                    if (session.Status == SessionStatuses.Paid)
+                    {
+                        var replay = sameRef.FirstOrDefault();
+                        if (replay == null)
+                            return (false, $"Phiên gửi xe #{session.Id} đã hoàn tất thanh toán trước đó với một giao dịch khác.", null);
+                        if (replay.Parsed.AmountPaid.HasValue && replay.Parsed.AmountPaid.Value != amountPaid)
+                            return (false, $"Mã giao dịch '{trimmedRef}' đã ghi nhận với số tiền khác ({replay.Parsed.AmountPaid.Value:N0} VNĐ), không chấp nhận {amountPaid:N0} VNĐ.", null);
+                        return (true, $"Phiên gửi xe #{session.Id} đã được ghi nhận thanh toán hợp lệ trước đó với mã giao dịch '{trimmedRef}'.", MapToDto(session, lotName, slotCode, floorNumber));
+                    }
+
+                    // Vé điện tử chưa được staff xác minh xe đã đỗ thì chưa nhận clearance
+                    // (Verify chỉ nhận ACTIVE nên PAID sớm sẽ làm kẹt phiên).
+                    if (session.EntryEventId.HasValue && session.VerificationStatus != "VERIFIED")
+                        return (false, $"Phiên #{session.Id} chưa được staff xác minh xe đã đỗ; chưa nhận clearance.", null);
+
+                    // Phí do Core đã tính (nếu có) phải khớp tuyệt đối: thiếu hoặc thừa đều bị từ chối (fail-closed).
+                    // Core chưa có bảng giá/quote nên TotalFee=0 nghĩa là "chưa tính"; khi đó chỉ chấp nhận số tiền > 0 đã ký.
+                    if (session.TotalFee > 0 && amountPaid != session.TotalFee)
+                        return (false, $"Số tiền thanh toán ({amountPaid:N0} VNĐ) không khớp phí gửi xe cần thanh toán ({session.TotalFee:N0} VNĐ).", null);
+
+                    var feeDue = session.TotalFee;
+                    var oldState = new { session.Status, session.TotalFee, session.PaidAt };
+
+                    // Không ghi đè phí đã tính bằng số tiền trả. Chỉ khi Core chưa tính phí (0) mới ghi số tiền đã thu vào TotalFee
+                    // để báo cáo doanh thu không mất (chưa có cột AmountPaid riêng; cần migration được duyệt).
+                    if (feeDue == 0m) session.TotalFee = amountPaid;
+                    session.PaidAt = DateTime.UtcNow;
+                    session.Status = SessionStatuses.Paid;
+                    session.UpdatedAt = DateTime.UtcNow;
+
+                    var newState = new { session.Status, session.TotalFee, session.PaidAt, TransactionRef = trimmedRef, AmountPaid = amountPaid, FeeDue = feeDue, PaymentMethod = paymentMethod };
+                    await LogAuditAsync("PAYMENT_CLEARED", nameof(ParkingSession), session.Id.ToString(), oldState, newState, actorId, ct);
+                    await _context.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+
+                    _logger.LogInformation("Financial clearance recorded for session {SessionId}: Amount {Amount:N0} VNĐ, Ref {Ref}, Method {Method}",
+                        session.Id, amountPaid, trimmedRef, paymentMethod ?? "N/A");
+
+                    return (true, $"Ghi nhận thanh toán hoàn tất cho phiên #{session.Id}.", MapToDto(session, lotName, slotCode, floorNumber));
+                }
+                catch
+                {
+                    await transaction.RollbackAsync(ct);
+                    throw;
+                }
             }
-
-            return (false, $"Phiên gửi xe #{session.Id} đã hoàn tất thanh toán trước đó với một giao dịch khác.", null);
+            finally
+            {
+                lotLock.Release();
+            }
         }
-
-        // Chống sử dụng trùng lặp mã giao dịch trên phiên gửi xe khác
-        var isDuplicateRefUsed = await _context.AuditLogs
-            .AnyAsync(a => a.Action == "PAYMENT_CLEARED" && a.TargetId != session.Id.ToString() && a.NewValues != null && a.NewValues.Contains(trimmedRef), ct);
-
-        if (isDuplicateRefUsed)
+        finally
         {
-            return (false, $"Mã giao dịch '{trimmedRef}' đã được sử dụng cho một phiên gửi xe khác.", null);
+            ClearanceGate.Release();
         }
+    }
 
-        var oldState = new { session.Status, session.TotalFee, session.PaidAt };
+    private const long PaymentClearanceLockKey = 699_999_999L;
+    private static readonly SemaphoreSlim ClearanceGate = new(1, 1);
 
-        session.TotalFee = amountPaid;
-        session.PaidAt = DateTime.UtcNow;
-        session.Status = SessionStatuses.Paid;
-        session.UpdatedAt = DateTime.UtcNow;
-
-        var newState = new { session.Status, session.TotalFee, session.PaidAt, TransactionRef = trimmedRef, PaymentMethod = paymentMethod };
-
-        await LogAuditAsync("PAYMENT_CLEARED", nameof(ParkingSession), session.Id.ToString(), oldState, newState, actorId, ct);
-        await _context.SaveChangesAsync(ct);
-
-        _logger.LogInformation("Financial clearance recorded for session {SessionId}: Amount {Amount:N0} VNĐ, Ref {Ref}, Method {Method}",
-            session.Id, amountPaid, trimmedRef, paymentMethod ?? "N/A");
-
-        return (true, $"Ghi nhận thanh toán hoàn tất cho phiên #{session.Id}.", MapToDto(session, lotName, slotCode, floorNumber));
+    /// <summary>Đọc audit PAYMENT_CLEARED: khớp khi TransactionRef bằng đúng (ordinal) mã đang xét.</summary>
+    private static (bool Matched, decimal? AmountPaid) ParseClearance(string? json, string transactionRef)
+    {
+        if (string.IsNullOrEmpty(json)) return (false, null);
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (false, null);
+            string? txn = null;
+            decimal? amount = null;
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                if (string.Equals(p.Name, "transactionRef", StringComparison.OrdinalIgnoreCase) && p.Value.ValueKind == JsonValueKind.String)
+                    txn = p.Value.GetString();
+                else if (string.Equals(p.Name, "amountPaid", StringComparison.OrdinalIgnoreCase) && p.Value.ValueKind == JsonValueKind.Number)
+                    amount = p.Value.GetDecimal();
+            }
+            return (string.Equals(txn, transactionRef, StringComparison.Ordinal), amount);
+        }
+        catch (JsonException) { return (false, null); }
     }
 
     private async Task LogAuditAsync(string action, string targetEntity, string targetId, object? oldValues, object? newValues, long? actorId, CancellationToken ct)

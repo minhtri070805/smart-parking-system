@@ -1,4 +1,5 @@
 ﻿using SmartParking.Application.Common.Helpers;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SmartParking.Application.DTOs.Sessions;
 using SmartParking.Domain.Constants;
@@ -369,34 +370,113 @@ public class WalkInSessionAndStaffDutyTests
         Assert.Equal(SlotPhysicalStatuses.Occupied, slot2!.PhysicalStatus);
     }
 
-    [Fact]
-    public async Task CheckOut_DoesNotRequirePaymentDuringDemo()
+    // Mô phỏng clearance đến từ Payment Service (trusted server flow); không dùng client flag.
+    private static async Task ClearPaymentAsync(ParkingSessionService svc, long sessionId, decimal amount, string txRef)
     {
-        var (sessionService, _, context) = await CreateServicesAsync();
-        SeedLot(context, 208, "Demo checkout lot");
-        AddStaffWithDuty(context, 2081, 208, StaffDuties.Gate);
-        await context.SaveChangesAsync();
-
-        var checkIn = await sessionService.CheckInAsync(
-            new CheckInRequestDto { LotId = 208, PlateNumber = "51A-DEMO-01" },
-            1, Roles.Admin, "127.0.0.1");
-        Assert.True(checkIn.Success);
-
-        var session = await context.ParkingSessions.FindAsync(checkIn.Data!.Id);
-        session!.TotalFee = 35000m;
-        await context.SaveChangesAsync();
-
-        var checkout = await sessionService.CheckOutAsync(
-            session.Id,
-            new CheckOutRequestDto { ConfirmedPlateNumber = session.PlateNumber },
-            2081,
-            Roles.Staff,
-            "127.0.0.1");
-
-        Assert.True(checkout.Success);
-        Assert.Equal(SessionStatuses.Completed, checkout.Data!.Status);
-        Assert.NotNull(checkout.Data.CheckOutTime);
+        var r = await svc.RecordPaymentClearanceAsync(sessionId, amount, txRef, "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true);
+        Assert.True(r.Success, r.Message);
     }
+
+    private async Task<(ParkingSessionService Svc, TestSmartParkingDbContext Ctx, long SessionId, string Plate)> SeedActiveSessionAsync(int lotId, string plate)
+    {
+        var (svc, _, ctx) = await CreateServicesAsync();
+        SeedLot(ctx, lotId, $"Clearance lot {lotId}");
+        AddStaffWithDuty(ctx, lotId * 10 + 1, lotId, StaffDuties.Gate);
+        await ctx.SaveChangesAsync();
+        // Legacy CheckInAsync is closed for zoned lots (Sprint 4), so seed an admitted, parked session directly.
+        var slot = await ctx.ParkingSlots.FirstAsync(x => x.Id == lotId * 100 + 1L);
+        slot.PhysicalStatus = SlotPhysicalStatuses.Occupied;
+        var session = new ParkingSession
+        {
+            LotId = lotId,
+            PlateNumber = plate,
+            Status = SessionStatuses.Active,
+            CurrentSlotId = slot.Id,
+            CheckInTime = DateTime.UtcNow.AddHours(-1),
+            VerificationStatus = "VERIFIED"
+        };
+        ctx.ParkingSessions.Add(session);
+        await ctx.SaveChangesAsync();
+        session.TotalFee = 35000m;
+        await ctx.SaveChangesAsync();
+        return (svc, ctx, session.Id, plate);
+    }
+
+    [Fact]
+    public async Task CheckOut_UnpaidActiveSession_IsRejected_AndSlotNotReleased()
+    {
+        var (svc, ctx, id, plate) = await SeedActiveSessionAsync(208, "51A-DEMO-01");
+        var slotId = (await ctx.ParkingSessions.FindAsync(id))!.CurrentSlotId;
+        var slotBefore = slotId.HasValue ? (await ctx.ParkingSlots.FindAsync(slotId.Value))!.PhysicalStatus : null;
+
+        var res = await svc.CheckOutAsync(id, new CheckOutRequestDto { ConfirmedPlateNumber = plate }, 2081, Roles.Staff, "127.0.0.1");
+        Assert.False(res.Success);
+        Assert.Contains("thanh toán", res.Message);
+
+        // Client-supplied exemption flag must never be a bypass, even for Admin.
+        var res2 = await svc.CheckOutAsync(id, new CheckOutRequestDto { ConfirmedPlateNumber = plate, AllowExitWithoutPayment = true, ExemptionReason = "x" }, 1, Roles.Admin, "127.0.0.1");
+        Assert.False(res2.Success);
+
+        ctx.ChangeTracker.Clear();
+        var session = await ctx.ParkingSessions.FindAsync(id);
+        Assert.Equal(SessionStatuses.Active, session!.Status);
+        Assert.Null(session.CheckOutTime);
+        if (slotId.HasValue)
+        {
+            var slot = await ctx.ParkingSlots.FindAsync(slotId.Value);
+            Assert.Equal(slotBefore, slot!.PhysicalStatus);
+        }
+        Assert.Equal(0, await ctx.AuditLogs.CountAsync(a => a.Action == "CHECK_OUT_SESSION"));
+    }
+
+    [Fact]
+    public async Task CheckOut_PaidSession_Succeeds_AndDuplicateCheckoutDoesNotReleaseSlotTwice()
+    {
+        var (svc, ctx, id, plate) = await SeedActiveSessionAsync(214, "51A-PAID-01");
+        await ClearPaymentAsync(svc, id, 35000m, "TX-214-1");
+
+        var first = await svc.CheckOutAsync(id, new CheckOutRequestDto { ConfirmedPlateNumber = plate }, 2141, Roles.Staff, "127.0.0.1");
+        Assert.True(first.Success, first.Message);
+        Assert.Equal(SessionStatuses.Completed, first.Data!.Status);
+
+        // Slot is later taken by another vehicle; a replayed checkout must not free it.
+        var slotId = (await ctx.ParkingSessions.FindAsync(id))!.CurrentSlotId;
+        if (slotId.HasValue)
+        {
+            var slot = await ctx.ParkingSlots.FindAsync(slotId.Value);
+            slot!.PhysicalStatus = SlotPhysicalStatuses.Occupied;
+            await ctx.SaveChangesAsync();
+        }
+
+        var second = await svc.CheckOutAsync(id, new CheckOutRequestDto { ConfirmedPlateNumber = plate }, 2141, Roles.Staff, "127.0.0.1");
+        Assert.False(second.Success);
+        if (slotId.HasValue)
+        {
+            ctx.ChangeTracker.Clear();
+            Assert.Equal(SlotPhysicalStatuses.Occupied, (await ctx.ParkingSlots.FindAsync(slotId.Value))!.PhysicalStatus);
+        }
+        Assert.Equal(1, await ctx.AuditLogs.CountAsync(a => a.Action == "CHECK_OUT_SESSION"));
+    }
+
+    [Fact]
+    public async Task CheckOut_PaidSession_WrongLotOrDuty_IsRejected_AndSessionStaysPaid()
+    {
+        var (svc, ctx, id, plate) = await SeedActiveSessionAsync(215, "51A-DUTY-01");
+        await ClearPaymentAsync(svc, id, 35000m, "TX-215-1");
+        SeedLot(ctx, 216, "Other lot");
+        AddStaffWithDuty(ctx, 2161, 216, StaffDuties.Gate);          // wrong lot
+        AddStaffWithDuty(ctx, 2152, 215, StaffDuties.SlotVerifier);  // wrong duty
+        await ctx.SaveChangesAsync();
+
+        foreach (var staffId in new long[] { 2161, 2152 })
+        {
+            var res = await svc.CheckOutAsync(id, new CheckOutRequestDto { ConfirmedPlateNumber = plate }, staffId, Roles.Staff, "127.0.0.1");
+            Assert.False(res.Success);
+        }
+        ctx.ChangeTracker.Clear();
+        Assert.Equal(SessionStatuses.Paid, (await ctx.ParkingSessions.FindAsync(id))!.Status);
+    }
+
     [Fact]
     public async Task CheckIn_AntiPassback_DuplicateActivePlateRejected()
     {
@@ -796,21 +876,15 @@ public class WalkInSessionAndStaffDutyTests
     [Fact]
     public async Task CheckOut_ConfirmedPlateMismatch_IsRejected_AndNormalizedMatch_Succeeds()
     {
-        var (sessionService, _, context) = await CreateServicesAsync();
-        SeedLot(context, 221, "Bãi Plate Verify");
-        AddStaffWithDuty(context, 2211, 221, StaffDuties.Gate);
-        await context.SaveChangesAsync();
-
-        var checkIn = await sessionService.CheckInAsync(
-            new CheckInRequestDto { LotId = 221, PlateNumber = "51A-123.45" },
-            actorId: 2211, actorRole: Roles.Staff, ipAddress: "127.0.0.1");
-        var sessionId = checkIn.Data!.Id;
+        // Admitted, parked session seeded directly (legacy CheckInAsync is closed for zoned lots); staff 2211 has Gate duty.
+        var (sessionService, _, sessionId, _) = await SeedActiveSessionAsync(221, "51A-123.45");
 
         // Clear payment so checkout financial precondition passes
-        await sessionService.RecordPaymentClearanceAsync(
-            sessionId, 20000m, "TX-PLATE-01", "CASH",
+        var clearance = await sessionService.RecordPaymentClearanceAsync(
+            sessionId, 35000m, "TX-PLATE-01", "CASH",
             actorId: 1, actorRole: Roles.Admin, ipAddress: "127.0.0.1",
             isTrustedPaymentServerFlow: true);
+        Assert.True(clearance.Success, clearance.Message);
 
         // Attempt checkout with wrong plate
         var wrongPlateRes = await sessionService.CheckOutAsync(
