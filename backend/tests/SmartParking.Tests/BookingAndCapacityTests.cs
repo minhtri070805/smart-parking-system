@@ -1171,7 +1171,7 @@ public class BookingAndCapacityTests
         // Walk-in check-in must be rejected
         var (checkInOk, checkInMsg, _) = await sessionService.CheckInAsync(new CheckInRequestDto { LotId = 102, PlateNumber = "51A-WALKIN102" }, 1, Roles.Admin, "127.0.0.1");
         Assert.False(checkInOk);
-        Assert.Contains("hết chỗ", checkInMsg);
+        Assert.Equal(ParkingSessionService.LegacyCheckInRetiredMessage, checkInMsg); // check-in biển số kiểu cũ đã ngừng
     }
 
     [Fact]
@@ -1743,7 +1743,7 @@ public class BookingAndCapacityTests
         // Active zero-slot lot rejects Check-in
         var (cActSuccess, cActMsg, _) = await sessionService.CheckInAsync(checkInReq, actorId: 1, actorRole: Roles.Admin, ipAddress: "127.0.0.1");
         Assert.False(cActSuccess);
-        Assert.Contains("đã hết chỗ khả dụng", cActMsg);
+        Assert.Equal(ParkingSessionService.LegacyCheckInRetiredMessage, cActMsg); // check-in biển số kiểu cũ đã ngừng
     }
 
     [Fact]

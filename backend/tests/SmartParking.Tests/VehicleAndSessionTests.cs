@@ -241,7 +241,7 @@ public class VehicleAndSessionTests
     #region ParkingSessionService Tests
 
     [Fact]
-    public async Task CheckIn_ValidData_CreatesSessionAndLeavesSlotEmptyUntilPhysicalDetection()
+    public async Task CheckIn_LegacyPlateCheckIn_IsRetired_CreatesNoSessionAndLeavesSlotUntouched()
     {
         var (_, sessionService, context) = await CreateServicesAsync();
 
@@ -253,41 +253,24 @@ public class VehicleAndSessionTests
         context.ParkingFloors.Add(floor);
         await context.SaveChangesAsync();
 
-        var slot = new ParkingSlot { FloorId = floor.Id, SlotCode = "A-01", PhysicalStatus = SlotPhysicalStatuses.Empty, IsActive = true };
+        var zone = new ParkingZone { LotId = lot.Id, FloorId = floor.Id, Code = "A", Name = "Khu A", Type = "TRANSIENT" };
+        context.ParkingZones.Add(zone);
+        await context.SaveChangesAsync();
+
+        var slot = new ParkingSlot { FloorId = floor.Id, ZoneId = zone.Id, SlotCode = "A-01", PhysicalStatus = SlotPhysicalStatuses.Empty, IsActive = true };
         context.ParkingSlots.Add(slot);
         await context.SaveChangesAsync();
 
-        var request = new CheckInRequestDto
-        {
-            LotId = lot.Id,
-            PlateNumber = " 51A-99999 ",
-            SlotId = slot.Id,
-            CheckInImageUrl = "https://cdn.test/checkin.jpg"
-        };
-
+        var request = new CheckInRequestDto { LotId = lot.Id, PlateNumber = " 51A-99999 ", SlotId = slot.Id };
         var (success, message, session) = await sessionService.CheckInAsync(request, actorId: 1, actorRole: Roles.Admin, ipAddress: "127.0.0.1");
 
-        Assert.True(success);
-        Assert.NotNull(session);
-        Assert.Equal("51A-99999", session.PlateNumber);
-        Assert.Equal(SessionStatuses.Active, session.Status);
-        Assert.Equal(slot.Id, session.CurrentSlotId);
-
-        // Core Invariant (03_BUSINESS_RULES.md): Check-in tại cổng KHÔNG tự ý đánh dấu OCCUPIED cho ô đỗ
-        // Ô đỗ vật lý vẫn là EMPTY cho tới khi cảm biến IoT hoặc module Dispatch ghi nhận xe đã đỗ thực tế
-        var dbSlot = context.ParkingSlots.First(s => s.Id == slot.Id);
-        Assert.Equal(SlotPhysicalStatuses.Empty, dbSlot.PhysicalStatus);
-
-        // Verify auto-created vehicle
-        var dbVehicle = context.Vehicles.FirstOrDefault(v => v.PlateNumber == "51A-99999");
-        Assert.NotNull(dbVehicle);
-        Assert.Null(dbVehicle.UserId); // Guest vehicle
-
-        // Verify audit log
-        var audit = context.AuditLogs.FirstOrDefault(a => a.Action == "CHECK_IN_SESSION");
-        Assert.NotNull(audit);
+        // Vãng lai phải đi qua vé tại khu TRANSIENT (operations/entries); check-in biển số kiểu cũ không tạo phiên.
+        Assert.False(success);
+        Assert.Null(session);
+        Assert.Equal(ParkingSessionService.LegacyCheckInRetiredMessage, message);
+        Assert.Empty(context.ParkingSessions);
+        Assert.Equal(SlotPhysicalStatuses.Empty, context.ParkingSlots.First(s => s.Id == slot.Id).PhysicalStatus);
     }
-
     [Fact]
     public async Task CheckIn_InactiveLot_ReturnsFailure()
     {
@@ -302,92 +285,6 @@ public class VehicleAndSessionTests
 
         Assert.False(success);
         Assert.Contains("hiện đang đóng hoặc tạm ngừng hoạt động", message);
-    }
-
-    [Fact]
-    public async Task CheckIn_AntiPassback_DuplicateActiveSession_ReturnsConflict()
-    {
-        var (_, sessionService, context) = await CreateServicesAsync();
-
-        var lot = new ParkingLot { Name = "Bãi A", TotalCapacity = 50, IsActive = true };
-        context.ParkingLots.Add(lot);
-        await context.SaveChangesAsync();
-
-        context.ParkingSessions.Add(new ParkingSession
-        {
-            LotId = lot.Id,
-            PlateNumber = "51A-ACTIVE",
-            Status = SessionStatuses.Active,
-            CheckInTime = DateTime.UtcNow.AddMinutes(-30)
-        });
-        await context.SaveChangesAsync();
-
-        var request = new CheckInRequestDto { LotId = lot.Id, PlateNumber = "51A-ACTIVE" };
-        var (success, message, _) = await sessionService.CheckInAsync(request, actorId: 1, actorRole: Roles.Admin, ipAddress: null);
-
-        Assert.False(success);
-        Assert.Contains("đang có phiên đỗ xe chưa kết thúc (ACTIVE/PAID)", message);
-    }
-
-    [Fact]
-    public async Task CheckIn_AntiPassback_DuplicatePaidSession_ReturnsConflict()
-    {
-        var (_, sessionService, context) = await CreateServicesAsync();
-
-        var lot = new ParkingLot { Name = "Bãi B", TotalCapacity = 50, IsActive = true };
-        context.ParkingLots.Add(lot);
-        await context.SaveChangesAsync();
-
-        context.ParkingSessions.Add(new ParkingSession
-        {
-            LotId = lot.Id,
-            PlateNumber = "51A-PAID",
-            Status = SessionStatuses.Paid,
-            CheckInTime = DateTime.UtcNow.AddMinutes(-40)
-        });
-        await context.SaveChangesAsync();
-
-        var request = new CheckInRequestDto { LotId = lot.Id, PlateNumber = "51A-PAID" };
-        var (success, message, _) = await sessionService.CheckInAsync(request, actorId: 1, actorRole: Roles.Admin, ipAddress: null);
-
-        Assert.False(success);
-        Assert.Contains("đang có phiên đỗ xe chưa kết thúc (ACTIVE/PAID)", message);
-    }
-
-    [Fact]
-    public async Task CheckIn_CompletedPreviousSession_AllowsNewCheckIn()
-    {
-        var (_, sessionService, context) = await CreateServicesAsync();
-
-        var lot = new ParkingLot { Name = "Bãi C", TotalCapacity = 50, IsActive = true };
-        context.ParkingLots.Add(lot);
-        await context.SaveChangesAsync();
-
-        var floor = new ParkingFloor { LotId = lot.Id, FloorNumber = 1, Name = "Tầng 1", IsActive = true, TotalSlots = 1 };
-        context.ParkingFloors.Add(floor);
-        await context.SaveChangesAsync();
-
-        var slot = new ParkingSlot { FloorId = floor.Id, SlotCode = "C-01", PhysicalStatus = SlotPhysicalStatuses.Empty, IsActive = true };
-        context.ParkingSlots.Add(slot);
-        await context.SaveChangesAsync();
-
-        // Completed session in the past
-        context.ParkingSessions.Add(new ParkingSession
-        {
-            LotId = lot.Id,
-            PlateNumber = "51A-COMPLETED",
-            Status = SessionStatuses.Completed,
-            CheckInTime = DateTime.UtcNow.AddHours(-3),
-            CheckOutTime = DateTime.UtcNow.AddHours(-1)
-        });
-        await context.SaveChangesAsync();
-
-        var request = new CheckInRequestDto { LotId = lot.Id, PlateNumber = "51A-COMPLETED" };
-        var (success, message, session) = await sessionService.CheckInAsync(request, actorId: 1, actorRole: Roles.Admin, ipAddress: null);
-
-        Assert.True(success);
-        Assert.NotNull(session);
-        Assert.Equal(SessionStatuses.Active, session.Status);
     }
 
     [Fact]
@@ -419,10 +316,10 @@ public class VehicleAndSessionTests
         await context.SaveChangesAsync();
 
         Assert.True((await sessionService.RecordPaymentClearanceAsync(session.Id, 1000m, "TX-TEST-" + session.Id, "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true)).Success);
-        var request = new CheckOutRequestDto { CheckOutImageUrl = "https://cdn.test/checkout.jpg" };
+        var request = new CheckOutRequestDto { ConfirmedPlateNumber = "51A-OUT", CheckOutImageUrl = "https://cdn.test/checkout.jpg" };
         var (success, message, updatedSession) = await sessionService.CheckOutAsync(session.Id, request, actorId: 1, actorRole: Roles.Admin, ipAddress: "127.0.0.1");
 
-        Assert.True(success);
+        Assert.True(success, message);
         Assert.NotNull(updatedSession);
         Assert.Equal(SessionStatuses.Completed, updatedSession.Status);
         Assert.NotNull(updatedSession.CheckOutTime);

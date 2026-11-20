@@ -83,3 +83,9 @@ Test UI mới/sửa: `StaffWorkspace.ui.test.jsx` (+7 test, sửa 3 test cũ; 2 
 - TicketEntry chưa gắn AI lúc vào (`EntryRequest` thiếu RecognitionId).
 - `StaffExit` mở từ danh sách không có `ticketCode` (DTO phiên không trả) ⇒ staff nhập mã vé theo vé thực tế.
 - Chưa kiểm thử trên trình duyệt/ mobile thật và với backend thật (chỉ vitest mock fetch).
+
+## 9. Rà soát lại check-in / check-out (20/11/2026)
+- **Check-in biển số kiểu cũ** (`POST /api/v1/parking-sessions/check-in`, `CheckInAsync`): sau commit `0fff930` mọi ô bắt buộc thuộc một khu, nên endpoint này không còn đường hợp lệ (bãi có khu ⇒ bị chặn; bãi không khu ⇒ sức chứa 0 và báo nhầm "hết chỗ"). Nay trả **410 `LEGACY_CHECKIN_RETIRED`** với thông báo chỉ đường sang `operations/entries`; vẫn kiểm bãi tồn tại/đang mở và quyền GATE trước. UI Staff không gọi endpoint này.
+- **Check-out**: bắt buộc `confirmedPlateNumber` cho MỌI lượt (trước đây lượt không vé có thể ra mà không đối chiếu biển số). UI Staff vốn đã gửi trường này.
+- **Test**: `WalkInSessionAndStaffDutyTests` dựng bãi đúng schema (khu TRANSIENT) và tạo lượt trực tiếp thay vì qua check-in cũ ⇒ toàn bộ file pass. Bỏ 6 test chỉ kiểm hành vi của check-in cũ (gán ô lúc check-in, anti-passback lúc check-in, check-in lại sau phiên cũ); hành vi tương ứng đã có ở luồng vé (`EligibleSlot` SLOT_CONFLICT/SLOT_UNAVAILABLE, `PLATE_CONFLICT` khi verify) và được phủ trong `S5CoreFlowTests`.
+- Full suite: 107 fail / 378 pass / 3 skip (trước: 131 fail). 0 test hỏng mới. Còn `CheckIn_WalkIn_RejectedWhenRemainingCapacityIsReserved`, `M07_3_Concurrency_CheckOutReleasesCapacity…` (BookingAndCapacityTests) đỏ từ trước vì dựa vào check-in cũ – cần viết lại theo `operations/entries`.
