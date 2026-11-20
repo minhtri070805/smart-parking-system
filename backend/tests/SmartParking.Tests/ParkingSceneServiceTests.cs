@@ -30,11 +30,16 @@ public class ParkingSceneServiceTests
             NewUser(LotWideStaffId, 3), NewUser(OwnerId, 4), NewUser(OtherUserId, 4), NewUser(200, 4, active: false));
         db.ParkingLots.Add(new ParkingLot { Id = 1, Name = "Bãi 1", Address = "Q1", TotalCapacity = 4, IsActive = lotActive, CreatedAt = now, UpdatedAt = now });
         db.ParkingFloors.AddRange(
-            new ParkingFloor { Id = 1, LotId = 1, FloorNumber = 1, Name = "Tầng 1", TotalSlots = 2, IsActive = true, CreatedAt = now, UpdatedAt = now },
+            new ParkingFloor { Id = 1, LotId = 1, FloorNumber = 1, Name = "Tầng 1", TotalSlots = 3, IsActive = true, CreatedAt = now, UpdatedAt = now },
             new ParkingFloor { Id = 2, LotId = 1, FloorNumber = 2, Name = "Tầng 2", TotalSlots = 2, IsActive = true, CreatedAt = now, UpdatedAt = now });
+        db.ParkingZones.AddRange(
+            new ParkingZone { Id = 1, LotId = 1, FloorId = 1, Code = "F1-V", Name = "Khách vãng lai", Type = "TRANSIENT", IsActive = true, UpdatedAt = now },
+            new ParkingZone { Id = 2, LotId = 1, FloorId = 1, Code = "F1-M", Name = "Vé tháng", Type = "FIXED", IsActive = true, UpdatedAt = now },
+            new ParkingZone { Id = 3, LotId = 1, FloorId = 2, Code = "F2-V", Name = "Tầng hai", Type = "TRANSIENT", IsActive = true, UpdatedAt = now });
         db.ParkingSlots.AddRange(
-            new ParkingSlot { Id = 1, FloorId = 1, SlotCode = "F1-01", PhysicalStatus = SlotPhysicalStatuses.Empty, IsActive = true, CreatedAt = now, UpdatedAt = now },
-            new ParkingSlot { Id = 2, FloorId = 2, SlotCode = "F2-01", PhysicalStatus = SlotPhysicalStatuses.Empty, IsActive = true, CreatedAt = now, UpdatedAt = now });
+            new ParkingSlot { Id = 1, FloorId = 1, ZoneId = 1, SlotCode = "F1-01", PhysicalStatus = SlotPhysicalStatuses.Empty, IsActive = true, CreatedAt = now, UpdatedAt = now },
+            new ParkingSlot { Id = 2, FloorId = 2, ZoneId = 3, SlotCode = "F2-01", PhysicalStatus = SlotPhysicalStatuses.Empty, IsActive = true, CreatedAt = now, UpdatedAt = now },
+            new ParkingSlot { Id = 3, FloorId = 1, ZoneId = 2, SlotCode = "F1-02", PhysicalStatus = SlotPhysicalStatuses.Empty, IsActive = true, CreatedAt = now, UpdatedAt = now });
         db.Vehicles.Add(new Vehicle { Id = 1, PlateNumber = "51A-11111", UserId = OwnerId, IsActive = true, CreatedAt = now, UpdatedAt = now });
         db.Vehicles.Add(new Vehicle { Id = 2, PlateNumber = "51A-22222", UserId = OtherUserId, IsActive = true, CreatedAt = now, UpdatedAt = now });
         db.ParkingSessions.AddRange(
@@ -159,6 +164,33 @@ public class ParkingSceneServiceTests
     {
         var (service, _) = await SetupAsync();
         Assert.Null(await service.Read(999, null, "", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Snapshot_ContainsMonotonicVersionAndGeneratedTime()
+    {
+        var (service, _) = await SetupAsync();
+        using var first = JsonDocument.Parse(JsonSerializer.Serialize(await service.Read(1, null, "", CancellationToken.None)));
+        using var second = JsonDocument.Parse(JsonSerializer.Serialize(await service.Read(1, null, "", CancellationToken.None)));
+
+        Assert.True(first.RootElement.GetProperty("SnapshotVersion").GetInt64() > 0);
+        Assert.True(second.RootElement.GetProperty("SnapshotVersion").GetInt64() > first.RootElement.GetProperty("SnapshotVersion").GetInt64());
+        Assert.NotEqual(default, first.RootElement.GetProperty("GeneratedAtUtc").GetDateTime());
+    }
+
+    [Fact]
+    public async Task Snapshot_MapsMultipleZonesAndUsesSlotZone()
+    {
+        var (service, _) = await SetupAsync();
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(await service.Read(1, AdminId, Roles.Admin, CancellationToken.None)));
+        var firstFloor = doc.RootElement.GetProperty("Floors").EnumerateArray().Single(x => x.GetProperty("Id").GetInt32() == 1);
+        var zones = firstFloor.GetProperty("Zones").EnumerateArray().ToDictionary(x => x.GetProperty("Id").GetInt32(), x => x.GetProperty("Name").GetString());
+        var slots = firstFloor.GetProperty("Slots").EnumerateArray().ToDictionary(x => x.GetProperty("Code").GetString()!, x => (x.GetProperty("FloorId").GetInt32(), x.GetProperty("ZoneId").GetInt32(), x.GetProperty("ZoneName").GetString()));
+
+        Assert.Equal(2, zones.Count);
+        Assert.Equal("Khách vãng lai", zones[1]);
+        Assert.Equal((1, 1, "Khách vãng lai"), slots["F1-01"]);
+        Assert.Equal((1, 2, "Vé tháng"), slots["F1-02"]);
     }
 }
 

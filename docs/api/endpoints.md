@@ -400,6 +400,15 @@ FastAPI trả `{ success, message, data }`, data có `plate_number`, `raw_plate_
 - Lỗi 400/403/404/409 của nghiệp vụ cần giữ thông báo người dùng hiểu được. Khi timeout ở thao tác ghi, tra lại kết quả trước khi tạo yêu cầu mới.
 - Upload có lỗi cấu hình/provider/persistence khác nhau; API/DB lỗi phải báo lỗi và giữ dữ liệu đã xác nhận, không thay bằng dữ liệu mẫu.
 
+### 6.6 Parking scene snapshot
+
+| Method | URI hiện có | Quyền/kết quả |
+|---|---|---|
+| `GET` | `/api/v1/parking-lots/{lotId}/scene` | Anonymous được phép; projection biển số/session lọc theo account, quyền bãi/tầng/zone; trả `snapshotVersion` và `generatedAtUtc` |
+
+Frontend 3D phải dùng endpoint này làm nguồn authoritative và áp stale guard theo
+[parking scene snapshot contract](parking-scene-snapshot.md).
+
 ## 7 API còn thiếu và hợp đồng đề xuất
 
 Các URI dưới đây là **ĐỀ XUẤT, chưa tồn tại tại commit đối chiếu**. Không gọi chúng như API đã có. Chốt tên/DTO/quyền và migration trước khi bàn giao.
@@ -414,7 +423,6 @@ Các URI dưới đây là **ĐỀ XUẤT, chưa tồn tại tại commit đối
 | Vé/thẻ | `POST /api/v1/ticket-assignments`; thu hồi/xử lý mất | Đúng bãi, một vé cho một phiên mở, lịch sử cấp/thu |
 | Cổng ra | `POST /api/v1/exit-lookups`; `POST /api/v1/parking-sessions/{id}/confirm-exit` | Quẹt vé/thẻ để tải phiên và tính phí; chỉ confirm-exit sau thanh toán/ngoại lệ và xe thực sự qua cổng |
 | Ảnh theo phiên | `POST /api/v1/parking-sessions/{id}/images` | Liên kết ảnh/nhận diện/xác nhận, quyền theo bãi và phiên |
-| Snapshot | `GET /api/v1/parking-lots/{id}/snapshot` | Public/internal projection khác nhau, version/time, cùng nguồn DB |
 | Bảng IoT slot cố định | `GET /api/v1/devices/{id}/slot-display-config` | Thiết bị được xác thực nhận full biển số đúng slot/quyền/hiệu lực; không public và không dùng token người dùng |
 | Gói cố định | `/api/v1/parking-passes`, `/renewals` | Customer sở hữu, ô/khu/xe/quyền hạn và điều kiện tiền/duyệt |
 | Report | `/api/v1/slot-reports` | Chủ quyền ô gửi bằng chứng; nội bộ xác minh; không tự tạo khoản phạt |

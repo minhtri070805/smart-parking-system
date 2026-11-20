@@ -14,7 +14,7 @@ dotnet run --project backend/src/SmartParking.Api --launch-profile http
 
 Mở `http://localhost:5295/app/login`, đăng nhập bằng tài khoản STAFF đã được Admin phân công bãi, sau đó vào `/app/staff`. Khi phát triển riêng, `npm --prefix frontend/smart-parking run dev` chạy web ở cổng 5173 và proxy `/api` về backend 5295.
 
-API chính cần database core Neon đã migrate, trong đó có cột `staff_lot_assignments.duty` và migration `StoreImageContentInDatabase`. Ảnh mới lưu trực tiếp trong PostgreSQL, không cần Cloudinary; dung lượng database sẽ tăng theo số ảnh. Ảnh Cloudinary cũ vẫn giữ URL cũ, việc xóa ảnh cũ vẫn cần cấu hình Cloudinary. Nhận diện ảnh cần FastAPI ở địa chỉ `Recognition:BaseUrl`, database AI đã migrate và cấu hình `AiRecognitionConnection`. Nhập biển số không kèm ảnh vẫn dùng được ở luồng cho phép không có ảnh.
+API chính cần database core Neon đã migrate, trong đó có cột `staff_lot_assignments.duty` và migration `StoreImageContentInDatabase`. Ảnh mới lưu trực tiếp trong PostgreSQL, không cần Cloudinary; dung lượng database sẽ tăng theo số ảnh. Ảnh Cloudinary cũ vẫn giữ URL cũ, việc xóa ảnh cũ vẫn cần cấu hình Cloudinary. Nhận diện ảnh gọi trực tiếp FastAPI qua `AiService:BaseUrl` (mặc định `http://localhost:8000/`) và lưu recognition record vào database AI đã migrate qua `ConnectionStrings:AiRecognitionConnection`. Nhập biển số không kèm ảnh vẫn dùng được ở luồng cho phép không có ảnh.
 
 Từ thư mục gốc repository, áp dụng schema core bằng `dotnet ef database update --project backend\src\SmartParking.Persistence --startup-project backend\src\SmartParking.Api --context SmartParkingDbContext`, sau khi kiểm tra kết nối database đích. Khởi động lại backend sau khi triển khai mã mới.
 

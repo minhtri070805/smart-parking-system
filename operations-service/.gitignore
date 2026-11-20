@@ -3,3 +3,12 @@ bin/
 obj/
 **/bin/
 **/obj/
+
+# Docs & notes
+*.md
+docs/
+
+/checklist.md
+/integration.md
+/README.md
+/sprint5.md

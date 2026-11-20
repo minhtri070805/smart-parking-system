@@ -7,8 +7,26 @@ namespace SmartParking.Infrastructure.Services;
 
 public sealed class ParkingSceneService(IApplicationDbContext db, IParkingAuthorizationService auth)
 {
+    private static long _lastSnapshotVersion = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    private static long NextSnapshotVersion()
+    {
+        while (true)
+        {
+            var current = Interlocked.Read(ref _lastSnapshotVersion);
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var next = Math.Max(now, current + 1);
+            if (Interlocked.CompareExchange(ref _lastSnapshotVersion, next, current) == current)
+                return next;
+        }
+    }
+
     public async Task<object?> Read(int lotId, long? actor, string role, CancellationToken ct)
     {
+        // Capture the request order before any database query. A slow, older request therefore
+        // keeps a lower version even if it finishes after a newer request.
+        var snapshotVersion = NextSnapshotVersion();
+        var generatedAtUtc = DateTime.UtcNow;
         var lot = await db.ParkingLots.AsNoTracking().FirstOrDefaultAsync(l => l.Id == lotId, ct);
         if (lot == null) return null;
         // Resolve the current account rather than trusting an old token's role.
@@ -44,7 +62,7 @@ public sealed class ParkingSceneService(IApplicationDbContext db, IParkingAuthor
             .Select(d => d.AssignedSlotId).ToListAsync(ct)).ToHashSet();
         var capacity = await ParkingLotCapacityHelper.CalculateAsync(db, lotId, ct: ct);
         return new {
-            lot.Id, lot.Name, lot.Address, lot.IsActive, GeneratedAtUtc = DateTime.UtcNow,
+            lot.Id, lot.Name, lot.Address, lot.IsActive, SnapshotVersion = snapshotVersion, GeneratedAtUtc = generatedAtUtc,
             Capacity = new { capacity.TotalCapacity, capacity.AvailableCapacity, capacity.ActiveSessionsCount, capacity.PendingBookingsCount },
             CanManage = actor.HasValue && await auth.CanManageSlotStatusAsync(actor.Value, role, lotId, ct),
             CanEnter = actor.HasValue && await auth.CanOperateGateInAsync(actor.Value, role, lotId, ct),
@@ -56,7 +74,7 @@ public sealed class ParkingSceneService(IApplicationDbContext db, IParkingAuthor
                 Slots = slots.Where(s => s.FloorId == f.Id).Select(s => {
                     occupied.TryGetValue(s.Id, out var session);
                     var status = session != null ? "OCCUPIED" : held.Contains(s.Id) ? "RESERVED" : !s.IsActive || !f.IsActive ? "UNAVAILABLE" : s.PhysicalStatus;
-                    return new { s.Id, Code = s.SlotCode, s.ZoneId, ZoneName = s.Zone.Name, ZoneType = s.Zone.Type, Status = status, s.PhysicalStatus, s.IsActive,
+                    return new { s.Id, FloorId = f.Id, Code = s.SlotCode, s.ZoneId, ZoneName = s.Zone.Name, ZoneType = s.Zone.Type, Status = status, s.PhysicalStatus, s.IsActive,
                         IsAvailable = lot.IsActive && f.IsActive && s.IsActive && status == "EMPTY" && s.Zone.IsActive,
                         IsProtected = session != null || held.Contains(s.Id),
                         Plate = session != null && (privateZones.Contains(s.ZoneId) || session.IsMine) ? session.PlateNumber : null,

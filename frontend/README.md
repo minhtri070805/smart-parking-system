@@ -1,5 +1,19 @@
 # SmartPark - Giao diện Web cho dự án Smart Parking
 
+## Demo luồng đặt chỗ và xe vào bãi
+
+Trong ứng dụng React/Vite ở `smart-parking/`, mở `/app/booking-demo` để thử
+luồng Khách hàng → Staff Cổng → Staff Điều phối. Các vai trò dùng chung dữ liệu
+demo lưu trong `localStorage`; đặt chỗ hết hạn và bị hủy sau 30 phút. Ảnh biển
+số demo được lưu cục bộ trên trình duyệt (tối đa 5 MB mỗi ảnh), không tải lên
+backend.
+
+Chạy frontend bằng Vite từ thư mục `smart-parking/`:
+
+```powershell
+npm run dev
+```
+
 Hai giao diện web thuần HTML/CSS/JS (không cần cài đặt hay build):
 
 - **Web Client** (`client/`): tìm bãi trên bản đồ, xem sơ đồ vị trí, đặt chỗ, thanh toán, vé QR, quét/hiển thị QR check-in/out.
