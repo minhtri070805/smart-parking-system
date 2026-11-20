@@ -160,4 +160,20 @@ public sealed class RecognitionFacade(
             correlationId,
             cancellationToken);
     }
+
+    public Task<RecognitionResultDto?> GetByIdAsync(
+        long recognitionId,
+        string? correlationId,
+        CancellationToken cancellationToken = default)
+    {
+        if (recognitionId <= 0)
+        {
+            throw new ImageValidationException("RecognitionId must be greater than 0.");
+        }
+
+        logger.LogInformation("Recognition query requested. RecognitionId: {RecognitionId}, CorrelationId: {CorrelationId}",
+            recognitionId, correlationId);
+
+        return recognitionClient.GetByIdAsync(recognitionId, correlationId, cancellationToken);
+    }
 }

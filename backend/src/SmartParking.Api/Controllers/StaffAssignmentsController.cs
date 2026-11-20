@@ -52,7 +52,10 @@ public class StaffAssignmentsController : ControllerBase
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "You are not assigned to gate duty at this parking lot." });
             await using var stream = file.OpenReadStream();
             var result = await _detectionService.DetectAsync(
-                stream, file.ContentType, file.Length, actorId.Value, lotId, purpose, ct);
+                stream, file.ContentType, file.Length, actorId.Value, lotId, purpose,
+                Request.Query["captureId"].ToString(), Request.Query["imageId"].ToString(),
+                Request.Query["eventId"].ToString(), Request.Headers["Idempotency-Key"].ToString(),
+                Request.Headers["X-Correlation-Id"].ToString(), ct);
             return Ok(new { message = "Image recognized successfully.", data = result });
         }
         catch (ImageValidationException exception)
@@ -101,7 +104,8 @@ public class StaffAssignmentsController : ControllerBase
                 && !string.Equals(User.FindFirst(ClaimTypes.Role)?.Value, Roles.Admin, StringComparison.Ordinal))
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "You are not assigned to gate duty at this parking lot." });
             var result = await _detectionService.ConfirmAsync(id, plateNumber,
-                request.Note?.Trim(), actorId.Value, request.LotId, ct);
+                request.Note?.Trim(), actorId.Value, request.LotId, null, null, null,
+                Request.Headers["Idempotency-Key"].ToString(), Request.Headers["X-Correlation-Id"].ToString(), ct);
             return result is null ? NotFound(new { message = "Recognition record was not found." }) : Ok(new { data = result });
         }
         catch (ImageValidationException exception)
@@ -126,7 +130,8 @@ public class StaffAssignmentsController : ControllerBase
         try
         {
             var result = await _detectionService.ConfirmExitAsync(id, request.SessionId, plate,
-                request.Note?.Trim(), actorId.Value, request.LotId, ct);
+                request.Note?.Trim(), actorId.Value, request.LotId, null, null,
+                Request.Headers["Idempotency-Key"].ToString(), Request.Headers["X-Correlation-Id"].ToString(), ct);
             return result is null ? NotFound(new { message = "Recognition record was not found." }) : Ok(new { data = result });
         }
         catch (ImageValidationException exception)
