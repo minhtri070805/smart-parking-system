@@ -744,6 +744,7 @@ public class ParkingDispatchTests
         Assert.True(s1);
 
         // Check-out khi dispatch vẫn đang ASSIGNED (chưa đỗ thực tế)
+        Assert.True((await sessionService.RecordPaymentClearanceAsync(session.Id, 1000m, "TX-TEST-" + session.Id, "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true)).Success);
         var (sCheckOut, _, sessionDto) = await sessionService.CheckOutAsync(session.Id, new CheckOutRequestDto(), 1, Roles.Admin, "127.0.0.1");
         Assert.True(sCheckOut);
 
@@ -779,6 +780,7 @@ public class ParkingDispatchTests
         Assert.Equal(SlotPhysicalStatuses.Occupied, slotOccupied!.PhysicalStatus);
 
         // 3. Check-out -> Ô đỗ trở về EMPTY
+        Assert.True((await sessionService.RecordPaymentClearanceAsync(session.Id, 1000m, "TX-TEST-" + session.Id, "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true)).Success);
         var (s3, _, _) = await sessionService.CheckOutAsync(session.Id, new CheckOutRequestDto(), 1, Roles.Admin, "127.0.0.1");
         Assert.True(s3);
         var slotFreed = await context.ParkingSlots.FindAsync(slots[0].Id);
@@ -813,6 +815,7 @@ public class ParkingDispatchTests
         Assert.Equal(SlotPhysicalStatuses.Occupied, slotActual!.PhysicalStatus);
 
         // 3. Check-out -> Phải giải phóng ô thực tế A1-02 về EMPTY
+        Assert.True((await sessionService.RecordPaymentClearanceAsync(session.Id, 1000m, "TX-TEST-" + session.Id, "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true)).Success);
         var (s3, _, _) = await sessionService.CheckOutAsync(session.Id, new CheckOutRequestDto(), 1, Roles.Admin, "127.0.0.1");
         Assert.True(s3);
 

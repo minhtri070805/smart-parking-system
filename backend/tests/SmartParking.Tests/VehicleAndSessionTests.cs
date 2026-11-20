@@ -418,6 +418,7 @@ public class VehicleAndSessionTests
         context.ParkingSessions.Add(session);
         await context.SaveChangesAsync();
 
+        Assert.True((await sessionService.RecordPaymentClearanceAsync(session.Id, 1000m, "TX-TEST-" + session.Id, "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true)).Success);
         var request = new CheckOutRequestDto { CheckOutImageUrl = "https://cdn.test/checkout.jpg" };
         var (success, message, updatedSession) = await sessionService.CheckOutAsync(session.Id, request, actorId: 1, actorRole: Roles.Admin, ipAddress: "127.0.0.1");
 
