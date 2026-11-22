@@ -481,7 +481,7 @@ public class WalkInSessionAndStaffDutyTests
         context.Users.AddRange(staff1, staff2);
         await context.SaveChangesAsync();
 
-        context.ParkingZones.Add(new ParkingZone { Id = 211, LotId = 211, Code = "Z211", Name = "Khu 211" });
+        context.ParkingZones.Add(new ParkingZone { Id = 211, LotId = 211, FloorId = 2111, Code = "Z211", Name = "Khu 211" });
         (await context.ParkingFloors.FindAsync(2111))!.ZoneId = 211;
         await context.SaveChangesAsync();
 

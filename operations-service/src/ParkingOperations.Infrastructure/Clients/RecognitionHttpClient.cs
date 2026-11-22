@@ -86,6 +86,7 @@ public sealed class RecognitionHttpClient(HttpClient client) : IRecognitionClien
         string? captureId = null,
         string? eventId = null,
         string? ticketId = null,
+        string? idempotencyKey = null,
         string? correlationId = null,
         CancellationToken cancellationToken = default)
     {
@@ -97,6 +98,10 @@ public sealed class RecognitionHttpClient(HttpClient client) : IRecognitionClien
         if (!string.IsNullOrWhiteSpace(correlationId))
         {
             request.Headers.TryAddWithoutValidation(CorrelationHeader, correlationId);
+        }
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            request.Headers.TryAddWithoutValidation(IdempotencyHeader, idempotencyKey);
         }
 
         var rawResult = await SendAsync<RecognitionResultDto>(request, allowNotFound: true, cancellationToken);
@@ -120,6 +125,7 @@ public sealed class RecognitionHttpClient(HttpClient client) : IRecognitionClien
         int lotId,
         string? captureId = null,
         string? ticketId = null,
+        string? idempotencyKey = null,
         string? correlationId = null,
         CancellationToken cancellationToken = default)
     {
@@ -131,6 +137,10 @@ public sealed class RecognitionHttpClient(HttpClient client) : IRecognitionClien
         if (!string.IsNullOrWhiteSpace(correlationId))
         {
             request.Headers.TryAddWithoutValidation(CorrelationHeader, correlationId);
+        }
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            request.Headers.TryAddWithoutValidation(IdempotencyHeader, idempotencyKey);
         }
 
         var rawResult = await SendAsync<RecognitionResultDto>(request, allowNotFound: true, cancellationToken);
@@ -156,6 +166,21 @@ public sealed class RecognitionHttpClient(HttpClient client) : IRecognitionClien
             request.Headers.TryAddWithoutValidation(CorrelationHeader, correlationId);
         }
 
+        return SendAsync<RecognitionResultDto>(request, allowNotFound: true, cancellationToken);
+    }
+
+    public Task<RecognitionResultDto?> GetByCaptureIdAsync(
+        string captureId,
+        string? correlationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"internal/recognition/by-capture/{Uri.EscapeDataString(captureId)}");
+        if (!string.IsNullOrWhiteSpace(correlationId))
+        {
+            request.Headers.TryAddWithoutValidation(CorrelationHeader, correlationId);
+        }
         return SendAsync<RecognitionResultDto>(request, allowNotFound: true, cancellationToken);
     }
 

@@ -215,7 +215,7 @@ public class StaffLotAssignmentTests
 
         context.Users.AddRange(admin, manager, staff, user);
         context.ParkingLots.AddRange(lot1, lot2);
-        context.ParkingZones.AddRange(new ParkingZone { Id = 1, LotId = 1, Code = "Z1", Name = "Khu 1" }, new ParkingZone { Id = 2, LotId = 2, Code = "Z2", Name = "Khu 2" });
+        context.ParkingZones.AddRange(new ParkingZone { Id = 1, LotId = 1, FloorId = 1, Code = "Z1", Name = "Khu 1" }, new ParkingZone { Id = 2, LotId = 2, FloorId = 2, Code = "Z2", Name = "Khu 2" });
         context.ParkingFloors.AddRange(new ParkingFloor { Id = 1, LotId = 1, ZoneId = 1, Name = "Tầng 1" }, new ParkingFloor { Id = 2, LotId = 2, ZoneId = 2, Name = "Tầng 2" });
         await context.SaveChangesAsync();
 

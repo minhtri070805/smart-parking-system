@@ -36,12 +36,14 @@ export async function prepareCapture(capture, update, lotId, sessionId) {
           capture.plate,
           capture.note.trim() || null,
           lotId,
+        capture.recognition.captureId,
         )
       : await staffApi.confirmDetection(
           capture.recognition.id,
           capture.plate,
           capture.note.trim() || null,
           lotId,
+        capture.recognition.captureId,
         );
     if (
       normalizePlate(result?.data?.confirmedPlateNumber || "") !==

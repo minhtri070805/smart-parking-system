@@ -23,6 +23,56 @@ public class TestSmartParkingDbContext : SmartParkingDbContext
 {
     public TestSmartParkingDbContext(DbContextOptions<SmartParkingDbContext> options) : base(options) { }
 
+    private void NormalizeZoneFloors()
+    {
+        foreach (var zone in ChangeTracker.Entries<ParkingZone>()
+            .Select(entry => entry.Entity)
+            .Where(zone => zone.FloorId <= 0))
+        {
+            var floor = ParkingFloors.Local
+                .Where(floor => floor.LotId == zone.LotId)
+                .OrderBy(floor => floor.FloorNumber)
+                .ThenBy(floor => floor.Id)
+                .FirstOrDefault();
+            if (floor is null)
+            {
+                var lot = ParkingLots.Local.FirstOrDefault(lot => lot.Id == zone.LotId);
+                if (lot is not null)
+                {
+                    floor = new ParkingFloor
+                    {
+                        LotId = zone.LotId,
+                        Lot = lot,
+                        FloorNumber = 1,
+                        Name = "Tầng kiểm thử",
+                        TotalSlots = 0,
+                        IsActive = true
+                    };
+                    ParkingFloors.Add(floor);
+                }
+            }
+            if (floor is not null)
+            {
+                zone.FloorId = floor.Id;
+                zone.Floor = floor;
+                if (floor.ZoneId <= 0)
+                    floor.ZoneId = zone.Id;
+            }
+        }
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess = true)
+    {
+        NormalizeZoneFloors();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        NormalizeZoneFloors();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
     public override Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
         return Task.FromResult<IDbContextTransaction>(new FakeDbContextTransaction());

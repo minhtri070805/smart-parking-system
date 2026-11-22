@@ -34,14 +34,14 @@ public class ParkingOperationsTests
         db.Users.AddRange(new User { Id = 1, Username = "admin_ops", Email = "admin@ops.test", FullName = "Admin", PasswordHash = "x", RoleId = 1 },
             new User { Id = 2, Username = "gate_ops", Email = "gate@ops.test", FullName = "Gate", PasswordHash = "x", RoleId = 3 });
         db.ParkingLots.AddRange(new ParkingLot { Id = 1, Name = "Test", IsActive = true }, new ParkingLot { Id = 2, Name = "Other", IsActive = true });
-        db.ParkingZones.AddRange(new ParkingZone { Id = 1, LotId = 1, Code = "VL", Name = "Vãng lai" },
-            new ParkingZone { Id = 2, LotId = 1, Code = "CD", Name = "Cố định", Type = "FIXED", Layout = "EXTERNAL" });
+        db.ParkingZones.AddRange(new ParkingZone { Id = 1, LotId = 1, FloorId = 1, Code = "VL", Name = "Vãng lai" },
+            new ParkingZone { Id = 2, LotId = 1, FloorId = 2, Code = "CD", Name = "Cố định", Type = "FIXED", Layout = "EXTERNAL" });
         db.ParkingFloors.AddRange(new ParkingFloor { Id = 1, LotId = 1, ZoneId = 1, Name = "Tầng 1" },
             new ParkingFloor { Id = 2, LotId = 1, ZoneId = 2, Name = "Ngoài trời", FloorNumber = 2 });
-        db.ParkingSlots.AddRange(new ParkingSlot { Id = 1, FloorId = 1, SlotCode = "A1" },
-            new ParkingSlot { Id = 2, FloorId = 1, SlotCode = "A2" },
-            new ParkingSlot { Id = 3, FloorId = 1, SlotCode = "A3", AllowedFuelType = "ELECTRIC" },
-            new ParkingSlot { Id = 4, FloorId = 2, SlotCode = "FIXED1" });
+        db.ParkingSlots.AddRange(new ParkingSlot { Id = 1, FloorId = 1, ZoneId = 1, SlotCode = "A1" },
+            new ParkingSlot { Id = 2, FloorId = 1, ZoneId = 1, SlotCode = "A2" },
+            new ParkingSlot { Id = 3, FloorId = 1, ZoneId = 1, SlotCode = "A3", AllowedFuelType = "ELECTRIC" },
+            new ParkingSlot { Id = 4, FloorId = 2, ZoneId = 2, SlotCode = "FIXED1" });
         db.StaffLotAssignments.Add(new StaffLotAssignment { UserId = 2, LotId = 1, AssignedBy = 1, Duty = "GATE" });
         db.ParkingPolicies.Add(new ParkingPolicy { Id = 1, LotId = 1, ApprovedAt = DateTime.UtcNow, ApprovedBy = 1,
             CreatedBy = 1, EffectiveFrom = DateTime.UtcNow.AddHours(-1), NearFullThreshold = 1 });

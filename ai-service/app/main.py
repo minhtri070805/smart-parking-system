@@ -44,6 +44,23 @@ OCR_REC_WEIGHT = str(WEIGHTS_DIR / "ppocrv4" / "ch_PP-OCRv4_rec_infer.onnx")
 
 # Global dictionary holding active model instances
 models = {}
+MAX_UPLOAD_BYTES = int(os.getenv("AI_MAX_UPLOAD_SIZE_BYTES", str(10 * 1024 * 1024)))
+SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+def validate_image_upload(content_type: Optional[str], content: bytes) -> None:
+    if not content:
+        raise HTTPException(status_code=400, detail="An image file is required.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Image exceeds the configured size limit.")
+    if content_type not in SUPPORTED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, and WebP images are supported.")
+
+    is_jpeg = content.startswith(b"\xff\xd8\xff")
+    is_png = content.startswith(b"\x89PNG\r\n\x1a\n")
+    is_webp = len(content) >= 12 and content.startswith(b"RIFF") and content[8:12] == b"WEBP"
+    if not (is_jpeg or is_png or is_webp):
+        raise HTTPException(status_code=400, detail="The uploaded file has an invalid image signature.")
 
 
 def extract_plate_text(plate_reader: DetAndRecONNXPipeline, plate_image: np.ndarray):
@@ -117,6 +134,26 @@ app.add_middleware(
 )
 
 
+@app.get("/health")
+async def health():
+    return {"status": "alive"}
+
+
+@app.get("/readiness")
+async def readiness():
+    required_models = ("vehicle_detector", "plate_detector", "plate_reader")
+    if not all(name in models for name in required_models):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI models are not loaded.",
+        )
+    return {
+        "status": "ready",
+        "device": models.get("device"),
+        "modelVersion": os.getenv("AI_MODEL_VERSION", "plate-yolov8n-ppocrv4"),
+    }
+
+
 # --- Pydantic Data Models ---
 class PlateDetectionData(BaseModel):
     plate_number: str = Field(..., description="Normalized and corrected license plate string")
@@ -154,8 +191,9 @@ async def detect_license_plate(
         )
 
     # 1. Read and decode image buffer
+    image_bytes = await file.read()
+    validate_image_upload(file.content_type, image_bytes)
     try:
-        image_bytes = await file.read()
         nparr = np.frombuffer(image_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if frame is None:

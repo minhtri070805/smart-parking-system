@@ -1,5 +1,5 @@
 import { apiRequest } from "./api.js";
-import { operationsApi } from "./operationsApi.js";
+import { operationsApi, operationsRecognitionRequest } from "./operationsApi.js";
 
 export const normalizePlate = (value = "") =>
   value.trim().toUpperCase().replace(/\s+/g, " ");
@@ -232,7 +232,12 @@ export const staffApi = {
     validatePhoto(file);
     const body = new FormData();
     body.append("file", file);
-    return data(`/v1/staff/detect?${query({ lotId, purpose })}`, { method: "POST", body });
+    const captureId = crypto.randomUUID();
+    return operationsRecognitionRequest(`/detect?${query({ lotId, purpose, captureId })}`, {
+      method: "POST",
+      body,
+      headers: { "Idempotency-Key": captureId },
+    });
   },
   async upload(file) {
     validatePhoto(file);
@@ -246,18 +251,30 @@ export const staffApi = {
       );
     return image.url;
   },
-  confirmDetection: (id, plateNumber, note, lotId) =>
-    post(`/v1/staff/detections/${id}/confirm`, {
+  confirmDetection: (id, plateNumber, note, lotId, captureId) =>
+    operationsRecognitionRequest(`/${id}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({
       plateNumber: validatePlate(plateNumber),
       note,
       ...(lotId ? { lotId: Number(lotId) } : {}),
+      ...(captureId ? { captureId } : {}),
+      ...(captureId ? { idempotencyKey: captureId } : {}),
+      }),
+      headers: { "Content-Type": "application/json", "Idempotency-Key": captureId || crypto.randomUUID() },
     }),
-  confirmExitDetection: (id, sessionId, plateNumber, note, lotId) =>
-    post(`/v1/staff/detections/${id}/confirm-exit`, {
+  confirmExitDetection: (id, sessionId, plateNumber, note, lotId, captureId) =>
+    operationsRecognitionRequest(`/${id}/confirm-exit`, {
+      method: "POST",
+      body: JSON.stringify({
       sessionId: Number(sessionId),
       plateNumber: validatePlate(plateNumber),
       note,
       ...(lotId ? { lotId: Number(lotId) } : {}),
+      ...(captureId ? { captureId } : {}),
+      ...(captureId ? { idempotencyKey: captureId } : {}),
+      }),
+      headers: { "Content-Type": "application/json", "Idempotency-Key": captureId || crypto.randomUUID() },
     }),
   checkIn: (lotId, plateNumber, imageUrl, entryRecognitionId) =>
     post("/v1/parking-sessions/check-in", {
