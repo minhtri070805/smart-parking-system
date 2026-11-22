@@ -65,12 +65,6 @@ public sealed class RecognitionServiceClient(HttpClient client) : IStaffDetectio
             allowNotFound: true,
             cancellationToken);
 
-    public Task<StaffDetectionDto?> GetByCaptureIdAsync(string captureId, CancellationToken cancellationToken) =>
-        SendAsync<StaffDetectionDto>(
-            new HttpRequestMessage(HttpMethod.Get, $"internal/recognition/by-capture/{Uri.EscapeDataString(captureId)}"),
-            allowNotFound: true,
-            cancellationToken);
-
     private async Task<T?> SendAsync<T>(HttpRequestMessage request, bool allowNotFound, CancellationToken ct) where T : class
     {
         using (request)

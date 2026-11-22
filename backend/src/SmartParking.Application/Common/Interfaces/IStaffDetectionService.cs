@@ -47,8 +47,4 @@ public interface IStaffDetectionService
     Task<StaffDetectionDto?> GetByIdAsync(
         long recognitionId,
         CancellationToken cancellationToken);
-
-    Task<StaffDetectionDto?> GetByCaptureIdAsync(
-        string captureId,
-        CancellationToken cancellationToken);
 }

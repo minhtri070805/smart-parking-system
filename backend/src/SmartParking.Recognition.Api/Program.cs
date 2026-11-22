@@ -125,12 +125,4 @@ recognition.MapGet("/{id:long}", async (long id, IStaffDetectionService service,
     return result is null ? Results.NotFound() : Results.Ok(result);
 });
 
-recognition.MapGet("/by-capture/{captureId}", async (string captureId, IStaffDetectionService service, CancellationToken ct) =>
-{
-    if (string.IsNullOrWhiteSpace(captureId) || captureId.Length > 128)
-        return Results.BadRequest(new { message = "Invalid CaptureId." });
-    var result = await service.GetByCaptureIdAsync(captureId, ct);
-    return result is null ? Results.NotFound() : Results.Ok(result);
-});
-
 app.Run();

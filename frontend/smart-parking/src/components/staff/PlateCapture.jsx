@@ -36,14 +36,12 @@ export async function prepareCapture(capture, update, lotId, sessionId) {
           capture.plate,
           capture.note.trim() || null,
           lotId,
-        capture.recognition.captureId,
         )
       : await staffApi.confirmDetection(
           capture.recognition.id,
           capture.plate,
           capture.note.trim() || null,
           lotId,
-        capture.recognition.captureId,
         );
     // Core lưu biển số chuẩn của phiên khi confirm-exit nên so khớp bỏ qua dấu cách/chấm/gạch.
     if (!platesMatch(result?.data?.confirmedPlateNumber, capture.plate)) {

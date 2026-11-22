@@ -39,8 +39,7 @@ public sealed record ConfirmRecognitionRequestDto(
     [property: JsonPropertyName("lotId")] int LotId = 0,
     [property: JsonPropertyName("captureId")] string? CaptureId = null,
     [property: JsonPropertyName("eventId")] string? EventId = null,
-    [property: JsonPropertyName("ticketId")] string? TicketId = null,
-    [property: JsonPropertyName("idempotencyKey")] string? IdempotencyKey = null
+    [property: JsonPropertyName("ticketId")] string? TicketId = null
 );
 
 public sealed record ConfirmExitRecognitionRequestDto(
@@ -49,8 +48,7 @@ public sealed record ConfirmExitRecognitionRequestDto(
     [property: JsonPropertyName("lotId")] int LotId,
     [property: JsonPropertyName("sessionId")] long SessionId,
     [property: JsonPropertyName("captureId")] string? CaptureId = null,
-    [property: JsonPropertyName("ticketId")] string? TicketId = null,
-    [property: JsonPropertyName("idempotencyKey")] string? IdempotencyKey = null
+    [property: JsonPropertyName("ticketId")] string? TicketId = null
 );
 
 public sealed record RecognitionErrorDto(

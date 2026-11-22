@@ -63,7 +63,8 @@ public sealed class StaffDetectionService : IStaffDetectionService
                 if (existingCapture.StaffUserId != staffUserId || existingCapture.ParkingLotId != lotId ||
                     existingCapture.Purpose != purpose || existingCapture.ImageId != imageId || existingCapture.ContentSha256 != contentHash)
                     throw new ImageValidationException("CaptureId was already used with different recognition context.");
-                return Map(existingCapture, ResolveStatus(existingCapture));
+                return Map(existingCapture, existingCapture.ConfirmedAt.HasValue ? "CONFIRMED" :
+                    string.IsNullOrWhiteSpace(existingCapture.PlateNumber) ? "UNREADABLE" : "PENDING_CONFIRMATION");
             }
         }
         if (!string.IsNullOrWhiteSpace(idempotencyKey))
@@ -76,7 +77,8 @@ public sealed class StaffDetectionService : IStaffDetectionService
                     existingKey.Purpose != purpose || existingKey.CaptureId != captureId || existingKey.ImageId != imageId ||
                     existingKey.ContentSha256 != contentHash)
                     throw new ImageValidationException("Idempotency key was already used with different recognition context.");
-                return Map(existingKey, ResolveStatus(existingKey));
+                return Map(existingKey, existingKey.ConfirmedAt.HasValue ? "CONFIRMED" :
+                    string.IsNullOrWhiteSpace(existingKey.PlateNumber) ? "UNREADABLE" : "PENDING_CONFIRMATION");
             }
         }
         if (!SupportedTypes.Contains(contentType) || contentLength <= 0 || contentLength > _maxBytes)
@@ -157,13 +159,7 @@ public sealed class StaffDetectionService : IStaffDetectionService
             }
         }
 
-        if (!recognized)
-            return Map(record, "UNREADABLE");
-        if (purpose == "ENTRY")
-            return Map(record, "PENDING_LINK");
-        if (record.MatchedParkingSessionId.HasValue)
-            return Map(record, "PENDING_CONFIRMATION");
-        return Map(record, "PENDING_LINK");
+        return Map(record, recognized ? "PENDING_CONFIRMATION" : "UNREADABLE");
     }
 
     public async Task<StaffDetectionDto?> ConfirmAsync(
@@ -293,29 +289,12 @@ public sealed class StaffDetectionService : IStaffDetectionService
         var record = await _db.RecognitionRecords.AsNoTracking()
             .FirstOrDefaultAsync(r => r.Id == recognitionId, cancellationToken);
         if (record is null) return null;
-        return Map(record, ResolveStatus(record));
-    }
 
-    public async Task<StaffDetectionDto?> GetByCaptureIdAsync(string captureId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(captureId))
-            return null;
-        var record = await _db.RecognitionRecords.AsNoTracking()
-            .FirstOrDefaultAsync(r => r.CaptureId == captureId, cancellationToken);
-        return record is null ? null : Map(record, ResolveStatus(record));
-    }
+        var status = record.ConfirmedAt.HasValue
+            ? "CONFIRMED"
+            : (string.IsNullOrWhiteSpace(record.FailureReason) ? "PENDING_CONFIRMATION" : "FAILED");
 
-    private static string ResolveStatus(AiRecognitionRecord record)
-    {
-        if (record.ConfirmedAt.HasValue)
-            return "CONFIRMED";
-        if (string.IsNullOrWhiteSpace(record.PlateNumber))
-            return "UNREADABLE";
-        if (record.Purpose == "ENTRY")
-            return "PENDING_LINK";
-        return record.MatchedParkingSessionId.HasValue
-            ? "PENDING_CONFIRMATION"
-            : "PENDING_LINK";
+        return Map(record, status);
     }
 
     private static StaffDetectionDto Map(AiRecognitionRecord record, string status) =>

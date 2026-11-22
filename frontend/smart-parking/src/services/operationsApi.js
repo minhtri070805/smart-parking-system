@@ -26,26 +26,6 @@ export function operationsApiBaseConfigured() {
   return true;
 }
 
-export async function operationsRecognitionRequest(path, options = {}) {
-  const token = getAuthSession()?.accessToken;
-  const baseUrl = import.meta.env.VITE_OPERATIONS_API_BASE_URL || "/ops-api";
-  const response = await fetch(`${baseUrl}/api/v1/operations/recognition${path}`, {
-    ...options,
-    headers: {
-      ...options.headers,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw Object.assign(
-      new Error(body.message || "Không thể thực hiện nhận diện tại cổng."),
-      { status: response.status, code: body.code },
-    );
-  }
-  return body;
-}
-
 // Preserve the Core-backed Staff Operations adapter already used for tickets.
 export const operationsApi = async (lotId, path, body, method, signal) => {
   const response = await apiRequest(`/v1/parking-lots/${lotId}/operations/${path}`, {

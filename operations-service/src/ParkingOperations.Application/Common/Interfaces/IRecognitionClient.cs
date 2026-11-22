@@ -27,7 +27,6 @@ public interface IRecognitionClient
         string? captureId = null,
         string? eventId = null,
         string? ticketId = null,
-        string? idempotencyKey = null,
         string? correlationId = null,
         CancellationToken cancellationToken = default);
 
@@ -40,17 +39,11 @@ public interface IRecognitionClient
         int lotId,
         string? captureId = null,
         string? ticketId = null,
-        string? idempotencyKey = null,
         string? correlationId = null,
         CancellationToken cancellationToken = default);
 
     Task<RecognitionResultDto?> GetByIdAsync(
         long recognitionId,
-        string? correlationId = null,
-        CancellationToken cancellationToken = default);
-
-    Task<RecognitionResultDto?> GetByCaptureIdAsync(
-        string captureId,
         string? correlationId = null,
         CancellationToken cancellationToken = default);
 }

@@ -53,7 +53,7 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 {
     if (allowedOrigins.Length > 0)
         policy.WithOrigins(allowedOrigins).WithMethods("GET", "POST", "OPTIONS")
-            .WithHeaders("Authorization", "Content-Type", "Accept", "Idempotency-Key", "X-Correlation-Id");
+            .WithHeaders("Authorization", "Content-Type", "Accept");
 }));
 
 var recognitionUrl = builder.Configuration["Recognition:BaseUrl"] ?? "http://localhost:52468/";
@@ -74,20 +74,6 @@ builder.Services.AddHttpClient<ICoreHttpClient, CoreHttpClient>(client =>
 builder.Services.AddHttpClient("RecognitionHealthProbe");
 builder.Services.AddHealthChecks().AddCheck<RecognitionHealthCheck>("recognition-service", tags: ["ready"]);
 builder.Services.AddSingleton<IFileValidationService, FileValidationService>();
-
-var redisConn = builder.Configuration.GetConnectionString("Redis") ?? builder.Configuration["Redis:ConnectionString"];
-if (!string.IsNullOrWhiteSpace(redisConn))
-{
-    builder.Services.AddStackExchangeRedisCache(options => options.Configuration = redisConn);
-    builder.Services.AddSingleton<IIdempotencyCache, DistributedIdempotencyCache>();
-}
-else
-{
-    builder.Services.AddDistributedMemoryCache();
-    builder.Services.AddSingleton<IIdempotencyCache, InMemoryIdempotencyCache>();
-}
-
-builder.Services.AddSingleton<IRecognitionRouteConfig, RecognitionRouteConfig>();
 builder.Services.AddScoped<IRecognitionFacade, RecognitionFacade>();
 
 var app = builder.Build();
