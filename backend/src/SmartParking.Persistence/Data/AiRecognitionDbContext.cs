@@ -21,6 +21,16 @@ public sealed class AiRecognitionDbContext : DbContext
             entity.Property(x => x.ConfirmedPlateNumber).HasMaxLength(32);
             entity.Property(x => x.ConfirmationNote).HasMaxLength(256);
             entity.Property(x => x.Purpose).HasMaxLength(16).HasDefaultValue("ENTRY");
+            entity.Property(x => x.CaptureId).HasMaxLength(128);
+            entity.Property(x => x.ImageId).HasMaxLength(128);
+            entity.Property(x => x.EventId).HasMaxLength(128);
+            entity.Property(x => x.TicketId).HasMaxLength(128);
+            entity.Property(x => x.IdempotencyKey).HasMaxLength(128);
+            entity.Property(x => x.ConfirmationIdempotencyKey).HasMaxLength(128);
+            entity.Property(x => x.CorrelationId).HasMaxLength(128);
+            entity.Property(x => x.ModelVersion).HasMaxLength(128);
+            entity.HasIndex(x => x.CaptureId).IsUnique().HasFilter("\"CaptureId\" IS NOT NULL");
+            entity.HasIndex(x => x.IdempotencyKey).IsUnique().HasFilter("\"IdempotencyKey\" IS NOT NULL");
             entity.Property(x => x.ParkingLotId);
             entity.Property(x => x.MatchedParkingSessionId);
             entity.HasIndex(x => new { x.ParkingLotId, x.Purpose, x.CreatedAt });

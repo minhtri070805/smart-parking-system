@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -36,18 +36,60 @@ public sealed class StaffDetectionService : IStaffDetectionService
 
     public async Task<StaffDetectionDto> DetectAsync(
         Stream image, string contentType, long contentLength, long staffUserId, int lotId, string purpose,
+        string? captureId, string? imageId, string? eventId, string? idempotencyKey, string? correlationId,
         CancellationToken cancellationToken)
     {
         if (purpose == "ENTRY" && !await _parkingDb.ParkingLots.AnyAsync(x => x.Id == lotId && x.IsActive, cancellationToken))
             throw new ImageValidationException("Selected parking lot is unavailable.");
         if (purpose == "EXIT" && !await _parkingDb.ParkingLots.AnyAsync(x => x.Id == lotId, cancellationToken))
             throw new ImageValidationException("Selected parking lot was not found.");
+        if (string.IsNullOrWhiteSpace(captureId) && !string.IsNullOrWhiteSpace(idempotencyKey))
+            throw new ImageValidationException("CaptureId is required when Idempotency-Key is supplied.");
+        byte[]? bytes = null;
+        string? contentHash = null;
+        if (!string.IsNullOrWhiteSpace(captureId) || !string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            await using var hashBuffer = new MemoryStream();
+            await image.CopyToAsync(hashBuffer, cancellationToken);
+            bytes = hashBuffer.ToArray();
+            if (bytes.Length == 0 || bytes.Length > _maxBytes || !HasImageSignature(bytes, contentType))
+                throw new ImageValidationException("Image content is invalid, empty, or exceeds the configured size limit.");
+
+            contentHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+            var existingCapture = await _db.RecognitionRecords.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.CaptureId == captureId, cancellationToken);
+            if (existingCapture is not null)
+            {
+                if (existingCapture.StaffUserId != staffUserId || existingCapture.ParkingLotId != lotId ||
+                    existingCapture.Purpose != purpose || existingCapture.ImageId != imageId || existingCapture.ContentSha256 != contentHash)
+                    throw new ImageValidationException("CaptureId was already used with different recognition context.");
+                return Map(existingCapture, existingCapture.ConfirmedAt.HasValue ? "CONFIRMED" :
+                    string.IsNullOrWhiteSpace(existingCapture.PlateNumber) ? "UNREADABLE" : "PENDING_CONFIRMATION");
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var existingKey = await _db.RecognitionRecords.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.IdempotencyKey == idempotencyKey, cancellationToken);
+            if (existingKey is not null)
+            {
+                if (existingKey.StaffUserId != staffUserId || existingKey.ParkingLotId != lotId ||
+                    existingKey.Purpose != purpose || existingKey.CaptureId != captureId || existingKey.ImageId != imageId ||
+                    existingKey.ContentSha256 != contentHash)
+                    throw new ImageValidationException("Idempotency key was already used with different recognition context.");
+                return Map(existingKey, existingKey.ConfirmedAt.HasValue ? "CONFIRMED" :
+                    string.IsNullOrWhiteSpace(existingKey.PlateNumber) ? "UNREADABLE" : "PENDING_CONFIRMATION");
+            }
+        }
         if (!SupportedTypes.Contains(contentType) || contentLength <= 0 || contentLength > _maxBytes)
             throw new ImageValidationException("Only non-empty JPEG, PNG, or WebP images within the size limit are supported.");
 
-        await using var buffer = new MemoryStream();
-        await image.CopyToAsync(buffer, cancellationToken);
-        var bytes = buffer.ToArray();
+        if (bytes is null)
+        {
+            await using var buffer = new MemoryStream();
+            await image.CopyToAsync(buffer, cancellationToken);
+            bytes = buffer.ToArray();
+        }
         if (bytes.Length == 0 || bytes.Length > _maxBytes || !HasImageSignature(bytes, contentType))
             throw new ImageValidationException("Image content is invalid, empty, or exceeds the configured size limit.");
 
@@ -74,6 +116,11 @@ public sealed class StaffDetectionService : IStaffDetectionService
         var record = new AiRecognitionRecord
         {
             StaffUserId = staffUserId,
+            CaptureId = captureId,
+            ImageId = imageId,
+            EventId = eventId,
+            IdempotencyKey = idempotencyKey,
+            CorrelationId = correlationId,
             ParkingLotId = lotId,
             Purpose = purpose,
             ContentSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)),
@@ -117,6 +164,7 @@ public sealed class StaffDetectionService : IStaffDetectionService
 
     public async Task<StaffDetectionDto?> ConfirmAsync(
         long recognitionId, string plateNumber, string? note, long staffUserId, int lotId,
+        string? captureId, string? eventId, string? ticketId, string? idempotencyKey, string? correlationId,
         CancellationToken cancellationToken)
     {
         var record = await _db.RecognitionRecords
@@ -129,11 +177,21 @@ public sealed class StaffDetectionService : IStaffDetectionService
 
         if (record.StaffUserId != staffUserId)
             throw new ImageValidationException("Only the staff member who captured this entry image may confirm it.");
+        if (!string.IsNullOrWhiteSpace(captureId) && record.CaptureId != captureId)
+            throw new ImageValidationException("CaptureId does not match this recognition.");
+        if (record.EventId is not null && eventId is not null && record.EventId != eventId)
+            throw new ImageValidationException("EventId does not match this recognition context.");
+        if (record.TicketId is not null && ticketId is not null && record.TicketId != ticketId)
+            throw new ImageValidationException("TicketId does not match this recognition context.");
 
         if (record.ConfirmedAt.HasValue)
         {
             if (!string.Equals(record.ConfirmedPlateNumber, plateNumber, StringComparison.OrdinalIgnoreCase))
                 throw new ImageValidationException("This recognition has already been confirmed with another plate.");
+            if (record.ConfirmationIdempotencyKey is not null && record.ConfirmationIdempotencyKey != idempotencyKey)
+                throw new ImageValidationException("This recognition was already confirmed with a different idempotency key.");
+            if (record.EventId != eventId || record.TicketId != ticketId)
+                throw new ImageValidationException("This recognition was already confirmed with different business context.");
             var existingWorkflow = await _parkingDb.StaffVehicleEntries.AnyAsync(x => x.RecognitionId == record.Id, cancellationToken);
             if (!existingWorkflow)
                 throw new ImageValidationException("Recognition was confirmed but its staff entry workflow was not created. Capture and confirm a new image.");
@@ -154,6 +212,10 @@ public sealed class StaffDetectionService : IStaffDetectionService
         record.ConfirmedByStaffUserId = staffUserId;
         record.ConfirmedAt = DateTime.UtcNow;
         record.ConfirmationNote = string.IsNullOrWhiteSpace(note) ? "Staff confirmed recognized plate." : note;
+        record.EventId = eventId ?? record.EventId;
+        record.TicketId = ticketId ?? record.TicketId;
+        record.ConfirmationIdempotencyKey = idempotencyKey;
+        record.CorrelationId = correlationId ?? record.CorrelationId;
         record.ParkingLotId = lotId;
         record.Purpose = "ENTRY";
 
@@ -179,15 +241,24 @@ public sealed class StaffDetectionService : IStaffDetectionService
 
     public async Task<StaffDetectionDto?> ConfirmExitAsync(
         long recognitionId, long sessionId, string plateNumber, string? note,
-        long staffUserId, int lotId, CancellationToken cancellationToken)
+        long staffUserId, int lotId, string? captureId, string? ticketId, string? idempotencyKey,
+        string? correlationId, CancellationToken cancellationToken)
     {
         var record = await _db.RecognitionRecords
             .FirstOrDefaultAsync(x => x.Id == recognitionId, cancellationToken);
         if (record is null) return null;
         if (record.Purpose != "EXIT" || record.ParkingLotId != lotId || record.StaffUserId != staffUserId)
             throw new ImageValidationException("Exit recognition does not belong to this staff member and parking lot.");
+        if (!string.IsNullOrWhiteSpace(captureId) && record.CaptureId != captureId)
+            throw new ImageValidationException("CaptureId does not match this recognition.");
         if (record.ConfirmedAt.HasValue && record.MatchedParkingSessionId != sessionId)
             throw new ImageValidationException("This exit recognition has already been confirmed for another parking session.");
+        if (record.ConfirmedAt.HasValue)
+        {
+            if (record.ConfirmationIdempotencyKey is not null && record.ConfirmationIdempotencyKey != idempotencyKey)
+                throw new ImageValidationException("This recognition was already confirmed with a different idempotency key.");
+            return Map(record, "CONFIRMED");
+        }
         var session = await _parkingDb.ParkingSessions.FirstOrDefaultAsync(x =>
             x.Id == sessionId && x.LotId == lotId && (x.Status == "ACTIVE" || x.Status == "PAID"), cancellationToken);
         if (session is null)
@@ -200,6 +271,9 @@ public sealed class StaffDetectionService : IStaffDetectionService
             throw new ImageValidationException("A note explaining the manual correction is required.");
 
         record.MatchedParkingSessionId = session.Id;
+        record.TicketId = ticketId ?? record.TicketId;
+        record.ConfirmationIdempotencyKey = idempotencyKey;
+        record.CorrelationId = correlationId ?? record.CorrelationId;
         record.ConfirmedPlateNumber = session.PlateNumber;
         record.ConfirmedByStaffUserId = staffUserId;
         record.ConfirmedAt = DateTime.UtcNow;
@@ -210,13 +284,27 @@ public sealed class StaffDetectionService : IStaffDetectionService
         return Map(record, "CONFIRMED");
     }
 
+    public async Task<StaffDetectionDto?> GetByIdAsync(long recognitionId, CancellationToken cancellationToken)
+    {
+        var record = await _db.RecognitionRecords.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == recognitionId, cancellationToken);
+        if (record is null) return null;
+
+        var status = record.ConfirmedAt.HasValue
+            ? "CONFIRMED"
+            : (string.IsNullOrWhiteSpace(record.FailureReason) ? "PENDING_CONFIRMATION" : "FAILED");
+
+        return Map(record, status);
+    }
+
     private static StaffDetectionDto Map(AiRecognitionRecord record, string status) =>
         new(record.Id, record.StaffUserId, record.PlateNumber, record.RawPlateNumber,
             status, record.FailureReason, record.Confidence, record.IsLegit, record.VehicleConfidence,
             Deserialize(record.VehicleBboxJson), Deserialize(record.PlateBboxJson), record.InferenceTimeMs,
             record.CreatedAt, record.ConfirmedPlateNumber, record.ConfirmedByStaffUserId,
             record.ConfirmedAt, record.ConfirmationNote, record.ParkingLotId, record.Purpose,
-            record.MatchedParkingSessionId);
+            record.MatchedParkingSessionId, record.CaptureId, record.ImageId, record.EventId, record.TicketId,
+            record.MatchedParkingSessionId, record.CorrelationId, record.IdempotencyKey, record.ModelVersion);
 
     private static string? Serialize(IReadOnlyList<int>? value) =>
         value is null ? null : JsonSerializer.Serialize(value);
