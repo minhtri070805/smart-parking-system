@@ -43,7 +43,6 @@ function StaffContent() {
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [newBookingsCount, setNewBookingsCount] = useState(0);
-  const [confirmedSession, setConfirmedSession] = useState(null);
   const loadLots = useCallback(async (signal) => {
     const result = await staffApi.assignedLots(signal);
     if (!Array.isArray(result))
@@ -192,7 +191,7 @@ function StaffContent() {
           {canUseStaffView(duty, "bookings") && newBookingsCount > 0 && view.id !== "bookings" && <Notice kind="success">Có {newBookingsCount} đặt chỗ mới. <button className="staff-text-button" disabled={busy} onClick={() => open("bookings")}>Xem xe đặt qua web</button></Notice>}
           {canUseStaffView(duty, "bookings") && (
             <section hidden={view.id !== "bookings"} aria-label="Xe đặt qua web">
-              <StaffBookings key={lotId} lotId={lotId} lotIsActive={lot.isActive} revision={revision} onChanged={refresh} onBusyChange={setBusy} onNewBookingsChange={setNewBookingsCount} onConfirmed={session => { setConfirmedSession(session); open("exit", session.id); }} />
+              <StaffBookings key={lotId} lotId={lotId} lotIsActive={lot.isActive} revision={revision} onChanged={refresh} onBusyChange={setBusy} onNewBookingsChange={setNewBookingsCount} onOpenSession={(sessionId) => open("sessions", sessionId)} />
             </section>
           )}
 
@@ -210,7 +209,6 @@ function StaffContent() {
             aria-label={view.name}
             key={`${lotId}-${view.id}`}
           >
-            {view.id === "exit" && confirmedSession?.id === Number(params.get("sessionId")) && <Notice kind="success">Đã xác nhận xe {confirmedSession.plateNumber} đỗ tại ô {confirmedSession.slotCode}. Phiên #{confirmedSession.id} đang hoạt động.</Notice>}
             {view.id === "entry" && (
               <TicketEntry {...props} />
             )}

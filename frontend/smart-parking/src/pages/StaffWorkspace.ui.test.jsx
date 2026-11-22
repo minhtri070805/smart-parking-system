@@ -100,8 +100,8 @@ beforeEach(() => {
       typeof options.body === "string" ? JSON.parse(options.body) : {};
     if (path.endsWith("/staff-assignments/my-lots"))
       return result([
-        { lotId: 1, lotName: "Bãi Trung Tâm", isActive: true },
-        { lotId: 2, lotName: "Bãi Phía Đông", isActive: true },
+        { lotId: 1, lotName: "Bãi Trung Tâm", isActive: true, ...(model.duty ? { duty: model.duty } : {}) },
+        { lotId: 2, lotName: "Bãi Phía Đông", isActive: true, ...(model.duty ? { duty: model.duty } : {}) },
       ]);
     if (path.endsWith("/operations/zones")) return result([{ id: 1, code: "VL", name: "Vãng lai", type: "TRANSIENT", isActive: true }]);
     if (path.endsWith("/operations/sessions")) return result(model.sessions);
@@ -165,6 +165,13 @@ beforeEach(() => {
             confidence: 0.92,
             status: "PENDING_CONFIRMATION",
           });
+    if (path.endsWith("/detections/501/confirm-exit"))
+      return result({
+        id: 501,
+        confirmedPlateNumber: model.sessions.find((s) => s.id === body.sessionId)?.plateNumber,
+        matchedParkingSessionId: body.sessionId,
+        confirmedByStaffUserId: 3,
+      });
     if (path.endsWith("/detections/501/confirm"))
       return result({
         id: 501,
@@ -357,10 +364,12 @@ describe("Staff workspace", () => {
     await user.type(within(form).getByLabelText("Biển số xe"), "51F12345");
     await user.click(confirmButton);
 
-    expect(await screen.findByText(/Đã xác nhận xe 51F12345 đỗ tại ô/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Xe ra" }).getAttribute("aria-current")).toBe("page");
-    expect(await screen.findByText("Chưa xác nhận thanh toán.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }).disabled).toBe(true);
+    await waitFor(() => expect(document.body.textContent).toMatch(/Đã xác nhận xe 51F-123.45 từ booking #\d+ đỗ tại ô/));
+    // Sau khi đỗ xe: ở lại trang booking, báo ACTIVE, không chuyển sang màn Xe ra.
+    expect(screen.getByRole("link", { name: "Xe đặt qua web" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByText("Đang gửi", { selector: ".staff-badge" })).toBeTruthy();
+    expect(screen.getByText(/không tự đặt trạng thái thanh toán/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Xác nhận xe đã ra bãi" })).toBeNull();
     expect(JSON.parse(requests("/confirm-parked")[0][1].body)).toEqual({
       plateNumber: "51F12345",
       slotId: 101,
@@ -415,7 +424,7 @@ describe("Staff workspace", () => {
 
     model.failUpload = false;
     await user.click(within(form).getByRole("button", { name: "Xác nhận xe đã đỗ" }));
-    expect(await screen.findByText(/Đã xác nhận xe 51F-123\.45 đỗ tại ô/)).toBeTruthy();
+    await waitFor(() => expect(document.body.textContent).toMatch(/Đã xác nhận xe 51F-123\.45 từ booking #\d+ đỗ tại ô/));
     expect(requests("/confirm-parked")).toHaveLength(1);
     expect(requests("/detections/501/confirm")).toHaveLength(0);
   });
@@ -482,7 +491,6 @@ describe("Staff workspace", () => {
     fireEvent.submit(button.closest("form")); fireEvent.submit(button.closest("form"));
     await waitFor(() => expect(requests("/entries")).toHaveLength(1));
     expect(screen.getByRole("combobox", { name: "Bãi đang làm việc" }).disabled).toBe(true);
-    expect(screen.getByRole("tab", { name: "Xe ra" }).disabled).toBe(true);
     resolveWrite(result({ id: 20, ticketCode: "VE-001", verificationStatus: "WAITING_VERIFICATION" }));
     await screen.findByText(/Đã cấp vé VE-001/);
     expect(screen.getByRole("combobox", { name: "Bãi đang làm việc" }).disabled).toBe(false);
@@ -561,6 +569,115 @@ describe("Staff workspace", () => {
     });
   });
 
+  async function parkBooking(user, id = 505) {
+    model.bookings.push({ id, lotId: 1, username: "customer05", plateNumber: "51F-123.45",
+      status: "PENDING", startTime: "2026-11-06T03:00:00Z", createdAt: "2026-11-06T02:45:00Z" });
+    mount("bookings");
+    await user.click(await screen.findByRole("button", { name: "Xác nhận xe đã đỗ" }));
+    const form = await screen.findByRole("form", { name: `Xác nhận xe tại bãi booking ${id}` });
+    await user.selectOptions(await within(form).findByLabelText("Ô thực tế xe đang đỗ"), "101");
+    await user.upload(within(form).getByLabelText(/Chọn \/ chụp ảnh/), new File(["p"], "plate.jpg", { type: "image/jpeg" }));
+    await user.type(within(form).getByLabelText("Biển số xe"), "51F-123.45");
+    return form;
+  }
+
+  it("keeps a SLOT_VERIFIER on the area screens after parking and never exposes exit", async () => {
+    model.duty = "SLOT_VERIFIER";
+    const user = userEvent.setup();
+    const form = await parkBooking(user);
+    await user.click(within(form).getByRole("button", { name: "Xác nhận xe đã đỗ" }));
+    await waitFor(() => expect(document.body.textContent).toMatch(/Đã xác nhận xe 51F-123\.45 từ booking #\d+ đỗ tại ô/));
+    expect(screen.getByText("Đang gửi", { selector: ".staff-badge" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Xe ra" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Xe đặt qua web" }).getAttribute("aria-current")).toBe("page");
+    await user.click(screen.getByRole("button", { name: "Xem trong Xe đang gửi" }));
+    expect(await screen.findByRole("link", { name: "Xe đang gửi" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("link", { name: "Xe đang gửi" }).getAttribute("aria-current")).toBe("page"));
+    expect(requests("/check-out")).toHaveLength(0);
+  });
+
+  it("reloads bookings and slots when confirm-parked fails, without a second session", async () => {
+    const user = userEvent.setup();
+    const form = await parkBooking(user, 506);
+    const original = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((url, options = {}) =>
+      url.endsWith("/confirm-parked")
+        ? Response.json({ message: "Ô đã được xe khác sử dụng." }, { status: 409 })
+        : original(url, options));
+    const slotCalls = () => fetchMock.mock.calls.filter(([url]) => url.includes("/unmatched-occupied-slots")).length;
+    const before = slotCalls();
+    await user.click(within(form).getByRole("button", { name: "Xác nhận xe đã đỗ" }));
+    expect(await screen.findByText("Ô đã được xe khác sử dụng.")).toBeTruthy();
+    await waitFor(() => expect(slotCalls()).toBeGreaterThan(before));
+    expect(requests("/confirm-parked")).toHaveLength(1);
+    expect(model.sessions).toHaveLength(1);
+  });
+
+  it("explains an unpaid ACTIVE exit and picks up PAID only from the server on recheck", async () => {
+    const user = userEvent.setup();
+    mount("exit", "&sessionId=10");
+    await screen.findByText("Chưa xác nhận thanh toán.");
+    expect(screen.getByText(/không thu phí hoặc tự đặt PAID/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Kiểm tra lại trạng thái" }));
+    expect(await screen.findByText(/trạng thái vẫn là ACTIVE/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }).disabled).toBe(true);
+    model.sessions[0].status = "PAID";
+    model.sessions[0].totalFee = 15000;
+    await user.click(screen.getByRole("button", { name: "Kiểm tra lại trạng thái" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }).disabled).toBe(false));
+    expect(screen.queryByText("Chưa xác nhận thanh toán.")).toBeNull();
+    expect(fetchMock.mock.calls.filter(([, o = {}]) => o.method === "POST" && !String(o.body).startsWith("FormData")).length).toBe(0);
+  });
+
+  it("tells Staff an e-ticket is unverified instead of blaming payment", async () => {
+    model.sessions[0] = { ...primary, eventId: "e1", ticketCode: "VE-001", verificationStatus: "WAITING_VERIFICATION", revision: 1 };
+    mount("exit", "&sessionId=10");
+    expect(await screen.findByText("Chưa xác minh xe tại ô.")).toBeTruthy();
+    expect(screen.queryByText("Chưa xác nhận thanh toán.")).toBeNull();
+  });
+
+  it("uses staff-confirmed AI exit recognition for an e-ticket session and sends its id", async () => {
+    model.sessions[0] = { ...primary, status: "PAID", totalFee: 15000, eventId: "e1", ticketCode: "VE-001", verificationStatus: "VERIFIED", revision: 2 };
+    const user = userEvent.setup();
+    mount("exit", "&sessionId=10");
+    await user.type(await screen.findByLabelText("Mã vé đã đối chiếu"), "ve-001");
+    await user.upload(screen.getByLabelText(/Chọn \/ chụp ảnh/), new File(["p"], "exit.jpg", { type: "image/jpeg" }));
+    await user.click(screen.getByRole("button", { name: "Nhận diện biển số" }));
+    await screen.findByText(/AI đọc được/);
+    expect(fetchMock.mock.calls.find(([url]) => url.includes("/staff/detect"))[0]).toContain("purpose=EXIT");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }));
+    await screen.findByText(/Phiên đã kết thúc/);
+    expect(JSON.parse(requests("/detections/501/confirm-exit")[0][1].body)).toMatchObject({ sessionId: 10, plateNumber: "51F12345", lotId: 1 });
+    expect(JSON.parse(requests("/check-out")[0][1].body)).toMatchObject({ exitRecognitionId: 501, ticketCode: "VE-001", confirmedPlateNumber: "51F12345" });
+    expect(requests("/check-out")).toHaveLength(1);
+  });
+
+  it("does not send an exit recognition id when the e-ticket plate is typed manually", async () => {
+    model.sessions[0] = { ...primary, status: "PAID", totalFee: 15000, eventId: "e1", ticketCode: "VE-001", verificationStatus: "VERIFIED", revision: 2 };
+    const user = userEvent.setup();
+    mount("exit", "&sessionId=10");
+    await user.type(await screen.findByLabelText("Mã vé đã đối chiếu"), "VE-001");
+    await user.type(screen.getByLabelText("Biển số thực tế tại cổng ra"), "51F12345");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }));
+    await screen.findByText(/Phiên đã kết thúc/);
+    expect(JSON.parse(requests("/check-out")[0][1].body).exitRecognitionId).toBeUndefined();
+    expect(requests("/staff/detect")).toHaveLength(0);
+  });
+
+  it("unlocks the entry form after a definitive rejection but keeps the typed data", async () => {
+    const original = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((url, options = {}) =>
+      url.endsWith("/entries") ? Response.json({ message: "Vé đang được dùng." }, { status: 409 }) : original(url, options));
+    const user = userEvent.setup(); mount(); await entryDraft(user);
+    await user.click(screen.getByRole("button", { name: "Cấp vé và đưa vào hàng chờ" }));
+    await screen.findByText("Vé đang được dùng.");
+    expect(screen.getByLabelText("Mã vé").closest("fieldset").disabled).toBe(false);
+    expect(screen.getByLabelText("Mã vé").value).toBe("VE-001");
+    expect(screen.getByRole("button", { name: "Cấp vé và đưa vào hàng chờ" })).toBeTruthy();
+  });
+
   it("disables an EMPTY slot linked to another active session", async () => {
     model.sessions.push({
       ...primary,
@@ -593,7 +710,7 @@ describe("Staff workspace", () => {
       slotId: 101,
       notes: "",
     });
-    await user.click(screen.getByRole("tab", { name: "Điều phối" }));
+    await user.click(screen.getByRole("link", { name: "Điều phối" }));
     await screen.findByText("Đã xác minh", { selector: ".staff-badge" });
     expect(screen.getByText("Đã lưu kết quả")).toBeTruthy();
   });

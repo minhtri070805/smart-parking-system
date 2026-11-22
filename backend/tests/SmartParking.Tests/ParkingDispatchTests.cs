@@ -702,34 +702,6 @@ public class ParkingDispatchTests
     }
 
     [Fact]
-    public async Task CheckIn_WhenSlotAlreadyAssignedToActiveDispatch_Fails()
-    {
-        var (dispatchService, context, lot, _, slots, session1) = await SetupTestEnvironmentAsync();
-        var authService = new ParkingAuthorizationService(context);
-        var sessionService = new ParkingSessionService(context, authService, NullLogger<ParkingSessionService>.Instance);
-
-        // Gán ô A1-01 cho session 1
-        var (s1, _, _) = await dispatchService.CreateDispatchAsync(new CreateDispatchRequestDto
-        {
-            SessionId = session1.Id,
-            AssignedSlotId = slots[0].Id
-        }, 1, Roles.Admin, "127.0.0.1");
-        Assert.True(s1);
-
-        // Xe khác check-in và trực tiếp chỉ định ô A1-01 -> Phải bị từ chối
-        var checkInReq = new CheckInRequestDto
-        {
-            LotId = lot.Id,
-            PlateNumber = "30A-99999",
-            SlotId = slots[0].Id
-        };
-        var (sCheckIn, msgCheckIn, _) = await sessionService.CheckInAsync(checkInReq, 1, Roles.Admin, "127.0.0.1");
-
-        Assert.False(sCheckIn);
-        Assert.Contains("hiện đang được phân công", msgCheckIn);
-    }
-
-    [Fact]
     public async Task CheckOut_WhenSessionHasPendingOrAssignedDispatch_CancelsDispatchAndFreesSlot()
     {
         var (dispatchService, context, _, _, slots, session) = await SetupTestEnvironmentAsync();
@@ -744,7 +716,8 @@ public class ParkingDispatchTests
         Assert.True(s1);
 
         // Check-out khi dispatch vẫn đang ASSIGNED (chưa đỗ thực tế)
-        var (sCheckOut, _, sessionDto) = await sessionService.CheckOutAsync(session.Id, new CheckOutRequestDto(), 1, Roles.Admin, "127.0.0.1");
+        Assert.True((await sessionService.RecordPaymentClearanceAsync(session.Id, 1000m, "TX-TEST-" + session.Id, "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true)).Success);
+        var (sCheckOut, _, sessionDto) = await sessionService.CheckOutAsync(session.Id, new CheckOutRequestDto { ConfirmedPlateNumber = session.PlateNumber }, 1, Roles.Admin, "127.0.0.1");
         Assert.True(sCheckOut);
 
         // Dispatch phải được tự động chuyển sang CANCELLED, không để tồn đọng
@@ -779,7 +752,8 @@ public class ParkingDispatchTests
         Assert.Equal(SlotPhysicalStatuses.Occupied, slotOccupied!.PhysicalStatus);
 
         // 3. Check-out -> Ô đỗ trở về EMPTY
-        var (s3, _, _) = await sessionService.CheckOutAsync(session.Id, new CheckOutRequestDto(), 1, Roles.Admin, "127.0.0.1");
+        Assert.True((await sessionService.RecordPaymentClearanceAsync(session.Id, 1000m, "TX-TEST-" + session.Id, "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true)).Success);
+        var (s3, _, _) = await sessionService.CheckOutAsync(session.Id, new CheckOutRequestDto { ConfirmedPlateNumber = session.PlateNumber }, 1, Roles.Admin, "127.0.0.1");
         Assert.True(s3);
         var slotFreed = await context.ParkingSlots.FindAsync(slots[0].Id);
         Assert.Equal(SlotPhysicalStatuses.Empty, slotFreed!.PhysicalStatus);
@@ -813,7 +787,8 @@ public class ParkingDispatchTests
         Assert.Equal(SlotPhysicalStatuses.Occupied, slotActual!.PhysicalStatus);
 
         // 3. Check-out -> Phải giải phóng ô thực tế A1-02 về EMPTY
-        var (s3, _, _) = await sessionService.CheckOutAsync(session.Id, new CheckOutRequestDto(), 1, Roles.Admin, "127.0.0.1");
+        Assert.True((await sessionService.RecordPaymentClearanceAsync(session.Id, 1000m, "TX-TEST-" + session.Id, "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true)).Success);
+        var (s3, _, _) = await sessionService.CheckOutAsync(session.Id, new CheckOutRequestDto { ConfirmedPlateNumber = session.PlateNumber }, 1, Roles.Admin, "127.0.0.1");
         Assert.True(s3);
 
         var slotActualFreed = await context.ParkingSlots.FindAsync(slots[1].Id);

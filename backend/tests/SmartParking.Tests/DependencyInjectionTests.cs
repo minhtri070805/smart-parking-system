@@ -53,7 +53,7 @@ public class DependencyInjectionTests
     public void Core_UsesExistingAndRecognitionDatabasesAndCallsAiServiceDirectly()
     {
         var configuration = RecognitionConfiguration("recognition_test");
-        using var provider = new ServiceCollection().AddParkingPersistence(configuration)
+        using var provider = new ServiceCollection().AddSingleton(configuration).AddParkingPersistence(configuration)
             .AddInfrastructureServices(configuration).BuildServiceProvider();
         using var scope = provider.CreateScope();
 

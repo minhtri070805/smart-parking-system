@@ -145,3 +145,24 @@ public class UnmatchedSlotDto
     public string PhysicalStatus { get; set; } = string.Empty;
     public DateTime? LastStatusChangedAt { get; set; }
 }
+
+/// <summary>
+/// Hợp đồng Core → Payment: dữ kiện để Payment tự tính phí phía server. Thời gian theo UTC.
+/// BillingStart/End chưa được nhóm chốt nên Core trả dữ kiện gốc (giờ vào, giờ xác minh) thay vì một mốc tự suy diễn.
+/// </summary>
+public sealed record PaymentBillingContextDto(
+    long SessionId,
+    int LotId,
+    int? ZoneId,
+    long? PolicyId,
+    long? BookingId,
+    string PlateNumber,
+    string Status,
+    string VerificationStatus,
+    bool Ticketed,
+    DateTime EnteredAt,
+    DateTime? VerifiedAt,
+    DateTime? CheckedOutAt,
+    decimal TotalFee,
+    DateTime? PaidAt,
+    DateTime GeneratedAt);
