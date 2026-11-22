@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import RequireRole from "../components/RequireRole.jsx";
 import StaffBookings from "../components/staff/StaffBookings.jsx";
+import BookingDispatchQueue from "../components/staff/BookingDispatchQueue.jsx";
 import { StaffExit } from "../components/staff/StaffExit.jsx";
 import {
   StaffDispatches,
@@ -20,7 +21,8 @@ import { canUseStaffView } from "../services/staffDuty.js";
 import "../staff.css";
 
 const views = [
-  { id: "bookings", name: "Xe đặt qua web", description: "Xác nhận xe đã đặt và vị trí thực tế" },
+  { id: "booking-dispatch", name: "Phân ô xe đặt web", description: "Chọn khu vực và ô đỗ cho xe đã qua cổng" },
+  { id: "bookings", name: "Xe đặt qua web", description: "Xác nhận xe đặt trước đến cổng" },
   { id: "entry", name: "Xe vào", description: "Tiếp nhận xe vào khu bình thường" },
   { id: "exit", name: "Xe ra", description: "Đối chiếu tại cổng ra" },
   {
@@ -191,7 +193,7 @@ function StaffContent() {
           {canUseStaffView(duty, "bookings") && newBookingsCount > 0 && view.id !== "bookings" && <Notice kind="success">Có {newBookingsCount} đặt chỗ mới. <button className="staff-text-button" disabled={busy} onClick={() => open("bookings")}>Xem xe đặt qua web</button></Notice>}
           {canUseStaffView(duty, "bookings") && (
             <section hidden={view.id !== "bookings"} aria-label="Xe đặt qua web">
-              <StaffBookings key={lotId} lotId={lotId} lotIsActive={lot.isActive} revision={revision} onChanged={refresh} onBusyChange={setBusy} onNewBookingsChange={setNewBookingsCount} onOpenSession={(sessionId) => open("sessions", sessionId)} />
+              <StaffBookings key={lotId} lotId={lotId} lotIsActive={lot.isActive} revision={revision} onChanged={refresh} onBusyChange={setBusy} onNewBookingsChange={setNewBookingsCount} />
             </section>
           )}
 
@@ -217,6 +219,9 @@ function StaffContent() {
                 {...props}
                 initialSessionId={params.get("sessionId")}
               />
+            )}
+            {view.id === "booking-dispatch" && (
+              <BookingDispatchQueue {...props} />
             )}
             {view.id === "verify" && (
               <TicketVerification

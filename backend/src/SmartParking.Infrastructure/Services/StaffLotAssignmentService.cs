@@ -38,9 +38,16 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
     public async Task<PagedResult<StaffCandidateDto>> GetCandidatesAsync(
         StaffCandidateFilterDto filter, long actorId, CancellationToken ct = default)
     {
-        if (await GetAssignmentActorAsync(actorId, ct) == null)
+        var actor = await GetAssignmentActorAsync(actorId, ct);
+        if (actor == null)
             return PagedResult<StaffCandidateDto>.Create([], 0, filter.Page, filter.PageSize);
-        var query = _context.Users.AsNoTracking().Where(u => u.Role.Code == Roles.Staff &&
+        var role = actor.Role.Code == Roles.Admin
+            ? (filter.Role?.Trim().ToUpperInvariant() ?? Roles.Staff)
+            : Roles.Staff;
+        if (role != Roles.Staff && role != Roles.Manager)
+            return PagedResult<StaffCandidateDto>.Create([], 0, filter.Page, filter.PageSize);
+
+        var query = _context.Users.AsNoTracking().Where(u => u.Role.Code == role &&
             u.IsActive && u.ApprovalStatus == "APPROVED");
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
@@ -51,7 +58,7 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
         var count = await query.CountAsync(ct);
         var items = await query.OrderBy(u => u.FullName).ThenBy(u => u.Id)
             .Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize)
-            .Select(u => new StaffCandidateDto { Id = u.Id, Username = u.Username, FullName = u.FullName, Email = u.Email }).ToListAsync(ct);
+            .Select(u => new StaffCandidateDto { Id = u.Id, Username = u.Username, FullName = u.FullName, Email = u.Email, Role = u.Role.Code }).ToListAsync(ct);
         return PagedResult<StaffCandidateDto>.Create(items, count, filter.Page, filter.PageSize);
     }
 
@@ -95,9 +102,16 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
         }
 
         var roleCode = targetUser.Role.Code;
-        if (roleCode != Roles.Staff)
+        if (roleCode != Roles.Staff && !(actor.Role.Code == Roles.Admin && roleCode == Roles.Manager))
         {
-            return (false, "Chỉ có thể phân công cho tài khoản STAFF.", null);
+            return (false, "Chỉ Admin mới có thể phân công tài khoản Manager; tài khoản khác không hợp lệ.", null);
+        }
+
+        if (roleCode == Roles.Manager)
+        {
+            request.Duty = StaffDuties.Gate;
+            request.FloorId = null;
+            request.ZoneId = null;
         }
 
         var duty = string.IsNullOrWhiteSpace(request.Duty)
@@ -122,17 +136,22 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
             return (false, $"Bãi đỗ xe '{targetLot.Name}' hiện đang tạm đóng hoặc ngừng hoạt động.", null);
         }
 
-        if (request.FloorId is not > 0)
-            return (false, "Chọn tầng được phân công.", null);
-        var floor = await _context.ParkingFloors.FirstOrDefaultAsync(f => f.Id == request.FloorId && f.LotId == request.LotId, ct);
-        if (floor == null || !floor.IsActive)
-            return (false, "Tầng phải đang hoạt động và thuộc đúng bãi được phân công.", null);
+        ParkingFloor? floor = null;
+        ParkingZone? zone = null;
         var isArea = duty == StaffDuties.SlotVerifier;
-        var zone = isArea ? await _context.ParkingZones.FirstOrDefaultAsync(z => z.Id == request.ZoneId && z.FloorId == floor.Id && z.LotId == request.LotId && z.IsActive, ct) : null;
-        if (isArea && zone == null)
-            return (false, "Tầng và khu vực phải đang hoạt động, thuộc đúng bãi và đúng quan hệ tầng–khu.", null);
-        if (!isArea && request.ZoneId.HasValue)
-            return (false, "Phân công trực cổng chỉ chọn tầng, không chọn khu vực.", null);
+        if (roleCode == Roles.Staff)
+        {
+            if (request.FloorId is not > 0)
+                return (false, "Chọn tầng được phân công.", null);
+            floor = await _context.ParkingFloors.FirstOrDefaultAsync(f => f.Id == request.FloorId && f.LotId == request.LotId, ct);
+            if (floor == null || !floor.IsActive)
+                return (false, "Tầng phải đang hoạt động và thuộc đúng bãi được phân công.", null);
+            zone = isArea ? await _context.ParkingZones.FirstOrDefaultAsync(z => z.Id == request.ZoneId && z.FloorId == floor.Id && z.LotId == request.LotId && z.IsActive, ct) : null;
+            if (isArea && zone == null)
+                return (false, "Tầng và khu vực phải đang hoạt động, thuộc đúng bãi và đúng quan hệ tầng–khu.", null);
+            if (!isArea && request.ZoneId.HasValue)
+                return (false, "Phân công trực cổng chỉ chọn tầng, không chọn khu vực.", null);
+        }
 
         var hasActiveAssignment = await _context.StaffLotAssignments
             .AnyAsync(a => a.UserId == targetUser.Id && a.LotId == targetLot.Id && a.IsActive, ct);
@@ -151,8 +170,8 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
             {
                 UserId = targetUser.Id,
                 LotId = targetLot.Id,
-                FloorId = floor.Id,
-                ZoneId = isArea ? zone!.Id : null,
+                FloorId = floor?.Id,
+                ZoneId = zone?.Id,
                 Floor = floor,
                 Zone = zone,
                 Duty = duty,
@@ -221,7 +240,7 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
 
         var baseQuery = _context.StaffLotAssignments
             .AsNoTracking()
-            .Where(a => a.User.Role.Code == Roles.Staff);
+            .Where(a => a.User.Role.Code == Roles.Staff || a.User.Role.Code == Roles.Manager);
 
         if (actor.Role.Code != Roles.Admin)
         {
@@ -233,7 +252,8 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
                     .Select(a => a.LotId)
                     .ToListAsync(ct);
 
-                baseQuery = baseQuery.Where(a => managedLotIds.Contains(a.LotId));
+                baseQuery = baseQuery.Where(a => managedLotIds.Contains(a.LotId) &&
+                    a.User.Role.Code == Roles.Staff);
             }
             else
             {
@@ -333,7 +353,8 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
                 .Include(a => a.RevokedByUser)
                 .FirstOrDefaultAsync(a => a.Id == id, ct);
 
-            if (assignment == null || assignment.User.Role.Code != Roles.Staff)
+            if (assignment == null ||
+                (assignment.User.Role.Code != Roles.Staff && assignment.User.Role.Code != Roles.Manager))
             {
                 return null;
             }
@@ -365,7 +386,8 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
         {
             var dto = await _context.StaffLotAssignments
                 .AsNoTracking()
-                .Where(a => a.Id == id && a.User.Role.Code == Roles.Staff)
+                .Where(a => a.Id == id &&
+                    (a.User.Role.Code == Roles.Staff || a.User.Role.Code == Roles.Manager))
                 .Select(a => new StaffLotAssignmentDto
                 {
                     Id = a.Id,
@@ -444,8 +466,10 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
 
         if (actor.Role.Code == Roles.Manager && !await ManagesLotAsync(actorId, assignment.LotId, ct))
             return (false, "Bạn không có quyền thu hồi phân công tại bãi này.");
-        if (assignment.User.Role.Code != Roles.Staff)
-            return (false, "Chỉ xử lý phân công cho tài khoản STAFF trong chức năng này.");
+        if (assignment.User.Role.Code == Roles.Manager && actor.Role.Code != Roles.Admin)
+            return (false, "Chỉ Admin mới được thu hồi phân công của tài khoản Manager.");
+        if (assignment.User.Role.Code != Roles.Staff && assignment.User.Role.Code != Roles.Manager)
+            return (false, "Chỉ xử lý phân công cho tài khoản STAFF hoặc MANAGER.");
 
         if (!assignment.IsActive)
         {

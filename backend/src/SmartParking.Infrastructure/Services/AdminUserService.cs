@@ -130,7 +130,10 @@ public class AdminUserService : IAdminUserService
                 LotName = a.Lot.Name,
                 LotAddress = a.Lot.Address,
                 IsActive = a.IsActive,
-                AssignedAt = a.AssignedAt
+                AssignedAt = a.AssignedAt,
+                Duty = a.Duty,
+                FloorId = a.FloorId,
+                ZoneId = a.ZoneId
             })
             .ToListAsync(ct);
 

@@ -32,7 +32,8 @@ const slotLabels = {
 
 const bookingStatusLabels = {
   PENDING: "Chờ xe đến",
-  CHECKED_IN: "Đã nhận xe",
+  CHECKED_IN: "Đã qua cổng · chờ điều phối",
+  PARKED: "Đang đỗ",
   CANCELLED: "Đã hủy",
   EXPIRED: "Đã hết hạn",
 };
@@ -552,11 +553,20 @@ function DashboardContent({ publicView = false }) {
                 type="button"
                 className="btn btn--primary"
                 onClick={bookingOpen ? () => setBookingOpen(false) : openBookingForm}
-                disabled={bookingSaving}
+                disabled={
+                  bookingSaving ||
+                  (!bookingOpen &&
+                    currentCapacity &&
+                    currentCapacity.availableForBooking <= 0)
+                }
                 aria-expanded={bookingOpen}
                 aria-controls="customer-booking-form"
               >
-                {bookingOpen ? "Đóng form đặt chỗ" : "Đặt chỗ tại bãi này"}
+                {bookingOpen
+                  ? "Đóng form đặt chỗ"
+                  : currentCapacity && currentCapacity.availableForBooking <= 0
+                    ? "Hết chỗ đặt trước"
+                    : "Đặt chỗ tại bãi này"}
               </button>
             )}
           </div>
@@ -815,6 +825,19 @@ function DashboardContent({ publicView = false }) {
               </span>
             )}
           </div>
+          {currentCapacity?.availableForBooking <= 0 &&
+            slots.some(
+              (slot) =>
+                slot.physicalStatus === "EMPTY" &&
+                slot.isAvailable &&
+                slot.isBookingEligible === false,
+            ) && (
+              <p className="customer-message" role="note">
+                Tầng này có ô trống vật lý trong khu không nhận đặt chỗ vãng lai
+                (ví dụ khu cố định / vé tháng). Đặt trước chỉ nhận ở khu vãng lai
+                (TRANSIENT).
+              </p>
+            )}
 
           {selectedFloor && (
             <>
@@ -869,7 +892,10 @@ function DashboardContent({ publicView = false }) {
                             ? "UNAVAILABLE"
                             : slot.physicalStatus;
                         const status =
-                          slotLabels[effectiveStatus] || effectiveStatus;
+                          slot.physicalStatus === "EMPTY" &&
+                          slot.isBookingEligible === false
+                            ? `${slot.zoneName || "Khu này"} · không nhận đặt trước`
+                            : slotLabels[effectiveStatus] || effectiveStatus;
                         return (
                           <li
                             key={slot.id}

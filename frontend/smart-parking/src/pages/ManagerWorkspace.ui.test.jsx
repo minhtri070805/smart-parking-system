@@ -6,12 +6,13 @@ import Header from "../components/Header.jsx";
 import RequireRole from "../components/RequireRole.jsx";
 import { navIsActive } from "../services/navigation.js";
 import { setAuthSession, clearAuthSession } from "../services/authSession.js";
-let fetcher, closed, deny, occupied;
+let fetcher, closed, deny, occupied, parked;
 const page = (items) => ({ items, totalPages: 1, totalCount: items.length });
 beforeEach(() => {
   closed = false;
   deny = false;
   occupied = false;
+  parked = false;
   setAuthSession({
     accessToken: "test",
     userProfile: { role: "MANAGER", fullName: "Quản lý demo" },
@@ -39,6 +40,8 @@ beforeEach(() => {
         data = {
           totalCapacity: 50,
           availableForWalkIn: 20,
+          physicalOccupiedSlotsCount: 1,
+          activeReservationsCount: 0,
           unassignedSessionsCount: 1,
         };
       else if (url.includes("/floors?")) data = [{ id: 3, name: "Tầng 1" }];
@@ -67,7 +70,26 @@ beforeEach(() => {
         };
       else if (url.includes("/parking-sessions/active"))
         data = page([
-          { id: 10, plateNumber: "51A-12345", status: "ACTIVE", lotId: 1 },
+          {
+            id: 10,
+            plateNumber: "51A-12345",
+            status: "ACTIVE",
+            lotId: 1,
+            bookingId: 42,
+            bookingStatus: "PARKED",
+            customerName: "Nguyễn An",
+            customerPhoneNumber: "0900000000",
+            customerEmail: "an@example.com",
+            vehicleBrand: "Toyota",
+            vehicleModel: "Vios",
+            vehicleColor: "Trắng",
+            currentSlotId: parked ? 5 : null,
+            slotCode: parked ? "A-01" : null,
+            floorNumber: parked ? 1 : null,
+            slotPhysicalStatus: parked ? "OCCUPIED" : null,
+            checkInTime: new Date(Date.now() - 65 * 60_000).toISOString(),
+            checkInImageUrl: "https://images.example.test/car.jpg",
+          },
         ]);
       else if (url.includes("/parking-sessions/10"))
         data = {
@@ -75,6 +97,21 @@ beforeEach(() => {
           plateNumber: "51A-12345",
           status: "ACTIVE",
           lotName: "Bãi A",
+          bookingId: 42,
+          bookingStatus: "PARKED",
+          customerName: "Nguyễn An",
+          customerPhoneNumber: "0900000000",
+          customerEmail: "an@example.com",
+          vehicleBrand: "Toyota",
+          vehicleModel: "Vios",
+          vehicleColor: "Trắng",
+          currentSlotId: parked ? 5 : null,
+          slotCode: parked ? "A-01" : null,
+          floorNumber: parked ? 1 : null,
+          slotPhysicalStatus: parked ? "OCCUPIED" : null,
+          checkInTime: new Date(Date.now() - 65 * 60_000).toISOString(),
+          checkInImageUrl: "https://images.example.test/car.jpg",
+          totalFee: 0,
         };
       else if (url.includes("/parking-lots/"))
         data = { id: 1, name: "Bãi A", isActive: !closed };
@@ -175,6 +212,19 @@ it("scopes sessions to the selected lot and resets details when switching lots",
     ).toBe(true),
   );
   expect(screen.queryByRole("heading", { name: "Phiên #10" })).toBeNull();
+});
+it("shows parked vehicle details on the default Manager overview", async () => {
+  parked = true;
+  mount();
+  expect(await screen.findByText("Nguyễn An")).toBeTruthy();
+  expect(screen.getByText("Ô đang có xe")).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: "Xem phiên #10" }));
+  await screen.findByRole("heading", { name: "Phiên #10" });
+  expect(screen.getAllByText("0900000000").length).toBeGreaterThan(0);
+  expect(screen.getByText("Toyota Vios")).toBeTruthy();
+  expect(screen.getByText("Trắng")).toBeTruthy();
+  expect(screen.getAllByText(/1 giờ \d+ phút/).length).toBeGreaterThan(0);
+  expect(screen.getByText(/#42 · Đang đỗ bãi/)).toBeTruthy();
 });
 it("uses active navigation for query tabs and exposes only Manager links", () => {
   render(

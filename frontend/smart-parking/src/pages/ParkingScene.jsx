@@ -125,7 +125,7 @@ export default function ParkingScene() {
           </>}
           {role === "STAFF" && canArea && <>
             <Link className="btn btn--primary" to={`/staff?view=verify&${context}`}>Xác minh ô thực tế</Link>
-            <Link className="btn btn--outline" to={`/staff?view=bookings&${context}`}>Xe đặt qua web</Link>
+            <Link className="btn btn--outline" to={`/staff?view=booking-dispatch&${context}`}>Phân ô xe đặt web</Link>
             <Link className="btn btn--outline" to={`/staff?view=dispatches&${context}`}>Điều phối bãi</Link>
           </>}
           {role === "USER" && <>

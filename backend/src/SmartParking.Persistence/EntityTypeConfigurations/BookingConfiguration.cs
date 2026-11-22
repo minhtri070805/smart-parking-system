@@ -10,7 +10,7 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
     {
         builder.ToTable("bookings", t =>
         {
-            t.HasCheckConstraint("chk_bookings_status", "status IN ('PENDING', 'CHECKED_IN', 'CANCELLED', 'EXPIRED')");
+            t.HasCheckConstraint("chk_bookings_status", "status IN ('PENDING', 'CHECKED_IN', 'PARKED', 'CANCELLED', 'EXPIRED')");
             t.HasCheckConstraint("chk_bookings_time_order", "end_time IS NULL OR end_time >= start_time");
             t.HasCheckConstraint("chk_bookings_plate_normalized", "plate_number = UPPER(TRIM(plate_number))");
         });
