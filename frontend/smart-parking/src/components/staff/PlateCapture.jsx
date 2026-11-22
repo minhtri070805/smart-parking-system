@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import {
   normalizePlate,
+  platesMatch,
   staffApi,
   validatePhoto,
 } from "../../services/staffApi.js";
@@ -25,8 +26,7 @@ export async function prepareCapture(capture, update, lotId, sessionId) {
     throw new Error("Nhập lý do sửa biển số AI trước khi xác nhận.");
   if (
     capture.recognition?.id &&
-    (normalizePlate(capture.recognition.confirmedPlateNumber || "") !==
-      normalizePlate(capture.plate) ||
+    (!platesMatch(capture.recognition.confirmedPlateNumber, capture.plate) ||
       (sessionId && capture.recognition.matchedParkingSessionId !== sessionId))
   ) {
     const result = sessionId
@@ -45,10 +45,8 @@ export async function prepareCapture(capture, update, lotId, sessionId) {
           lotId,
         capture.recognition.captureId,
         );
-    if (
-      normalizePlate(result?.data?.confirmedPlateNumber || "") !==
-      normalizePlate(capture.plate)
-    ) {
+    // Core lưu biển số chuẩn của phiên khi confirm-exit nên so khớp bỏ qua dấu cách/chấm/gạch.
+    if (!platesMatch(result?.data?.confirmedPlateNumber, capture.plate)) {
       throw new Error(
         "Chưa xác nhận được biển số nhận diện. Vui lòng thử lại trước khi ghi nhận phiên.",
       );

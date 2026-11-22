@@ -16,16 +16,35 @@ Accept: application/json
 GET {{SmartParking.Api_HostAddress}}/swagger/v1/swagger.json
 Accept: application/json
 
-### Confirm a pending booking at the actual parked slot (replace token, booking ID, slot ID, and image URL)
-POST {{SmartParking.Api_HostAddress}}/api/v1/parking-sessions/bookings/1/confirm-parked
-Authorization: ******
+### Gate staff: check in a pending booking and hand it to dispatch (replace token, booking ID, and saved image URL)
+POST {{SmartParking.Api_HostAddress}}/api/v1/parking-sessions/bookings/1/check-in-at-gate
+Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
   "plateNumber": "51F-123.45",
-  "slotId": 101,
   "checkInImageUrl": "https://example.com/verified-plate.jpg"
 }
+
+### Dispatch staff: assign a checked-in booking session to a parking slot (replace session and slot IDs)
+POST {{SmartParking.Api_HostAddress}}/api/v1/parking-sessions/1001/assign-booking-slot
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "slotId": 101,
+  "notes": "Đã nhận xe tại khu B1"
+}
+
+### Gate staff: list pending bookings at the assigned lot
+GET {{SmartParking.Api_HostAddress}}/api/v1/bookings?lotId=1&status=PENDING&pageNumber=1&pageSize=100
+Authorization: Bearer {{accessToken}}
+Accept: application/json
+
+### Dispatch staff: list vehicles checked in and waiting for slot assignment
+GET {{SmartParking.Api_HostAddress}}/api/v1/bookings?lotId=1&status=CHECKED_IN&pageNumber=1&pageSize=100
+Authorization: Bearer {{accessToken}}
+Accept: application/json
 
 ### Upload an image (replace the bearer token and local file path)
 POST {{SmartParking.Api_HostAddress}}/api/v1/images

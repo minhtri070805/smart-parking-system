@@ -6,6 +6,9 @@ using SmartParking.Api.Controllers;
 using SmartParking.Application.Common.Helpers;
 using SmartParking.Application.DTOs.Bookings;
 using SmartParking.Application.DTOs.Sessions;
+using SmartParking.Persistence.Repositories;
+using SmartParking.Application.UseCases.ParkingOperations;
+using SmartParking.Application.DTOs.Operations;
 using SmartParking.Domain.Constants;
 using SmartParking.Domain.Entities;
 using SmartParking.Infrastructure.Services;
@@ -115,6 +118,21 @@ public class BookingAndCapacityTests
         };
         context.ParkingFloors.Add(floor);
 
+        // Schema hiện tại: mọi ô thuộc một khu; khu TRANSIENT mới bán chỗ cho xe vãng lai.
+        var zone = new ParkingZone
+        {
+            Id = lotId,
+            LotId = lotId,
+            Lot = lot,
+            FloorId = floor.Id,
+            Floor = floor,
+            Code = $"Z{lotId}",
+            Name = $"Khu {lotId}",
+            Type = "TRANSIENT",
+            IsActive = true
+        };
+        context.ParkingZones.Add(zone);
+
         var slots = new List<ParkingSlot>();
         for (int i = 1; i <= slotCount; i++)
         {
@@ -123,6 +141,8 @@ public class BookingAndCapacityTests
             {
                 Id = lotId * 100 + i,
                 FloorId = floor.Id,
+                ZoneId = zone.Id,
+                Zone = zone,
                 SlotCode = $"S-{lotId}-{i:D2}",
                 PhysicalStatus = isMaintenance ? SlotPhysicalStatuses.Maintenance : SlotPhysicalStatuses.Empty,
                 IsActive = !isMaintenance,
@@ -135,6 +155,18 @@ public class BookingAndCapacityTests
 
         context.SaveChanges();
         return (lot, floor, slots);
+    }
+
+    // Xe vãng lai vào bãi bằng vé tại khu TRANSIENT (operations/entries); check-in biển số kiểu cũ đã ngừng.
+    private static Task<OperationSessionDto> EnterWalkInAsync(TestSmartParkingDbContext context, int lotId, string ticket) =>
+        new ParkingOperationsService(context, new ParkingAuthorizationService(context), new ParkingOperationsWriter(context))
+            .Enter(lotId, new EntryRequest(Guid.NewGuid(), lotId, ticket, null, "walk-in test"), 1, Roles.Admin, default);
+
+    private static void AddApprovedPolicy(TestSmartParkingDbContext context, int lotId)
+    {
+        context.ParkingPolicies.Add(new ParkingPolicy { LotId = lotId, CreatedBy = 1, ApprovedBy = 1, ApprovedAt = DateTime.UtcNow,
+            EffectiveFrom = DateTime.UtcNow.AddMinutes(-5), DecisionReference = "test" });
+        context.SaveChanges();
     }
 
     #region Phase 3 & 4: Booking Creation & Capacity Validation
@@ -387,6 +419,7 @@ public class BookingAndCapacityTests
     {
         var (bookingService, _, _, context) = await CreateServicesAsync();
         SeedLotWithSlots(context, 4, "Bãi Thường", 10, 10);
+        AddApprovedPolicy(context, 4);
 
         var vehicle = new Vehicle { Id = 401, UserId = 20, PlateNumber = "51A-44444", IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
         context.Vehicles.Add(vehicle);
@@ -424,6 +457,7 @@ public class BookingAndCapacityTests
     {
         var (bookingService, _, _, context) = await CreateServicesAsync();
         SeedLotWithSlots(context, 6, "Bãi Đang Đỗ", 10, 10);
+        AddApprovedPolicy(context, 6);
 
         var vehicle = new Vehicle { Id = 601, UserId = 10, PlateNumber = "51A-66666", IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
         context.Vehicles.Add(vehicle);
@@ -649,6 +683,189 @@ public class BookingAndCapacityTests
     }
 
     [Fact]
+    public async Task WebBookingCheckInAndDispatch_AreSeparatedByAssignedStaffDuty()
+    {
+        var (bookingService, sessionService, _, context) = await CreateServicesAsync();
+        var (lot, floor, slots) = SeedLotWithSlots(context, 116, "Bãi phân luồng", 2, 2);
+        const int zoneId = 11601;
+        slots[0].ZoneId = zoneId;
+        slots[1].ZoneId = zoneId;
+        context.ParkingZones.Add(new ParkingZone
+        {
+            Id = zoneId,
+            LotId = lot.Id,
+            FloorId = floor.Id,
+            Code = "B1",
+            Name = "Khu B1",
+            IsActive = true
+        });
+        context.Vehicles.Add(new Vehicle
+        {
+            Id = 11601,
+            UserId = 10,
+            PlateNumber = "51A-11601",
+            Brand = "Toyota",
+            Model = "Vios",
+            Color = "Trắng",
+            IsActive = true
+        });
+        context.Vehicles.Add(new Vehicle
+        {
+            Id = 11602,
+            UserId = 10,
+            PlateNumber = "51A-11602",
+            IsActive = true
+        });
+        context.Bookings.Add(new Booking
+        {
+            Id = 11611,
+            LotId = lot.Id,
+            UserId = 10,
+            VehicleId = 11601,
+            PlateNumber = "51A-11601",
+            StartTime = DateTime.UtcNow.AddMinutes(10),
+            Status = BookingStatuses.Pending
+        });
+        context.Bookings.Add(new Booking
+        {
+            Id = 11612,
+            LotId = lot.Id,
+            UserId = 10,
+            VehicleId = 11602,
+            PlateNumber = "51A-11602",
+            StartTime = DateTime.UtcNow.AddMinutes(-10),
+            Status = BookingStatuses.CheckedIn
+        });
+        slots[0].PhysicalStatus = SlotPhysicalStatuses.Occupied;
+        context.ParkingSessions.Add(new ParkingSession
+        {
+            Id = 11621,
+            LotId = lot.Id,
+            VehicleId = 11602,
+            BookingId = 11612,
+            PlateNumber = "51A-11602",
+            CurrentSlotId = slots[0].Id,
+            Status = SessionStatuses.Active
+        });
+        var dispatcher = new User
+        {
+            Id = 30,
+            Username = "dispatcher_booking",
+            Email = "dispatcher@booking.test",
+            FullName = "Staff Điều phối",
+            PasswordHash = "dummy",
+            RoleId = 3,
+            IsActive = true,
+            ApprovalStatus = "APPROVED"
+        };
+        context.Users.Add(dispatcher);
+        context.StaffLotAssignments.AddRange(
+            new StaffLotAssignment
+            {
+                UserId = 3,
+                LotId = lot.Id,
+                AssignedBy = 1,
+                Duty = StaffDuties.Gate
+            },
+            new StaffLotAssignment
+            {
+                UserId = dispatcher.Id,
+                LotId = lot.Id,
+                AssignedBy = 1,
+                Duty = StaffDuties.SlotVerifier
+            },
+            new StaffLotAssignment
+            {
+                UserId = 2,
+                LotId = lot.Id,
+                AssignedBy = 1,
+                Duty = StaffDuties.Both
+            });
+        await context.SaveChangesAsync();
+
+        var checkedIn = await sessionService.CheckInBookingAtGateAsync(
+            11611,
+            new CheckInBookingRequestDto
+            {
+                PlateNumber = "51A-11601",
+                CheckInImageUrl = "https://images.example.test/plate.jpg"
+            },
+            3,
+            Roles.Staff,
+            "127.0.0.1");
+        Assert.True(checkedIn.Success, checkedIn.Message);
+        Assert.Null(checkedIn.Data!.CurrentSlotId);
+        Assert.Equal(11611, checkedIn.Data.BookingId);
+        Assert.Equal(BookingStatuses.CheckedIn, (await context.Bookings.FindAsync(11611L))!.Status);
+        Assert.Equal(SlotPhysicalStatuses.Empty, slots[1].PhysicalStatus);
+
+        var waiting = await sessionService.GetUnmatchedSessionsAsync(lot.Id, dispatcher.Id, Roles.Staff);
+        var queued = Assert.Single(waiting);
+        Assert.Equal(11611, queued.BookingId);
+        Assert.Equal("User One", queued.CustomerName);
+        Assert.Equal("0900000010", queued.CustomerPhoneNumber);
+        Assert.Equal("https://images.example.test/plate.jpg", queued.CheckInImageUrl);
+        var dispatchQueue = await bookingService.GetBookingsAsync(
+            new BookingFilterDto { LotId = lot.Id, Status = BookingStatuses.CheckedIn },
+            dispatcher.Id,
+            Roles.Staff);
+        Assert.Equal(new long[] { 11611 }, dispatchQueue.Items.Select(item => item.Id));
+
+        var gateCannotAssign = await sessionService.AssignBookingSlotAsync(
+            checkedIn.Data.Id,
+            new AssignBookingSlotRequestDto { SlotId = slots[0].Id },
+            3,
+            Roles.Staff,
+            "127.0.0.1");
+        Assert.False(gateCannotAssign.Success);
+        Assert.Contains("không có quyền", gateCannotAssign.Message);
+
+        var parked = await sessionService.AssignBookingSlotAsync(
+            checkedIn.Data.Id,
+            new AssignBookingSlotRequestDto { SlotId = slots[1].Id },
+            dispatcher.Id,
+            Roles.Staff,
+            "127.0.0.1");
+        Assert.True(parked.Success, parked.Message);
+        Assert.Equal(slots[1].Id, parked.Data!.CurrentSlotId);
+        Assert.Equal(BookingStatuses.Parked, (await context.Bookings.FindAsync(11611L))!.Status);
+        Assert.Equal(SlotPhysicalStatuses.Occupied, slots[1].PhysicalStatus);
+        Assert.Equal(DispatchStatuses.Occupied,
+            (await context.ParkingDispatches.SingleAsync(dispatch => dispatch.SessionId == checkedIn.Data.Id)).Status);
+
+        var managerSessions = await sessionService.GetActiveSessionsAsync(
+            new ParkingSessionFilterDto { LotId = lot.Id },
+            2,
+            Roles.Manager);
+        var visibleToManager = Assert.Single(managerSessions.Items, session => session.BookingId == 11611);
+        Assert.Equal("User One", visibleToManager.CustomerName);
+        Assert.Equal("0900000010", visibleToManager.CustomerPhoneNumber);
+        Assert.Equal("user1@test.com", visibleToManager.CustomerEmail);
+        Assert.Equal("Toyota", visibleToManager.VehicleBrand);
+        Assert.Equal("Vios", visibleToManager.VehicleModel);
+        Assert.Equal("Trắng", visibleToManager.VehicleColor);
+        Assert.Equal(BookingStatuses.Parked, visibleToManager.BookingStatus);
+        Assert.Equal(slots[1].Id, visibleToManager.CurrentSlotId);
+        Assert.Equal(SlotPhysicalStatuses.Occupied, visibleToManager.SlotPhysicalStatus);
+        Assert.True(visibleToManager.DurationMinutes >= 0);
+
+        var persistedSession = await context.ParkingSessions.AsNoTracking()
+            .SingleAsync(session => session.Id == checkedIn.Data.Id);
+        var persistedBooking = await context.Bookings.AsNoTracking()
+            .Include(booking => booking.User)
+            .Include(booking => booking.Vehicle)
+            .SingleAsync(booking => booking.Id == 11611);
+        Assert.Equal(11601L, persistedSession.VehicleId);
+        Assert.Equal(11611L, persistedSession.BookingId);
+        Assert.Equal("51A-11601", persistedSession.PlateNumber);
+        Assert.Equal(10L, persistedBooking.UserId);
+        Assert.Equal("User One", persistedBooking.User.FullName);
+        Assert.Equal("0900000010", persistedBooking.User.PhoneNumber);
+        Assert.Equal(11601L, persistedBooking.VehicleId);
+        Assert.Equal("51A-11601", persistedBooking.Vehicle.PlateNumber);
+    }
+
+    [Fact]
     public async Task ConfirmBookingParked_RequiresMatchingPlateAndPhoto()
     {
         var (bookingService, sessionService, _, context) = await CreateServicesAsync();
@@ -741,7 +958,7 @@ public class BookingAndCapacityTests
         Assert.Equal(11401, session.CurrentSlotId);
         Assert.Equal(SlotPhysicalStatuses.Occupied, (await context.ParkingSlots.FindAsync(11401L))!.PhysicalStatus);
         Assert.Equal(imageUrl, session.CheckInImageUrl);
-        Assert.Equal(BookingStatuses.CheckedIn, (await context.Bookings.FindAsync(bookingId))!.Status);
+        Assert.Equal(BookingStatuses.Parked, (await context.Bookings.FindAsync(bookingId))!.Status);
         Assert.Equal(0, (await bookingService.GetLotCapacityAsync(114))!.AvailableForBooking);
 
         context.Vehicles.Add(new Vehicle
@@ -804,11 +1021,12 @@ public class BookingAndCapacityTests
     }
 
     [Fact]
-    public async Task CheckIn_WalkIn_RejectedWhenRemainingCapacityIsReserved()
+    public async Task Entry_WalkIn_RejectedWhenRemainingCapacityIsReserved()
     {
-        var (bookingService, sessionService, _, context) = await CreateServicesAsync();
+        var (bookingService, _, _, context) = await CreateServicesAsync();
         // Lot capacity = 1
         SeedLotWithSlots(context, 12, "Bãi 1 Chỗ", slotCount: 1, activeSlotsCount: 1);
+        AddApprovedPolicy(context, 12);
 
         var reservedVehicle = new Vehicle { Id = 1201, UserId = 10, PlateNumber = "51A-RESERVE", IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
         context.Vehicles.Add(reservedVehicle);
@@ -816,27 +1034,17 @@ public class BookingAndCapacityTests
 
         // 1 slot reserved by User 10
         var bookRes = await bookingService.CreateBookingAsync(new CreateBookingRequestDto { LotId = 12, VehicleId = 1201 }, 10, Roles.User, "127.0.0.1");
-        Assert.True(bookRes.Success);
+        Assert.True(bookRes.Success, bookRes.Message);
 
         // Available capacity is 0
         var cap = await bookingService.GetLotCapacityAsync(12);
         Assert.Equal(0, cap!.AvailableForBooking);
 
-        // Walk-in vehicle attempts to check in
-        var walkInReq = new CheckInRequestDto
-        {
-            LotId = 12,
-            PlateNumber = "51A-WALKIN"
-        };
-
-        var (success, message, session) = await sessionService.CheckInAsync(walkInReq, 1, Roles.Admin, "127.0.0.1");
-
-        // MUST be rejected! Walk-in cannot consume capacity reserved for another customer!
-        Assert.False(success);
-        Assert.Null(session);
-        Assert.Contains("hết chỗ khả dụng cho khách vãng lai", message);
+        // Walk-in cannot consume capacity reserved for another customer
+        var error = await Assert.ThrowsAsync<ParkingOperationException>(() => EnterWalkInAsync(context, 12, "VE-WALKIN"));
+        Assert.Equal("CAPACITY_EXHAUSTED", error.Code);
+        Assert.Empty(context.ParkingSessions);
     }
-
     [Fact]
     public async Task CheckOut_ReleasesAdmittedCapacitySuccessfully()
     {
@@ -1171,7 +1379,7 @@ public class BookingAndCapacityTests
         // Walk-in check-in must be rejected
         var (checkInOk, checkInMsg, _) = await sessionService.CheckInAsync(new CheckInRequestDto { LotId = 102, PlateNumber = "51A-WALKIN102" }, 1, Roles.Admin, "127.0.0.1");
         Assert.False(checkInOk);
-        Assert.Contains("hết chỗ", checkInMsg);
+        Assert.Equal(ParkingSessionService.LegacyCheckInRetiredMessage, checkInMsg); // check-in biển số kiểu cũ đã ngừng
     }
 
     [Fact]
@@ -1475,9 +1683,9 @@ public class BookingAndCapacityTests
         Assert.Equal(10801, reservedCheckIn.Data.CurrentSlotId);
         Assert.Equal(SlotPhysicalStatuses.Occupied, (await context.ParkingSlots.FindAsync(10801L))!.PhysicalStatus);
 
-        // Booking status is CHECKED_IN
+        // Booking status is PARKED after the slot is confirmed.
         var bookingAfter = await context.Bookings.FindAsync(bookRes.Data!.Id);
-        Assert.Equal(BookingStatuses.CheckedIn, bookingAfter!.Status);
+        Assert.Equal(BookingStatuses.Parked, bookingAfter!.Status);
 
         // After check-in: 1 session, 0 holds, available remains 0
         var capAfter = await bookingService.GetLotCapacityAsync(108, currentUserId: 1, currentUserRole: Roles.Admin);
@@ -1642,28 +1850,32 @@ public class BookingAndCapacityTests
         var (bookingService, sessionService, _, context) = await CreateServicesAsync();
         // Lot with exactly 1 slot
         SeedLotWithSlots(context, 112, "Bãi Tuần Tự Khóa", slotCount: 1, activeSlotsCount: 1);
+        AddApprovedPolicy(context, 112);
 
-        // Vehicle 1 checks in
-        var checkIn1 = await sessionService.CheckInAsync(new CheckInRequestDto { LotId = 112, PlateNumber = "51A-SEQ-01" }, 1, Roles.Admin, "127.0.0.1");
-        Assert.True(checkIn1.Success);
+        // Vehicle 1 enters with a ticket
+        var first = await EnterWalkInAsync(context, 112, "VE-SEQ-01");
 
-        // Capacity is 0; Vehicle 2 cannot check in
-        var checkIn2Fail = await sessionService.CheckInAsync(new CheckInRequestDto { LotId = 112, PlateNumber = "51A-SEQ-02" }, 1, Roles.Admin, "127.0.0.1");
-        Assert.False(checkIn2Fail.Success);
+        // Capacity is 0; Vehicle 2 cannot enter
+        var full = await Assert.ThrowsAsync<ParkingOperationException>(() => EnterWalkInAsync(context, 112, "VE-SEQ-02"));
+        Assert.Equal("CAPACITY_EXHAUSTED", full.Code);
 
-        // Vehicle 1 checks out (under per-lot lock)
-        var checkOut1 = await sessionService.CheckOutAsync(checkIn1.Data!.Id, new CheckOutRequestDto(), 1, Roles.Admin, "127.0.0.1");
-        Assert.True(checkOut1.Success);
+        // Vehicle 1 is verified at its slot, cleared by Payment and checked out (under per-lot lock)
+        var verified = await new ParkingOperationsService(context, new ParkingAuthorizationService(context), new ParkingOperationsWriter(context))
+            .Verify(112, first.Id, new VerifyVehicleRequest(11201, "51A-SEQ-01", "PETROL", first.Revision, true, "observed"), 1, Roles.Admin, default);
+        var cleared = await sessionService.RecordPaymentClearanceAsync(first.Id, 20000m, "TX-SEQ-01", "CASH", 1, Roles.Admin, "127.0.0.1", isTrustedPaymentServerFlow: true);
+        Assert.True(cleared.Success, cleared.Message);
+        var checkOut1 = await sessionService.CheckOutAsync(first.Id,
+            new CheckOutRequestDto { ConfirmedPlateNumber = verified.PlateNumber, TicketCode = "VE-SEQ-01" }, 1, Roles.Admin, "127.0.0.1");
+        Assert.True(checkOut1.Success, checkOut1.Message);
 
         // Capacity immediately visible as 1 available
         var cap = await bookingService.GetLotCapacityAsync(112);
         Assert.Equal(1, cap!.AvailableForWalkIn);
 
-        // Vehicle 2 checks in successfully
-        var checkIn2Success = await sessionService.CheckInAsync(new CheckInRequestDto { LotId = 112, PlateNumber = "51A-SEQ-02" }, 1, Roles.Admin, "127.0.0.1");
-        Assert.True(checkIn2Success.Success);
+        // Vehicle 2 enters successfully
+        var second = await EnterWalkInAsync(context, 112, "VE-SEQ-02");
+        Assert.Equal(SessionStatuses.Active, second.Status);
     }
-
     [Fact]
     public void AdvisoryLock_OverloadResolution_PassesParametersExplicitlyAndAvoidsCancellationTokenMappingError()
     {
@@ -1743,7 +1955,7 @@ public class BookingAndCapacityTests
         // Active zero-slot lot rejects Check-in
         var (cActSuccess, cActMsg, _) = await sessionService.CheckInAsync(checkInReq, actorId: 1, actorRole: Roles.Admin, ipAddress: "127.0.0.1");
         Assert.False(cActSuccess);
-        Assert.Contains("đã hết chỗ khả dụng", cActMsg);
+        Assert.Equal(ParkingSessionService.LegacyCheckInRetiredMessage, cActMsg); // check-in biển số kiểu cũ đã ngừng
     }
 
     [Fact]

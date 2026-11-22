@@ -64,6 +64,8 @@ beforeEach(() => {
         id: 101,
         floorId: 1,
         lotId: 1,
+        zoneId: 1,
+        zoneName: "Khu B1",
         slotCode: "S-01",
         physicalStatus: "EMPTY",
         isAvailable: true,
@@ -125,7 +127,11 @@ beforeEach(() => {
         physicalOccupiedSlotsCount: 1,
       });
     if (path.endsWith("/bookings"))
-      return result(page(model.bookings));
+      return result(page(model.bookings.filter(
+        (booking) =>
+          !url.searchParams.get("status") ||
+          booking.status === url.searchParams.get("status"),
+      )));
     if (path.endsWith("/parking-sessions/active"))
       return result(
         page(
@@ -194,6 +200,29 @@ beforeEach(() => {
       };
       model.sessions.push(session);
       return result(session, "Đã nhận xe.");
+    }
+    if (path.endsWith("/check-in-at-gate")) {
+      const session = {
+        ...primary,
+        id: 20,
+        lotId: 1,
+        bookingId: Number(path.split("/").at(-2)),
+        plateNumber: body.plateNumber,
+        currentSlotId: null,
+        checkInImageUrl: body.checkInImageUrl,
+      };
+      model.sessions.push(session);
+      model.bookings = model.bookings.filter(
+        (booking) => booking.id !== session.bookingId,
+      );
+      return result(session, "Đã xác nhận xe qua cổng.");
+    }
+    if (path.endsWith("/assign-booking-slot")) {
+      const session = model.sessions.find(
+        (item) => item.id === Number(path.split("/").at(-2)),
+      );
+      Object.assign(session, { currentSlotId: body.slotId, slotCode: "S-01" });
+      return result(session, "Đã gán ô đỗ.");
     }
     if (path.endsWith("/confirm-parked")) {
       const session = {
@@ -299,16 +328,12 @@ describe("Staff workspace", () => {
     });
     await user.click(screen.getByRole("button", { name: "Làm mới" }));
 
-    expect(await screen.findByText(/Có 1 đặt chỗ mới: 51A-888\.88/)).toBeTruthy();
-    expect(screen.getByText("customer01")).toBeTruthy();
+    expect(await screen.findByText(/Có 1 đặt chỗ mới/)).toBeTruthy();
     expect(screen.getByText("Nguyen An")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "an@example.com" }).getAttribute("href")).toBe(
-      "mailto:an@example.com",
-    );
     expect(screen.getByRole("link", { name: "0901234567" }).getAttribute("href")).toBe(
       "tel:0901234567",
     );
-    expect(screen.getByText("Dự kiến vào")).toBeTruthy();
+    expect(screen.getByText("Dự kiến đến")).toBeTruthy();
     const bookingRequest = fetchMock.mock.calls.find(([url]) =>
       url.includes("/v1/bookings?"),
     );
@@ -317,7 +342,41 @@ describe("Staff workspace", () => {
     );
   });
 
-  it("verifies a booked car manually while storing its plate photo", async () => {
+  it("assigns a checked-in web booking to a selected area and slot", async () => {
+    const user = userEvent.setup();
+    model.bookings.push({
+      id: 505,
+      lotId: 1,
+      sessionId: 20,
+      username: "customer05",
+      fullName: "Nguyen Binh",
+      phoneNumber: "0905000000",
+      plateNumber: "51A-50505",
+      status: "CHECKED_IN",
+      checkedInAt: "2026-11-06T03:00:00Z",
+      checkInImageUrl: "https://images.example.invalid/plate.jpg",
+    });
+    model.sessions.push({
+      ...primary,
+      id: 20,
+      bookingId: 505,
+      plateNumber: "51A-50505",
+      currentSlotId: null,
+    });
+    mount("booking-dispatch");
+    await screen.findByText("51A-50505", { selector: ".staff-plate" });
+    await user.click(screen.getByRole("button", { name: "Chọn xe để phân ô" }));
+    await user.selectOptions(await screen.findByLabelText("Khu vực"), "1");
+    await user.selectOptions(screen.getByLabelText("Ô đỗ còn trống"), "101");
+    await user.click(screen.getByRole("button", { name: "Cập nhật ô đỗ" }));
+
+    expect(await screen.findByText(/Đã gán xe 51A-50505 vào Khu B1 · S-01/)).toBeTruthy();
+    expect(JSON.parse(requests("/assign-booking-slot")[0][1].body)).toEqual({
+      slotId: 101,
+    });
+  });
+
+  it("checks a booked car in at the gate without choosing a parking slot", async () => {
     const user = userEvent.setup();
     mount("bookings");
     await screen.findByText("Hiện không có đặt chỗ đang chờ xe đến.");
@@ -334,42 +393,34 @@ describe("Staff workspace", () => {
     });
     await user.click(screen.getByRole("button", { name: "Làm mới" }));
     await user.click(
-      await screen.findByRole("button", { name: "Xác nhận xe đã đỗ" }),
+      await screen.findByRole("button", { name: "Xác nhận xe đến & Chụp biển số" }),
     );
 
     const form = await screen.findByRole("form", {
-      name: "Xác nhận xe tại bãi booking 502",
+      name: "Xác nhận xe tại cổng booking 502",
     });
     const confirmButton = within(form).getByRole("button", {
-      name: "Xác nhận xe đã đỗ",
+      name: "Xác nhận xe đến & Chụp biển số",
     });
     expect(confirmButton.disabled).toBe(true);
 
-    await user.selectOptions(
-      within(form).getByLabelText("Ô thực tế xe đang đỗ"),
-      "101",
-    );
     await user.upload(
       within(form).getByLabelText(/Chọn \/ chụp ảnh/),
       new File(["plate-photo"], "plate.jpg", { type: "image/jpeg" }),
     );
     expect(within(form).queryByRole("button", { name: "Nhận diện biển số" })).toBeNull();
-    await user.type(within(form).getByLabelText("Biển số xe"), "51F12345");
     await user.click(confirmButton);
 
-    expect(await screen.findByText(/Đã xác nhận xe 51F12345 đỗ tại ô/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Xe ra" }).getAttribute("aria-current")).toBe("page");
-    expect(await screen.findByText("Chưa xác nhận thanh toán.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }).disabled).toBe(true);
-    expect(JSON.parse(requests("/confirm-parked")[0][1].body)).toEqual({
-      plateNumber: "51F12345",
-      slotId: 101,
+    expect(await screen.findByText(/đang chờ Staff Điều phối chọn ô đỗ/)).toBeTruthy();
+    expect(JSON.parse(requests("/check-in-at-gate")[0][1].body)).toEqual({
+      plateNumber: "51F-123.45",
       checkInImageUrl: "https://images.example.invalid/entry.jpg",
     });
     expect(requests("/images")).toHaveLength(1);
     expect(requests("/staff/detect")).toHaveLength(0);
     expect(requests("/detections/501/confirm")).toHaveLength(0);
     expect(requests("/check-out")).toHaveLength(0);
+    expect(requests("/confirm-parked")).toHaveLength(0);
   });
 
   it("rejects a mismatched booking plate and retries a failed photo upload", async () => {
@@ -385,38 +436,37 @@ describe("Staff workspace", () => {
       createdAt: "2026-11-06T02:45:00Z",
     });
     mount("bookings");
-    await user.click(await screen.findByRole("button", { name: "Xác nhận xe đã đỗ" }));
-    const form = await screen.findByRole("form", { name: "Xác nhận xe tại bãi booking 503" });
-    await user.selectOptions(within(form).getByLabelText("Ô thực tế xe đang đỗ"), "101");
+    await user.click(await screen.findByRole("button", { name: "Xác nhận xe đến & Chụp biển số" }));
+    const form = await screen.findByRole("form", { name: "Xác nhận xe tại cổng booking 503" });
     await user.upload(
       within(form).getByLabelText(/Chọn \/ chụp ảnh/),
       new File(["plate-photo"], "plate.jpg", { type: "image/jpeg" }),
     );
     const plate = within(form).getByLabelText("Biển số xe");
     await user.type(plate, "51F-99999");
-    await user.click(within(form).getByRole("button", { name: "Xác nhận xe đã đỗ" }));
+    await user.click(within(form).getByRole("button", { name: "Xác nhận xe đến & Chụp biển số" }));
     expect((await within(form).findByRole("alert")).textContent).toContain(
       "Biển số đã nhập không khớp với booking (51F-123.45)",
     );
     expect(requests("/images")).toHaveLength(0);
-    expect(requests("/confirm-parked")).toHaveLength(0);
+    expect(requests("/check-in-at-gate")).toHaveLength(0);
 
     await user.clear(plate);
     await user.type(plate, "51F-123.45");
     model.failUpload = true;
-    await user.click(within(form).getByRole("button", { name: "Xác nhận xe đã đỗ" }));
+    await user.click(within(form).getByRole("button", { name: "Xác nhận xe đến & Chụp biển số" }));
     expect((await within(form).findByRole("alert")).textContent).toContain(
       "Dịch vụ lưu ảnh đang gián đoạn.",
     );
-    expect(requests("/confirm-parked")).toHaveLength(0);
+    expect(requests("/check-in-at-gate")).toHaveLength(0);
     expect(requests("/staff/detect")).toHaveLength(0);
     expect(requests("/detections/501/confirm")).toHaveLength(0);
     expect(model.bookings).toHaveLength(1);
 
     model.failUpload = false;
-    await user.click(within(form).getByRole("button", { name: "Xác nhận xe đã đỗ" }));
-    expect(await screen.findByText(/Đã xác nhận xe 51F-123\.45 đỗ tại ô/)).toBeTruthy();
-    expect(requests("/confirm-parked")).toHaveLength(1);
+    await user.click(within(form).getByRole("button", { name: "Xác nhận xe đến & Chụp biển số" }));
+    expect(await screen.findByText(/đang chờ Staff Điều phối chọn ô đỗ/)).toBeTruthy();
+    expect(requests("/check-in-at-gate")).toHaveLength(1);
     expect(requests("/detections/501/confirm")).toHaveLength(0);
   });
 
@@ -482,7 +532,7 @@ describe("Staff workspace", () => {
     fireEvent.submit(button.closest("form")); fireEvent.submit(button.closest("form"));
     await waitFor(() => expect(requests("/entries")).toHaveLength(1));
     expect(screen.getByRole("combobox", { name: "Bãi đang làm việc" }).disabled).toBe(true);
-    expect(screen.getByRole("tab", { name: "Xe ra" }).disabled).toBe(true);
+    expect(screen.getByRole("link", { name: "Xe ra" })).toBeTruthy();
     resolveWrite(result({ id: 20, ticketCode: "VE-001", verificationStatus: "WAITING_VERIFICATION" }));
     await screen.findByText(/Đã cấp vé VE-001/);
     expect(screen.getByRole("combobox", { name: "Bãi đang làm việc" }).disabled).toBe(false);
@@ -593,7 +643,7 @@ describe("Staff workspace", () => {
       slotId: 101,
       notes: "",
     });
-    await user.click(screen.getByRole("tab", { name: "Điều phối" }));
+    await user.click(screen.getByRole("link", { name: "Điều phối" }));
     await screen.findByText("Đã xác minh", { selector: ".staff-badge" });
     expect(screen.getByText("Đã lưu kết quả")).toBeTruthy();
   });

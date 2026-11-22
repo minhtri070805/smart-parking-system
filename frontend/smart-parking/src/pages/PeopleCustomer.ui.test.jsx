@@ -250,7 +250,7 @@ it("allows role changes without an approval reason and shows server failures for
 it("creates an explicit SLOT_VERIFIER duty assignment", async () => {
   auth("ADMIN");
   mount(<AdminPeople />, "/admin/people?view=assignments");
-  fireEvent.change(screen.getByLabelText("Tìm Staff theo tên/email"), { target: { value: "staff" } });
+  fireEvent.change(screen.getByLabelText("Tìm nhân sự theo tên/email"), { target: { value: "staff" } });
   fireEvent.click(await screen.findByRole("button", { name: /Nhân viên Demo/ }));
   expect(screen.queryByRole("combobox", { name: "Nhân sự" })).toBeNull();
   fireEvent.change(screen.getByLabelText("Bãi đỗ"), { target: { value: "1" } });
@@ -271,10 +271,31 @@ it("creates an explicit SLOT_VERIFIER duty assignment", async () => {
     duty: "SLOT_VERIFIER",
   });
 });
+it("assigns a Manager to a lot without requiring Staff duty or floor", async () => {
+  auth("ADMIN");
+  mount(<AdminPeople />, "/admin/people?view=assignments");
+  fireEvent.change(screen.getByLabelText("Vai trò nhân sự"), { target: { value: "MANAGER" } });
+  fireEvent.change(screen.getByLabelText("Tìm nhân sự theo tên/email"), { target: { value: "manager" } });
+  fireEvent.click(await screen.findByRole("button", { name: /Quản lý Demo/ }));
+  fireEvent.change(screen.getByLabelText("Bãi đỗ"), { target: { value: "1" } });
+  expect(screen.getByText("Quản lý toàn bãi")).toBeTruthy();
+  expect(screen.queryByLabelText("Tầng")).toBeNull();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Lưu phân công" }).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Lưu phân công" }));
+  await screen.findByText("Đã lưu thành công");
+  expect(writes()[0][0]).toBe("/api/v1/staff-assignments");
+  expect(JSON.parse(writes()[0][1].body)).toMatchObject({
+    userId: 8,
+    lotId: 1,
+    duty: "GATE",
+    floorId: null,
+    zoneId: null,
+  });
+});
 it("lets Manager assign only Staff at managed lots without calling account-management APIs", async () => {
   auth("MANAGER");
   mount(<ManagerStaffAssignments />, "/manager/assignments");
-  fireEvent.change(screen.getByLabelText("Tìm Staff theo tên/email"), { target: { value: "staff" } });
+  fireEvent.change(screen.getByLabelText("Tìm nhân sự theo tên/email"), { target: { value: "staff" } });
   fireEvent.click(await screen.findByRole("button", { name: /Nhân viên Demo/ }));
   expect(screen.queryByRole("combobox", { name: "Nhân sự" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Tài khoản", exact: true })).toBeNull();
@@ -308,7 +329,7 @@ it("requires confirmation for revoking an assignment", async () => {
 it("clears a previous zone and submits the gate duty with only a floor", async () => {
   const duty = "GATE";
   auth("ADMIN"); mount(<AdminPeople />, "/admin/people?view=assignments");
-  fireEvent.change(screen.getByLabelText("Tìm Staff theo tên/email"), { target: { value: "staff" } });
+  fireEvent.change(screen.getByLabelText("Tìm nhân sự theo tên/email"), { target: { value: "staff" } });
   fireEvent.click(await screen.findByRole("button", { name: /Nhân viên Demo/ }));
   fireEvent.change(screen.getByLabelText("Bãi đỗ"), { target: { value: "1" } });
   fireEvent.change(screen.getByLabelText("Phân công", { exact: true }), { target: { value: "SLOT_VERIFIER" } });

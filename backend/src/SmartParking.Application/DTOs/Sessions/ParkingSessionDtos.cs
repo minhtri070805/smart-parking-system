@@ -9,6 +9,13 @@ public class ParkingSessionDto
     public string LotName { get; set; } = string.Empty;
     public long? VehicleId { get; set; }
     public long? BookingId { get; set; }
+    public string? BookingStatus { get; set; }
+    public string? CustomerName { get; set; }
+    public string? CustomerPhoneNumber { get; set; }
+    public string? CustomerEmail { get; set; }
+    public string? VehicleBrand { get; set; }
+    public string? VehicleModel { get; set; }
+    public string? VehicleColor { get; set; }
     public string PlateNumber { get; set; } = string.Empty;
     public string VerificationStatus { get; set; } = "LEGACY";
     public int? ZoneId { get; set; }
@@ -18,6 +25,7 @@ public class ParkingSessionDto
     public DateTime? CheckOutTime { get; set; }
     public long? CurrentSlotId { get; set; }
     public string? SlotCode { get; set; }
+    public string? SlotPhysicalStatus { get; set; }
     public int? FloorNumber { get; set; }
     public string Status { get; set; } = string.Empty;
     public decimal TotalFee { get; set; }
@@ -58,6 +66,26 @@ public class ConfirmBookingParkedRequestDto
     [Required(ErrorMessage = "Ảnh biển số xe là bắt buộc.")]
     [MaxLength(500, ErrorMessage = "URL hình ảnh không được vượt quá 500 ký tự.")]
     public string CheckInImageUrl { get; set; } = string.Empty;
+}
+
+public class CheckInBookingRequestDto
+{
+    [Required(ErrorMessage = "Biển số xe không được để trống.")]
+    [StringLength(20, MinimumLength = 3, ErrorMessage = "Biển số xe phải từ 3 đến 20 ký tự.")]
+    public string PlateNumber { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Ảnh biển số xe là bắt buộc.")]
+    [MaxLength(500, ErrorMessage = "URL hình ảnh không được vượt quá 500 ký tự.")]
+    public string CheckInImageUrl { get; set; } = string.Empty;
+}
+
+public class AssignBookingSlotRequestDto
+{
+    [Range(1, long.MaxValue, ErrorMessage = "ID ô đỗ không hợp lệ.")]
+    public long SlotId { get; set; }
+
+    [MaxLength(255, ErrorMessage = "Ghi chú không được vượt quá 255 ký tự.")]
+    public string? Notes { get; set; }
 }
 
 public class CheckOutRequestDto
@@ -133,6 +161,8 @@ public class UnmatchedSessionDto
     public string Status { get; set; } = string.Empty;
     public string? CheckInImageUrl { get; set; }
     public long? BookingId { get; set; }
+    public string? CustomerName { get; set; }
+    public string? CustomerPhoneNumber { get; set; }
 }
 
 public class UnmatchedSlotDto
@@ -145,3 +175,24 @@ public class UnmatchedSlotDto
     public string PhysicalStatus { get; set; } = string.Empty;
     public DateTime? LastStatusChangedAt { get; set; }
 }
+
+/// <summary>
+/// Hợp đồng Core → Payment: dữ kiện để Payment tự tính phí phía server. Thời gian theo UTC.
+/// BillingStart/End chưa được nhóm chốt nên Core trả dữ kiện gốc (giờ vào, giờ xác minh) thay vì một mốc tự suy diễn.
+/// </summary>
+public sealed record PaymentBillingContextDto(
+    long SessionId,
+    int LotId,
+    int? ZoneId,
+    long? PolicyId,
+    long? BookingId,
+    string PlateNumber,
+    string Status,
+    string VerificationStatus,
+    bool Ticketed,
+    DateTime EnteredAt,
+    DateTime? VerifiedAt,
+    DateTime? CheckedOutAt,
+    decimal TotalFee,
+    DateTime? PaidAt,
+    DateTime GeneratedAt);
