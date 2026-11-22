@@ -312,6 +312,12 @@ public class BookingService : IBookingService
         {
             var status = filter.Status.Trim().ToUpperInvariant();
             query = query.Where(b => b.Status == status);
+            if (status == BookingStatuses.CheckedIn)
+            {
+                query = query.Where(b => b.Session != null
+                    && b.Session.Status == SessionStatuses.Active
+                    && b.Session.CurrentSlotId == null);
+            }
         }
 
         var totalCount = await query.CountAsync(ct);
@@ -553,6 +559,12 @@ public class BookingService : IBookingService
         {
             var status = filter.Status.Trim().ToUpperInvariant();
             query = query.Where(b => b.Status == status);
+            if (status == BookingStatuses.CheckedIn)
+            {
+                query = query.Where(b => b.Session != null
+                    && b.Session.Status == SessionStatuses.Active
+                    && b.Session.CurrentSlotId == null);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
@@ -678,6 +690,9 @@ public class BookingService : IBookingService
             CancelledAt = b.CancelledAt,
             CancellationReason = b.CancellationReason,
             Notes = b.Notes,
+            VehicleBrand = b.Vehicle?.Brand,
+            VehicleModel = b.Vehicle?.Model,
+            CheckInImageUrl = b.Session?.CheckInImageUrl,
             CreatedAt = b.CreatedAt,
             UpdatedAt = b.UpdatedAt
         };
@@ -707,10 +722,11 @@ public class BookingService : IBookingService
             CancelledAt = b.CancelledAt,
             CancellationReason = b.CancellationReason,
             Notes = b.Notes,
-            CreatedAt = b.CreatedAt,
-            UpdatedAt = b.UpdatedAt,
             VehicleBrand = b.Vehicle?.Brand,
             VehicleModel = b.Vehicle?.Model,
+            CheckInImageUrl = b.Session?.CheckInImageUrl,
+            CreatedAt = b.CreatedAt,
+            UpdatedAt = b.UpdatedAt,
             VehicleColor = b.Vehicle?.Color
         };
     }

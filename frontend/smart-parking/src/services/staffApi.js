@@ -148,6 +148,21 @@ export const staffApi = {
       items: [...new Map(items.map((booking) => [String(booking.id), booking])).values()],
     };
   },
+  checkedInBookings: async (lotId, signal) => {
+    const loadPage = (pageNumber) =>
+      data(
+        `/v1/bookings?${query({ lotId, status: "CHECKED_IN", pageNumber, pageSize: 100 })}`,
+        { signal },
+      );
+    const firstPage = readPage(await loadPage(1));
+    const items = [...firstPage.items];
+    for (let pageNumber = 2; pageNumber <= firstPage.totalPages; pageNumber += 1)
+      items.push(...readPage(await loadPage(pageNumber)).items);
+    return {
+      ...firstPage,
+      items: [...new Map(items.map((booking) => [String(booking.id), booking])).values()],
+    };
+  },
   dispatchPage: async (lotId, page = 1, status = "", signal) =>
     readPage(
       await data(
@@ -271,6 +286,16 @@ export const staffApi = {
       plateNumber: validatePlate(plateNumber),
       slotId: Number(slotId),
       checkInImageUrl: imageUrl,
+    }),
+  checkInBookingAtGate: (bookingId, plateNumber, imageUrl) =>
+    post(`/v1/parking-sessions/bookings/${bookingId}/check-in-at-gate`, {
+      plateNumber: validatePlate(plateNumber),
+      checkInImageUrl: imageUrl,
+    }),
+  assignBookingSlot: (sessionId, slotId, notes) =>
+    post(`/v1/parking-sessions/${sessionId}/assign-booking-slot`, {
+      slotId: Number(slotId),
+      ...(notes ? { notes } : {}),
     }),
   async checkOut(sessionId, lotId, plateNumber, imageUrl, ticketCode, exitRecognitionId, note) {
     const fresh = await staffApi.session(sessionId);

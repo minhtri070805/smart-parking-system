@@ -25,14 +25,15 @@ public class BookingDto
     public DateTime? CancelledAt { get; set; }
     public string? CancellationReason { get; set; }
     public string? Notes { get; set; }
+    public string? VehicleBrand { get; set; }
+    public string? VehicleModel { get; set; }
+    public string? CheckInImageUrl { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
 
 public class BookingDetailDto : BookingDto
 {
-    public string? VehicleBrand { get; set; }
-    public string? VehicleModel { get; set; }
     public string? VehicleColor { get; set; }
 }
 

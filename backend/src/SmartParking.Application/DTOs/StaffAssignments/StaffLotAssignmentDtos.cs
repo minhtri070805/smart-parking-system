@@ -49,11 +49,9 @@ public class CreateStaffAssignmentRequestDto : IValidatableObject
     /// <summary>
     /// Mỗi phân công chỉ có một nhiệm vụ.
     /// </summary>
-    [Required(ErrorMessage = "Chọn loại phân công.")]
     [RegularExpression("^(GATE|GATE_IN|GATE_OUT|SLOT_VERIFIER)$", ErrorMessage = "Chọn trực cổng hoặc trực khu vực.")]
     public string Duty { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "Chọn tầng được phân công.")]
     [Range(1, int.MaxValue)]
     public int? FloorId { get; set; }
     [Range(1, int.MaxValue)]
@@ -107,6 +105,8 @@ public class StaffCandidateFilterDto
 {
     [MaxLength(255)]
     public string? Search { get; set; }
+    [RegularExpression("^(STAFF|MANAGER)$", ErrorMessage = "Vai trò ứng viên phải là STAFF hoặc MANAGER.")]
+    public string? Role { get; set; }
     [Range(1, int.MaxValue)]
     public int Page { get; set; } = 1;
     [Range(1, 100)]
@@ -119,7 +119,7 @@ public class StaffCandidateDto
     public string Username { get; set; } = "";
     public string FullName { get; set; } = "";
     public string Email { get; set; } = "";
-    public string Role => Roles.Staff;
+    public string Role { get; set; } = Roles.Staff;
 }
 
 public record AssignmentZoneDto(int Id, string Name, string Code);
