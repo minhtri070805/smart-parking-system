@@ -205,6 +205,42 @@ public class RecognitionController(
         }
     }
 
+    [HttpGet("{id:long}")]
+    public async Task<IActionResult> GetById(long id, CancellationToken ct)
+    {
+        var correlationId = GetCorrelationId();
+        var staffUserId = GetCurrentUserId();
+
+        if (staffUserId <= 0)
+        {
+            return Unauthorized(ErrorResponseDto.Create("UNAUTHORIZED", "Invalid or missing authenticated staff user claim.", correlationId));
+        }
+
+        try
+        {
+            var result = await recognitionFacade.GetByIdAsync(id, correlationId, ct);
+            if (result is null)
+            {
+                return NotFound(ErrorResponseDto.Create("NOT_FOUND", "Recognition record not found.", correlationId));
+            }
+
+            return Ok(result);
+        }
+        catch (ImageValidationException ex)
+        {
+            return BadRequest(ErrorResponseDto.Create("INVALID_INPUT", ex.Message, correlationId));
+        }
+        catch (RecognitionServiceException ex)
+        {
+            return StatusCode((int)ex.StatusCode, ErrorResponseDto.Create("RECOGNITION_ERROR", ex.Message, correlationId));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error querying recognition record. Id: {Id}, CorrelationId: {CorrelationId}", id, correlationId);
+            return StatusCode(500, ErrorResponseDto.Create("INTERNAL_ERROR", "An unexpected error occurred during recognition lookup.", correlationId));
+        }
+    }
+
     private string GetCorrelationId()
     {
         if (Request.Headers.TryGetValue(CorrelationHeader, out var val) && !string.IsNullOrWhiteSpace(val))

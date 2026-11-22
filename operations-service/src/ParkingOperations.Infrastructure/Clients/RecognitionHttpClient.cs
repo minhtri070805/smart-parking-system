@@ -145,6 +145,20 @@ public sealed class RecognitionHttpClient(HttpClient client) : IRecognitionClien
         };
     }
 
+    public Task<RecognitionResultDto?> GetByIdAsync(
+        long recognitionId,
+        string? correlationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"internal/recognition/{recognitionId}");
+        if (!string.IsNullOrWhiteSpace(correlationId))
+        {
+            request.Headers.TryAddWithoutValidation(CorrelationHeader, correlationId);
+        }
+
+        return SendAsync<RecognitionResultDto>(request, allowNotFound: true, cancellationToken);
+    }
+
     private async Task<T?> SendAsync<T>(HttpRequestMessage request, bool allowNotFound, CancellationToken ct) where T : class
     {
         using (request)

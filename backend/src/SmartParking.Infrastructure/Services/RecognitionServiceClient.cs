@@ -11,9 +11,12 @@ namespace SmartParking.Infrastructure.Services;
 public sealed class RecognitionServiceClient(HttpClient client) : IStaffDetectionService
 {
     public const string KeyHeader = "X-Recognition-Service-Key";
+    private const string CorrelationHeader = "X-Correlation-Id";
+    private const string IdempotencyHeader = "Idempotency-Key";
 
     public async Task<StaffDetectionDto> DetectAsync(
         Stream image, string contentType, long contentLength, long staffUserId, int lotId, string purpose,
+        string? captureId, string? imageId, string? eventId, string? idempotencyKey, string? correlationId,
         CancellationToken cancellationToken)
     {
         if (contentLength <= 0 || !MediaTypeHeaderValue.TryParse(contentType, out var mediaType))
@@ -23,32 +26,42 @@ public sealed class RecognitionServiceClient(HttpClient client) : IStaffDetectio
         var content = new StreamContent(image);
         content.Headers.ContentType = mediaType;
         form.Add(content, "file", "staff-upload");
+        var query = $"internal/recognition/detect?staffUserId={staffUserId}&lotId={lotId}&purpose={Uri.EscapeDataString(purpose)}";
+        if (!string.IsNullOrWhiteSpace(captureId)) query += $"&captureId={Uri.EscapeDataString(captureId)}";
+        if (!string.IsNullOrWhiteSpace(imageId)) query += $"&imageId={Uri.EscapeDataString(imageId)}";
+        if (!string.IsNullOrWhiteSpace(eventId)) query += $"&eventId={Uri.EscapeDataString(eventId)}";
         var request = new HttpRequestMessage(
             HttpMethod.Post,
-            $"internal/recognition/detect?staffUserId={staffUserId}&lotId={lotId}&purpose={Uri.EscapeDataString(purpose)}")
+            query)
         {
             Content = form
         };
+        AddContextHeaders(request, idempotencyKey, correlationId);
         return (await SendAsync<StaffDetectionDto>(request, allowNotFound: false, cancellationToken))!;
     }
 
     public Task<StaffDetectionDto?> ConfirmAsync(
         long recognitionId, string plateNumber, string? note, long staffUserId, int lotId,
+        string? captureId, string? eventId, string? ticketId, string? idempotencyKey, string? correlationId,
         CancellationToken cancellationToken) =>
-        SendAsync<StaffDetectionDto>(new HttpRequestMessage(HttpMethod.Post, $"internal/recognition/{recognitionId}/confirm")
-        {
-            Content = JsonContent.Create(new ConfirmRecognition(plateNumber, note, staffUserId, lotId))
-        }, allowNotFound: true, cancellationToken);
+        SendAsync<StaffDetectionDto>(CreateRequest(HttpMethod.Post, $"internal/recognition/{recognitionId}/confirm",
+            JsonContent.Create(new ConfirmRecognition(plateNumber, note, staffUserId, lotId, captureId, eventId, ticketId, idempotencyKey)),
+            idempotencyKey, correlationId), allowNotFound: true, cancellationToken);
 
     public Task<StaffDetectionDto?> ConfirmExitAsync(
         long recognitionId, long sessionId, string plateNumber, string? note, long staffUserId, int lotId,
+        string? captureId, string? ticketId, string? idempotencyKey, string? correlationId,
         CancellationToken cancellationToken) =>
         SendAsync<StaffDetectionDto>(
-            new HttpRequestMessage(HttpMethod.Post, $"internal/recognition/{recognitionId}/confirm-exit")
-            {
-                Content = JsonContent.Create(
-                    new ConfirmExitRecognition(sessionId, plateNumber, note, staffUserId, lotId))
-            },
+            CreateRequest(HttpMethod.Post, $"internal/recognition/{recognitionId}/confirm-exit",
+                JsonContent.Create(new ConfirmExitRecognition(sessionId, plateNumber, note, staffUserId, lotId, captureId, ticketId, idempotencyKey)),
+                idempotencyKey, correlationId),
+            allowNotFound: true,
+            cancellationToken);
+
+    public Task<StaffDetectionDto?> GetByIdAsync(long recognitionId, CancellationToken cancellationToken) =>
+        SendAsync<StaffDetectionDto>(
+            new HttpRequestMessage(HttpMethod.Get, $"internal/recognition/{recognitionId}"),
             allowNotFound: true,
             cancellationToken);
 
@@ -87,8 +100,25 @@ public sealed class RecognitionServiceClient(HttpClient client) : IStaffDetectio
     private static AiServiceException Unavailable() =>
         new(HttpStatusCode.ServiceUnavailable, "Recognition service is unavailable.");
 
-    public sealed record ConfirmRecognition(string PlateNumber, string? Note, long StaffUserId, int LotId);
+    private static HttpRequestMessage CreateRequest(HttpMethod method, string uri, HttpContent content,
+        string? idempotencyKey, string? correlationId)
+    {
+        var request = new HttpRequestMessage(method, uri) { Content = content };
+        AddContextHeaders(request, idempotencyKey, correlationId);
+        return request;
+    }
+
+    private static void AddContextHeaders(HttpRequestMessage request, string? idempotencyKey, string? correlationId)
+    {
+        if (!string.IsNullOrWhiteSpace(idempotencyKey)) request.Headers.TryAddWithoutValidation(IdempotencyHeader, idempotencyKey);
+        if (!string.IsNullOrWhiteSpace(correlationId)) request.Headers.TryAddWithoutValidation(CorrelationHeader, correlationId);
+    }
+
+    public sealed record ConfirmRecognition(string PlateNumber, string? Note, long StaffUserId, int LotId,
+        string? CaptureId = null, string? EventId = null, string? TicketId = null,
+        string? IdempotencyKey = null);
     public sealed record ConfirmExitRecognition(
-        long SessionId, string PlateNumber, string? Note, long StaffUserId, int LotId);
+        long SessionId, string PlateNumber, string? Note, long StaffUserId, int LotId,
+        string? CaptureId = null, string? TicketId = null, string? IdempotencyKey = null);
     private sealed record RecognitionError(string Message);
 }
