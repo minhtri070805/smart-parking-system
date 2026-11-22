@@ -32,7 +32,14 @@ export function TicketEntry({ lot, onChanged, onBusyChange }) {
         request.current = { eventId: crypto.randomUUID(), zoneId: Number(zoneId), ticketCode: ticket,
           imageId: savedId, manualReason: reason || null };
       }
-      const result = await operationsApi(lot.lotId, "entries", request.current);
+      let result;
+      try { result = await operationsApi(lot.lotId, "entries", request.current); }
+      catch (error) {
+        // Server từ chối rõ ràng (4xx): chưa có lượt nào được tạo, mở khóa để sửa mã vé/khu mà không mất ảnh.
+        // Lỗi mạng/5xx là kết quả chưa rõ: giữ nguyên eventId để gửi lại an toàn.
+        if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) request.current = null;
+        throw error;
+      }
       setCreated(result); onChanged();
     });
   };
