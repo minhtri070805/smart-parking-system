@@ -4,3 +4,37 @@ GET {{ParkingOperations_HostAddress}}/health
 Accept: application/json
 
 ###
+
+# Create a planned shift (MANAGER token; business date is the local Vietnam start date).
+POST {{ParkingOperations_HostAddress}}/api/v1/operations/shifts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "lotId": 1,
+  "businessDate": "2026-11-16",
+  "shiftCode": "MORNING"
+}
+
+###
+
+# Add an active Core-assigned STAFF member to the shift.
+POST {{ParkingOperations_HostAddress}}/api/v1/operations/shifts/{{shiftId}}/assignments
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "staffId": 101,
+  "dutyCode": "GATE"
+}
+
+###
+
+# Start, then complete the shift after its scheduled work is settled.
+POST {{ParkingOperations_HostAddress}}/api/v1/operations/shifts/{{shiftId}}/start
+Authorization: Bearer {{accessToken}}
+
+###
+
+POST {{ParkingOperations_HostAddress}}/api/v1/operations/shifts/{{shiftId}}/complete
+Authorization: Bearer {{accessToken}}

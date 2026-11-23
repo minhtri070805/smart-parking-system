@@ -52,7 +52,10 @@ public class StaffAssignmentsController : ControllerBase
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "You are not assigned to gate duty at this parking lot." });
             await using var stream = file.OpenReadStream();
             var result = await _detectionService.DetectAsync(
-                stream, file.ContentType, file.Length, actorId.Value, lotId, purpose, ct);
+                stream, file.ContentType, file.Length, actorId.Value, lotId, purpose,
+                Request.Query["captureId"].ToString(), Request.Query["imageId"].ToString(),
+                Request.Query["eventId"].ToString(), Request.Headers["Idempotency-Key"].ToString(),
+                Request.Headers["X-Correlation-Id"].ToString(), ct);
             return Ok(new { message = "Image recognized successfully.", data = result });
         }
         catch (ImageValidationException exception)
@@ -101,7 +104,8 @@ public class StaffAssignmentsController : ControllerBase
                 && !string.Equals(User.FindFirst(ClaimTypes.Role)?.Value, Roles.Admin, StringComparison.Ordinal))
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "You are not assigned to gate duty at this parking lot." });
             var result = await _detectionService.ConfirmAsync(id, plateNumber,
-                request.Note?.Trim(), actorId.Value, request.LotId, ct);
+                request.Note?.Trim(), actorId.Value, request.LotId, null, null, null,
+                Request.Headers["Idempotency-Key"].ToString(), Request.Headers["X-Correlation-Id"].ToString(), ct);
             return result is null ? NotFound(new { message = "Recognition record was not found." }) : Ok(new { data = result });
         }
         catch (ImageValidationException exception)
@@ -126,7 +130,8 @@ public class StaffAssignmentsController : ControllerBase
         try
         {
             var result = await _detectionService.ConfirmExitAsync(id, request.SessionId, plate,
-                request.Note?.Trim(), actorId.Value, request.LotId, ct);
+                request.Note?.Trim(), actorId.Value, request.LotId, null, null,
+                Request.Headers["Idempotency-Key"].ToString(), Request.Headers["X-Correlation-Id"].ToString(), ct);
             return result is null ? NotFound(new { message = "Recognition record was not found." }) : Ok(new { data = result });
         }
         catch (ImageValidationException exception)
@@ -140,97 +145,34 @@ public class StaffAssignmentsController : ControllerBase
     }
 
     /// <summary>
-    /// Admin phân công Staff tại mọi bãi; Manager chỉ phân công Staff tại bãi mình quản lý.
-    /// </summary>
-    [HttpPost]
-    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
-    [ProducesResponseType(typeof(StaffLotAssignmentDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> CreateAssignment([FromBody] CreateStaffAssignmentRequestDto request, CancellationToken ct)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
-        var actorId = GetCurrentUserId();
-        if (!actorId.HasValue)
-        {
-            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
-        }
-
-        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
-
-        var (success, message, assignment) = await _assignmentService.CreateAssignmentAsync(request, actorId.Value, clientIp, ct);
-        if (!success)
-        {
-            if (message.StartsWith("Bạn không có quyền")) return StatusCode(StatusCodes.Status403Forbidden, new { message });
-            if (message.Contains("Không tìm thấy"))
-            {
-                return NotFound(new { message });
-            }
-            if (message.Contains("Xung đột") || message.Contains("hiện đã được phân công"))
-            {
-                return Conflict(new { message });
-            }
-            return BadRequest(new { message });
-        }
-
-        return CreatedAtAction(nameof(GetAssignmentById), new { id = assignment!.Id }, new
-        {
-            message,
-            data = assignment
-        });
-    }
-
-    /// <summary>
-    /// Tra cứu danh sách phân công nhân sự bãi đỗ xe theo bộ lọc phân trang.
-    /// Admin xem toàn bộ; Manager chỉ xem bãi mình quản lý.
+    /// Trả về toàn bộ danh sách nhân viên vai trò STAFF để phân công ca trực tự do tại bãi xe.
     /// </summary>
     [HttpGet]
     [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
-    [ProducesResponseType(typeof(PagedResult<StaffLotAssignmentDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> GetAssignments([FromQuery] StaffAssignmentFilterDto filter, CancellationToken ct)
-    {
-        var actorId = GetCurrentUserId();
-        if (!actorId.HasValue)
-        {
-            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
-        }
-
-        var actorRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-
-        var result = await _assignmentService.GetAssignmentsAsync(filter, actorId.Value, actorRole, ct);
-        return Ok(new
-        {
-            message = "Lấy danh sách phân công nhân sự thành công.",
-            data = result
-        });
-    }
-
-    [HttpGet("candidates")]
-    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
-    public async Task<IActionResult> GetCandidates([FromQuery] StaffCandidateFilterDto filter, CancellationToken ct)
-    {
-        var actorId = GetCurrentUserId();
-        if (!actorId.HasValue) return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
-        return Ok(new { data = await _assignmentService.GetCandidatesAsync(filter, actorId.Value, ct) });
-    }
-
-    [HttpGet("locations/{lotId:int}")]
-    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
-    public async Task<IActionResult> GetLocations(int lotId, CancellationToken ct)
+    public async Task<IActionResult> GetAssignments([FromQuery] int? lotId, [FromQuery] long? userId, CancellationToken ct)
     {
         var actorId = GetCurrentUserId();
         if (!actorId.HasValue) return Unauthorized();
-        var locations = await _assignmentService.GetLocationsAsync(lotId, actorId.Value, ct);
-        return locations == null ? NotFound(new { message = "Bãi không hoạt động hoặc bạn không có quyền quản lý bãi này." }) : Ok(new { data = locations });
+
+        var candidates = await _assignmentService.GetCandidatesAsync(new StaffCandidateFilterDto { Page = 1, PageSize = 100 }, actorId.Value, ct);
+        var items = candidates.Items
+            .Where(x => !userId.HasValue || x.Id == userId.Value)
+            .Select(x => new
+            {
+                userId = x.Id,
+                userFullName = string.IsNullOrWhiteSpace(x.FullName) || x.FullName == "string" ? x.Username : x.FullName,
+                userRole = Roles.Staff
+            }).ToList();
+
+        return Ok(new
+        {
+            message = "Lấy danh sách nhân viên thành công.",
+            data = new
+            {
+                items,
+                totalCount = items.Count
+            }
+        });
     }
 
     /// <summary>
@@ -254,83 +196,6 @@ public class StaffAssignmentsController : ControllerBase
         {
             message = "Lấy danh sách bãi xe được phân công thành công.",
             data = lots
-        });
-    }
-
-    /// <summary>
-    /// Xem chi tiết một bản ghi phân công theo ID.
-    /// Admin hoặc Manager quản lý bãi tương ứng.
-    /// </summary>
-    [HttpGet("{id:long}")]
-    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
-    [ProducesResponseType(typeof(StaffLotAssignmentDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetAssignmentById(long id, CancellationToken ct)
-    {
-        var actorId = GetCurrentUserId();
-        if (!actorId.HasValue)
-        {
-            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
-        }
-
-        var actorRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
-
-        var assignment = await _assignmentService.GetAssignmentByIdAsync(id, actorId.Value, actorRole, ct);
-        if (assignment == null)
-        {
-            return NotFound(new { message = $"Không tìm thấy bản ghi phân công với ID: {id} hoặc bạn không có quyền truy cập." });
-        }
-
-        return Ok(new
-        {
-            message = "Lấy chi tiết phân công thành công.",
-            data = assignment
-        });
-    }
-
-    /// <summary>
-    /// Thu hồi quyền phân công nhân sự tại bãi xe (Soft-Revoke).
-    /// Phân công sẽ bị vô hiệu hóa (is_active = false) và có hiệu lực ngay lập tức ở request tiếp theo.
-    /// Admin hoặc Manager quản lý bãi tương ứng; chỉ thu hồi phân công Staff.
-    /// </summary>
-    [HttpPost("{id:long}/revoke")]
-    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> RevokeAssignment(long id, [FromBody] RevokeStaffAssignmentRequestDto request, CancellationToken ct)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
-        var actorId = GetCurrentUserId();
-        if (!actorId.HasValue)
-        {
-            return Unauthorized(new { message = "Không xác định được danh tính người dùng." });
-        }
-
-        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
-
-        var (success, message) = await _assignmentService.RevokeAssignmentAsync(id, request, actorId.Value, clientIp, ct);
-        if (!success)
-        {
-            if (message.StartsWith("Bạn không có quyền")) return StatusCode(StatusCodes.Status403Forbidden, new { message });
-            if (message.Contains("Không tìm thấy"))
-            {
-                return NotFound(new { message });
-            }
-            return BadRequest(new { message });
-        }
-
-        return Ok(new
-        {
-            message
         });
     }
 

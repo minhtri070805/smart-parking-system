@@ -20,7 +20,15 @@ public sealed record StaffDetectionDto(
     string? ConfirmationNote = null,
     int? ParkingLotId = null,
     string? Purpose = null,
-    long? MatchedParkingSessionId = null);
+    long? MatchedParkingSessionId = null,
+    string? CaptureId = null,
+    string? ImageId = null,
+    string? EventId = null,
+    string? TicketId = null,
+    long? SessionId = null,
+    string? CorrelationId = null,
+    string? IdempotencyKey = null,
+    string? ModelVersion = null);
 
 public sealed record ConfirmStaffDetectionRequestDto(
     string PlateNumber,

@@ -123,6 +123,13 @@ body {
 .workspace-detail {
   margin: 20px 0;
 }
+.manager-session-photo {
+  display: block;
+  width: min(100%, 480px);
+  max-height: 280px;
+  object-fit: contain;
+  border-radius: 12px;
+}
 .manager-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

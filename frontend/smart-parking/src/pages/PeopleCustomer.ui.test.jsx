@@ -250,7 +250,7 @@ it("allows role changes without an approval reason and shows server failures for
 it("creates an explicit SLOT_VERIFIER duty assignment", async () => {
   auth("ADMIN");
   mount(<AdminPeople />, "/admin/people?view=assignments");
-  fireEvent.change(screen.getByLabelText("Tìm Staff theo tên/email"), { target: { value: "staff" } });
+  fireEvent.change(screen.getByLabelText("Tìm nhân sự theo tên/email"), { target: { value: "staff" } });
   fireEvent.click(await screen.findByRole("button", { name: /Nhân viên Demo/ }));
   expect(screen.queryByRole("combobox", { name: "Nhân sự" })).toBeNull();
   fireEvent.change(screen.getByLabelText("Bãi đỗ"), { target: { value: "1" } });
@@ -271,10 +271,31 @@ it("creates an explicit SLOT_VERIFIER duty assignment", async () => {
     duty: "SLOT_VERIFIER",
   });
 });
+it("assigns a Manager to a lot without requiring Staff duty or floor", async () => {
+  auth("ADMIN");
+  mount(<AdminPeople />, "/admin/people?view=assignments");
+  fireEvent.change(screen.getByLabelText("Vai trò nhân sự"), { target: { value: "MANAGER" } });
+  fireEvent.change(screen.getByLabelText("Tìm nhân sự theo tên/email"), { target: { value: "manager" } });
+  fireEvent.click(await screen.findByRole("button", { name: /Quản lý Demo/ }));
+  fireEvent.change(screen.getByLabelText("Bãi đỗ"), { target: { value: "1" } });
+  expect(screen.getByText("Quản lý toàn bãi")).toBeTruthy();
+  expect(screen.queryByLabelText("Tầng")).toBeNull();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Lưu phân công" }).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Lưu phân công" }));
+  await screen.findByText("Đã lưu thành công");
+  expect(writes()[0][0]).toBe("/api/v1/staff-assignments");
+  expect(JSON.parse(writes()[0][1].body)).toMatchObject({
+    userId: 8,
+    lotId: 1,
+    duty: "GATE",
+    floorId: null,
+    zoneId: null,
+  });
+});
 it("lets Manager assign only Staff at managed lots without calling account-management APIs", async () => {
   auth("MANAGER");
   mount(<ManagerStaffAssignments />, "/manager/assignments");
-  fireEvent.change(screen.getByLabelText("Tìm Staff theo tên/email"), { target: { value: "staff" } });
+  fireEvent.change(screen.getByLabelText("Tìm nhân sự theo tên/email"), { target: { value: "staff" } });
   fireEvent.click(await screen.findByRole("button", { name: /Nhân viên Demo/ }));
   expect(screen.queryByRole("combobox", { name: "Nhân sự" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Tài khoản", exact: true })).toBeNull();
@@ -308,7 +329,7 @@ it("requires confirmation for revoking an assignment", async () => {
 it("clears a previous zone and submits the gate duty with only a floor", async () => {
   const duty = "GATE";
   auth("ADMIN"); mount(<AdminPeople />, "/admin/people?view=assignments");
-  fireEvent.change(screen.getByLabelText("Tìm Staff theo tên/email"), { target: { value: "staff" } });
+  fireEvent.change(screen.getByLabelText("Tìm nhân sự theo tên/email"), { target: { value: "staff" } });
   fireEvent.click(await screen.findByRole("button", { name: /Nhân viên Demo/ }));
   fireEvent.change(screen.getByLabelText("Bãi đỗ"), { target: { value: "1" } });
   fireEvent.change(screen.getByLabelText("Phân công", { exact: true }), { target: { value: "SLOT_VERIFIER" } });
@@ -399,6 +420,13 @@ it("keeps email registration and OTP requests public", async () => {
   fireEvent.change(screen.getByLabelText("Nhập lại mật khẩu"), {
     target: { value: "Password123!" },
   });
+  fireEvent.click(screen.getByRole("button", { name: "Điều khoản dịch vụ" }));
+  expect(screen.getByRole("dialog", { name: "Điều khoản sử dụng & Chính sách bảo mật" })).toBeTruthy();
+  expect(screen.getByText(/Vị trí đỗ được giữ tối đa 30 phút/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Tôi đã hiểu và Đồng ý" }));
+  expect(screen.getByLabelText(/Tôi đã đọc và đồng ý với Điều khoản dịch vụ/).checked).toBe(true);
+  expect(screen.queryByRole("dialog", { name: "Điều khoản sử dụng & Chính sách bảo mật" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Đăng ký", exact: true }).disabled).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Gửi mã", exact: true }));
   await waitFor(() =>
     expect(screen.getByLabelText("Mã OTP").disabled).toBe(false),
@@ -413,6 +441,18 @@ it("keeps email registration and OTP requests public", async () => {
   expect(writes()[1][0]).toBe("/api/v1/auth/verify-email");
 });
 
+it("blocks registration and shows an error when policies have not been accepted", () => {
+  mount(<Register />);
+
+  expect(screen.getByRole("button", { name: "Đăng ký", exact: true }).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Gửi mã", exact: true }));
+  expect(screen.getByRole("alert").textContent).toContain("Vui lòng đọc và đồng ý");
+  fireEvent.submit(document.querySelector("form"));
+
+  expect(screen.getByRole("alert").textContent).toContain("Vui lòng đọc và đồng ý");
+  expect(writes()).toHaveLength(0);
+});
+
 it("resends OTP after a reopened registration form receives a conflict", async () => {
   const email = "customer@example.com";
   fetcher
@@ -420,6 +460,8 @@ it("resends OTP after a reopened registration form receives a conflict", async (
     .mockResolvedValueOnce(Response.json({ message: "Nếu email chưa xác minh, mã mới sẽ được gửi." }));
 
   mount(<Register />);
+  fireEvent.click(screen.getByRole("button", { name: "Điều khoản dịch vụ" }));
+  fireEvent.click(screen.getByRole("button", { name: "Tôi đã hiểu và Đồng ý" }));
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: email } });
   fireEvent.change(screen.getByLabelText("Mật khẩu", { exact: true }), {
     target: { value: "Password123!" },

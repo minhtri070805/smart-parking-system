@@ -1,9 +1,11 @@
 import { useEffect, useId, useState } from "react";
 import {
   normalizePlate,
+  platesMatch,
   staffApi,
   validatePhoto,
 } from "../../services/staffApi.js";
+import { formatVietnameseCarPlateInput } from "../../services/plateNumber.js";
 import { Notice, SafePhoto, StaffError, StaffIcon } from "./StaffUI.jsx";
 
 export const emptyCapture = () => ({
@@ -25,8 +27,7 @@ export async function prepareCapture(capture, update, lotId, sessionId) {
     throw new Error("Nhập lý do sửa biển số AI trước khi xác nhận.");
   if (
     capture.recognition?.id &&
-    (normalizePlate(capture.recognition.confirmedPlateNumber || "") !==
-      normalizePlate(capture.plate) ||
+    (!platesMatch(capture.recognition.confirmedPlateNumber, capture.plate) ||
       (sessionId && capture.recognition.matchedParkingSessionId !== sessionId))
   ) {
     const result = sessionId
@@ -43,10 +44,8 @@ export async function prepareCapture(capture, update, lotId, sessionId) {
           capture.note.trim() || null,
           lotId,
         );
-    if (
-      normalizePlate(result?.data?.confirmedPlateNumber || "") !==
-      normalizePlate(capture.plate)
-    ) {
+    // Core lưu biển số chuẩn của phiên khi confirm-exit nên so khớp bỏ qua dấu cách/chấm/gạch.
+    if (!platesMatch(result?.data?.confirmedPlateNumber, capture.plate)) {
       throw new Error(
         "Chưa xác nhận được biển số nhận diện. Vui lòng thử lại trước khi ghi nhận phiên.",
       );
@@ -221,10 +220,12 @@ export default function PlateCapture({
           className="staff-plate-input"
           autoComplete="off"
           placeholder="Ví dụ: 51F-123.45"
-          maxLength={20}
+          pattern="[0-9]{2}[A-Za-z][ -]?[0-9]{3}[.]?[0-9]{2}"
+          title="Nhập theo dạng biển số ô tô Việt Nam, ví dụ 51F-123.45"
+          maxLength={12}
           value={value.plate}
           onChange={(event) =>
-            update({ plate: event.target.value.toUpperCase() })
+            update({ plate: formatVietnameseCarPlateInput(event.target.value) })
           }
           required
         />

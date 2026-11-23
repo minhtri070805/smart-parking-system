@@ -186,7 +186,20 @@ public class VehiclesController : ControllerBase
         var currentUserId = GetCurrentUserId();
         var isAdmin = User.IsInRole(Roles.Admin);
 
-        var (success, message) = await _vehicleService.DeleteVehicleAsync(id, currentUserId, isAdmin, ct);
+        (bool success, string message) result;
+        try
+        {
+            result = await _vehicleService.DeleteVehicleAsync(id, currentUserId, isAdmin, ct);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception, "Failed to remove vehicle {VehicleId} for user {UserId}.", id, currentUserId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                message = "Không thể xóa xe lúc này. Vui lòng khởi động lại Core API để nạp thay đổi database mới nhất rồi thử lại."
+            });
+        }
+        var (success, message) = result;
         if (!success)
         {
             if (message.Contains("Không tìm thấy"))

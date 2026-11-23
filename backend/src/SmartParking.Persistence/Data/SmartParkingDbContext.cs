@@ -20,6 +20,7 @@ public class SmartParkingDbContext : DbContext, IApplicationDbContext
     public DbSet<ParkingFloor> ParkingFloors => Set<ParkingFloor>();
     public DbSet<ParkingSlot> ParkingSlots => Set<ParkingSlot>();
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
+    public DbSet<VehicleRegistrationBlock> VehicleRegistrationBlocks => Set<VehicleRegistrationBlock>();
     public DbSet<ParkingSession> ParkingSessions => Set<ParkingSession>();
     public DbSet<ParkingDispatch> ParkingDispatches => Set<ParkingDispatch>();
     public DbSet<StaffLotAssignment> StaffLotAssignments => Set<StaffLotAssignment>();

@@ -28,12 +28,13 @@ public sealed class ParkingSlotAdministrationService(IApplicationDbContext db, I
     private async Task Guard(ParkingSlot slot, bool reducesCapacity, CancellationToken ct)
     {
         if (await db.ParkingSessions.AnyAsync(s => s.CurrentSlotId == slot.Id && (s.Status == SessionStatuses.Active || s.Status == SessionStatuses.Paid), ct) ||
-            await db.ParkingDispatches.AnyAsync(d => d.AssignedSlotId == slot.Id && d.Status == DispatchStatuses.Assigned, ct))
+            await db.ParkingDispatches.AnyAsync(d => d.AssignedSlotId == slot.Id && d.Status == DispatchStatuses.Assigned, ct) ||
+            await db.Bookings.AnyAsync(b => b.ParkingSlotId == slot.Id && (b.Status == BookingStatuses.Pending || b.Status == BookingStatuses.CheckedIn), ct))
             throw new ParkingOperationException(409, "SLOT_PROTECTED", "Ô đang có xe hoặc đã được giữ chỗ/điều phối. Không thể sửa, xóa hoặc đổi trạng thái.");
         if (reducesCapacity && slot.IsActive && slot.Floor.IsActive && slot.PhysicalStatus == SlotPhysicalStatuses.Empty &&
             slot.Zone.Type == "TRANSIENT")
         {
-            // Bookings currently reserve capacity rather than a specific slot.
+            // Legacy lot-wide bookings still reserve capacity without a physical slot.
             var capacity = await ParkingLotCapacityHelper.CalculateAsync(db, slot.Floor.LotId, ct: ct);
             if (capacity.PendingBookingsCount > 0 && capacity.AvailableCapacity <= 0)
                 throw new ParkingOperationException(409, "BOOKING_CAPACITY_RESERVED", "Chỗ trống còn lại đã dành cho booking. Thao tác này sẽ làm thiếu chỗ đã đặt trước.");

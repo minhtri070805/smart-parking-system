@@ -2,6 +2,7 @@ import { Component } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout.jsx";
 import GoogleLoginButton from "../components/GoogleLoginButton.jsx";
+import PasswordInput from "../components/PasswordInput.jsx";
 import { apiRequest } from "../services/api.js";
 import { setAuthSession } from "../services/authSession.js";
 
@@ -88,9 +89,8 @@ class LoginForm extends Component {
             />
 
             <label htmlFor="login-password">Mật khẩu</label>
-            <input
+            <PasswordInput
               id="login-password"
-              type="password"
               name="password"
               placeholder="Nhập mật khẩu của bạn"
               autoComplete="current-password"

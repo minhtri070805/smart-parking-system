@@ -10,7 +10,7 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
     {
         builder.ToTable("bookings", t =>
         {
-            t.HasCheckConstraint("chk_bookings_status", "status IN ('PENDING', 'CHECKED_IN', 'CANCELLED', 'EXPIRED')");
+            t.HasCheckConstraint("chk_bookings_status", "status IN ('PENDING', 'CHECKED_IN', 'PARKED', 'CANCELLED', 'EXPIRED')");
             t.HasCheckConstraint("chk_bookings_time_order", "end_time IS NULL OR end_time >= start_time");
             t.HasCheckConstraint("chk_bookings_plate_normalized", "plate_number = UPPER(TRIM(plate_number))");
         });
@@ -52,6 +52,15 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_bookings_vehicle");
 
+        builder.Property(b => b.ParkingSlotId)
+            .HasColumnName("parking_slot_id");
+
+        builder.HasOne(b => b.ParkingSlot)
+            .WithMany()
+            .HasForeignKey(b => b.ParkingSlotId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_bookings_parking_slot");
+
         builder.Property(b => b.PlateNumber)
             .HasColumnName("plate_number")
             .HasMaxLength(20)
@@ -69,6 +78,13 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .HasMaxLength(20)
             .HasDefaultValue("PENDING")
             .IsRequired();
+
+        builder.Property(b => b.PaymentMode).HasColumnName("payment_mode").HasMaxLength(20).HasDefaultValue("PAY_AT_COUNTER").IsRequired();
+        builder.Property(b => b.PaymentStatus).HasColumnName("payment_status").HasMaxLength(20).HasDefaultValue("PAY_AT_COUNTER").IsRequired();
+        builder.Property(b => b.PrepaidAmount).HasColumnName("prepaid_amount").HasPrecision(12, 2);
+        builder.Property(b => b.PaymentInvoiceId).HasColumnName("payment_invoice_id").HasMaxLength(36);
+        builder.Property(b => b.PaymentTransactionRef).HasColumnName("payment_transaction_ref").HasMaxLength(100);
+        builder.Property(b => b.PaymentPaidAt).HasColumnName("payment_paid_at");
 
         builder.Property(b => b.CheckedInAt)
             .HasColumnName("checked_in_at");
@@ -101,6 +117,11 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
 
         builder.HasIndex(b => new { b.PlateNumber, b.Status })
             .HasDatabaseName("ix_bookings_plate_status");
+
+        builder.HasIndex(b => b.ParkingSlotId)
+            .IsUnique()
+            .HasFilter("status = 'PENDING' AND parking_slot_id IS NOT NULL")
+            .HasDatabaseName("uq_bookings_pending_parking_slot");
 
         // Unique index: No vehicle can have more than one PENDING booking at any time
         builder.HasIndex(b => b.VehicleId)

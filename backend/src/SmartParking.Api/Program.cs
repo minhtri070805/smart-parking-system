@@ -21,6 +21,7 @@ builder.Services.AddMemoryCache();
 
 // Add services to the container.
 builder.Services.AddControllers();
+builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 var maxImageUploadSizeBytes = Math.Max(
     builder.Configuration.GetValue<long?>("Cloudinary:MaxUploadSizeBytes") ?? 10 * 1024 * 1024,
@@ -278,6 +279,7 @@ builder.Services.AddHealthChecks();
 builder.Services.AddApplicationServices();
 builder.Services.AddParkingPersistence(builder.Configuration);
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddHostedService<SmartParking.Api.HostedServices.BookingNoShowExpirationService>();
 
 var app = builder.Build();
 
@@ -314,6 +316,53 @@ app.UseAuthorization();
 
 // Map Health Check endpoint at /health (No auth required for local health check)
 app.MapHealthChecks("/health");
+
+// Proxy operations service requests to decouple frontend from CORS / mixed-content
+app.Map("/api/v1/operations/{**path}", async (HttpContext context, IHttpClientFactory httpClientFactory, IConfiguration configuration) =>
+{
+    var operationsBaseUrl = configuration["OperationsApi:BaseUrl"] ?? "http://localhost:5174";
+    var targetUri = new Uri($"{operationsBaseUrl.TrimEnd('/')}{context.Request.Path}{context.Request.QueryString}");
+
+    var client = httpClientFactory.CreateClient();
+    using var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), targetUri);
+
+    foreach (var header in context.Request.Headers)
+    {
+        if (!header.Key.StartsWith(':') && !header.Key.Equals("Host", StringComparison.OrdinalIgnoreCase))
+        {
+            requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+        }
+    }
+
+    if (context.Request.ContentLength > 0 || context.Request.ContentType != null)
+    {
+        requestMessage.Content = new StreamContent(context.Request.Body);
+        if (context.Request.ContentType != null)
+            requestMessage.Content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(context.Request.ContentType);
+    }
+
+    try
+    {
+        using var responseMessage = await client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+        context.Response.StatusCode = (int)responseMessage.StatusCode;
+        foreach (var header in responseMessage.Headers)
+        {
+            context.Response.Headers[header.Key] = header.Value.ToArray();
+        }
+        foreach (var header in responseMessage.Content.Headers)
+        {
+            context.Response.Headers[header.Key] = header.Value.ToArray();
+        }
+        context.Response.Headers.Remove("transfer-encoding");
+        await responseMessage.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
+    }
+    catch (HttpRequestException)
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsync("{\"message\":\"Operations Service (cổng 5174) hiện chưa khởi động hoặc chưa sẵn sàng. Hãy chạy Operations Service để sử dụng tính năng này.\"}");
+    }
+});
 
 app.MapControllers();
 app.MapGet("/", () => Results.Redirect("/app/"));

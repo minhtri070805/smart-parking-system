@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../services/api.js";
 import { calculateDashboardSummary } from "../services/dashboardSummary.js";
 import RequireRole from "../components/RequireRole.jsx";
+import RevenueReport from "../components/RevenueReport.jsx";
 
 function getItems(response) {
   const data = response?.data;
@@ -241,9 +242,11 @@ function AdminDashboardContent() {
         <section className="admin-dashboard__panel admin-shortcuts"><h2>Công việc thường dùng</h2><p>Đi thẳng tới tác vụ cần xử lý.</p>
           <a href="/app/parking"><strong>Không gian bãi đỗ 3D →</strong><span>Quan sát từng tầng và trạng thái ô đỗ</span></a>
           <a href="/app/admin/people?view=assignments"><strong>Phân công nhân viên →</strong><span>Điều phối cổng vào, cổng ra và khu vực</span></a>
-          <a href="/app/admin/parking-settings"><strong>Khu bãi & chính sách →</strong><span>Thiết lập phạm vi và quy tắc vận hành</span></a>
+          <a href="/app/admin/parking-settings"><strong>Quản lý bãi xe →</strong><span>Thiết lập bãi, tầng, khu vực và ô đỗ</span></a>
         </section>
       </div>
+
+      <RevenueReport title="Doanh thu toàn hệ thống" revision={lastUpdated?.getTime() || 0} />
 
       <section className="admin-dashboard__panel" id="active-sessions">
         <div className="admin-dashboard__panel-heading">

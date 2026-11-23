@@ -2,19 +2,25 @@
 
 ## Mục tiêu và trạng thái
 
-Service này là scaffold cho bounded context **Parking Operations**, bao gồm cả:
+Service này sở hữu bounded context **Parking Operations**. Các vertical slice hiện có là quản lý ca và bàn giao ca tiền mặt:
 
-- `STAFF`: vận hành cổng (`GATE`) và xác minh ô (`SLOT_VERIFIER`/`BOTH`).
-- `MANAGER`: điều hành bãi, quản lý trạng thái bãi/ô và giám sát vận hành.
+- Manager lập ca 05–13, 13–21, 21–05 theo ngày nghiệp vụ, phân công Staff, bắt đầu và chốt ca.
+- Nhân viên chỉ được xếp ca nếu đang có assignment STAFF hiệu lực tại bãi trong Core.
+- Manager tạo handover cho hai ca liền kề và hai nhân viên thuộc roster tương ứng.
+- Nhân viên giao và nhận tự xác nhận số tiền kiểm đếm bằng tài khoản riêng.
+- Hai số tiền khớp thì handover hoàn tất; nếu lệch, record chuyển `DISPUTED` để Manager xử lý.
+- Manager đối soát tiền cuối ca với số liệu Payment đã chụp và yêu cầu Manager khác duyệt.
 
-Đây **chưa phải** bản nhân bản của Staff từ monolith. Chưa triển khai nghiệp vụ
-độc lập, chưa có database riêng và chưa được dùng trong demo chính.
+Operations giữ backend/service riêng nhưng dùng cùng PostgreSQL database với Core qua
+`ConnectionStrings:DefaultConnection`. Bảng Operations nằm trong schema `operations`;
+lịch sử migration dùng bảng riêng `__OperationsMigrationsHistory` để không đụng lịch sử Core.
 
-Trong giai đoạn hiện tại, backend monolith vẫn là source of truth cho identity,
-role, assignment, parking master data, session, payment, audit và các API vận hành.
-Không để service này truy cập trực tiếp database của monolith.
+Core vẫn là source of truth cho identity, role, assignment và parking master data;
+Payment là source of truth cho transaction. Operations gọi Core API bằng JWT đang
+đăng nhập để kiểm tra quyền bãi/nhân viên và chỉ lưu mã tham chiếu, không truy cập
+trực tiếp database Core/Payment.
 
-Demo vẫn chạy bằng Core monolith:
+Các luồng parking khác vẫn chạy bằng Core monolith:
 
 ```powershell
 dotnet run --project ..\backend\src\SmartParking.Api\SmartParking.Api.csproj --launch-profile http
@@ -103,6 +109,85 @@ Chỉ chuyển route sau khi slice đạt đủ điều kiện:
 
 Chuyển từng slice, không chuyển toàn bộ service trong một lần. Monolith vẫn là
 fallback cho đến khi Operations chạy ổn định qua một chu kỳ nghiệm thu đầy đủ.
+
+## Shift Management API
+
+Base path: `/api/v1/operations/shifts`. Tất cả endpoint yêu cầu JWT Core và
+Manager phải đang được phân công vào bãi tương ứng.
+
+| Method | Route | Tác dụng |
+|---|---|---|
+| `POST` | `/api/v1/operations/shifts` | Manager tạo ca đã lên lịch |
+| `GET` | `/api/v1/operations/shifts/workspace?lotId=…` | Một response gồm danh sách ca và roster Staff đang hoạt động |
+| `POST` | `/api/v1/operations/shifts/{id}/assignments` | Manager xếp nhân viên Core-assigned vào ca |
+| `POST` | `/api/v1/operations/shifts/{id}/start` | Bắt đầu ca đã có roster |
+| `POST` | `/api/v1/operations/shifts/{id}/complete` | Chốt ca đang diễn ra |
+
+Trạng thái ca: `PLANNED → IN_PROGRESS → COMPLETED`. Roster chỉ chỉnh được khi
+`PLANNED`. Payroll và tính lương không thuộc phạm vi Operations hiện tại.
+
+## Cash Handover API
+
+Base path: `/api/v1/operations/handovers`. Tất cả endpoint nghiệp vụ yêu cầu JWT
+từ Core; tạo handover cần `MANAGER`, xem workspace cần `MANAGER` hoặc `STAFF`, xác nhận/từ chối cần `STAFF` hoặc `MANAGER` là
+đúng một trong hai nhân viên của handover và đang được phân công tại bãi.
+
+| Method | Route | Tác dụng |
+|---|---|---|
+| `POST` | `/api/v1/operations/handovers` | Manager tạo handover giữa hai shift ID liền kề |
+| `GET` | `/api/v1/operations/handovers/workspace?lotId=…` | Một response gồm lịch sử handover và các ca để tạo bàn giao; Staff chỉ xem handover mình tham gia |
+| `POST` | `/api/v1/operations/handovers/{id}/confirm` | Mỗi bên ghi số tiền mặt tự kiểm đếm |
+| `POST` | `/api/v1/operations/handovers/{id}/dispute` | Người giao/nhận từ chối và nêu lý do |
+
+Shift codes: `MORNING` (05–13), `AFTERNOON` (13–21), `NIGHT` (21–05).
+Ngày nghiệp vụ là ngày bắt đầu ca; thời điểm lưu UTC với giờ vận hành Việt Nam
+(UTC+7). Ca `NIGHT` kết thúc 05:00 ngày tiếp theo. Handover liên kết hai shift ID;
+chỉ cho phép chuyển ca liền kề và đúng ngày (handover `NIGHT → MORNING` sang sáng
+ngày hôm sau). Mỗi bãi/ngày/ca chỉ có một record.
+
+## Cash Reconciliation API
+
+Manager chỉ được đối soát ca đã chốt, một phiếu duy nhất cho mỗi ca. Số liệu Payment
+được nhập từ báo cáo thủ công và lưu cùng mã tham chiếu/thời điểm chụp. Người lập
+không thể tự duyệt; chênh lệch cần lý do và ghi chú duyệt.
+
+| Method | Route | Tác dụng |
+|---|---|---|
+| `GET` | `/api/v1/operations/reconciliations/workspace?lotId=…` | Một response gồm phiếu đối soát và ca đã chốt chưa đối soát |
+| `POST` | `/api/v1/operations/reconciliations` | Gửi số liệu đối soát để chờ duyệt |
+| `POST` | `/api/v1/operations/reconciliations/{id}/approve` | Manager khác duyệt phiếu |
+
+Payment hiện chưa cung cấp API tổng hợp tiền mặt theo bãi/ca, vì vậy Operations chưa
+tự đọc giao dịch hoặc hoàn tiền từ Payment.
+
+### Cấu hình và migration
+
+Operations cần connection string tới database Smart Parking đang dùng cho Core.
+Đặt qua User Secrets hoặc biến môi trường `ConnectionStrings__DefaultConnection`:
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "<smartparking-db-connection-string>" --project src\ParkingOperations.WebAPI
+dotnet user-secrets set "Jwt:SecretKey" "<same-secret-used-by-core-at-least-32-bytes>" --project ..\backend\src\SmartParking.Api
+```
+
+`ParkingOperations.WebAPI` dùng cùng `UserSecretsId` với Core để kiểm tra access
+token Core. Không dùng secret minh họa làm secret thật. Cấu hình `CoreApi:BaseUrl`
+cho địa chỉ Core khi chạy ngoài máy local; Production yêu cầu HTTPS.
+
+Áp EF migration lên database Smart Parking dùng chung. Migration tạo các bảng
+Operations trong schema `operations`:
+
+```powershell
+dotnet ef database update --project src\ParkingOperations.Persistence --startup-project src\ParkingOperations.WebAPI
+```
+
+SQL idempotent được xuất tại `neon/sql/operations-handover-v1.sql` ở workspace
+root. Nếu chạy thủ công trên Neon, chọn database Smart Parking dùng chung trước.
+Không chạy vào `BILLING_SERVICE_DB`.
+
+Khi phục vụ UI từ origin khác, cấu hình `Cors:AllowedOrigins` trong Operations và
+đặt `VITE_OPERATIONS_API_BASE_URL` lúc build frontend. Development mặc định gọi
+`http://localhost:5174`.
 
 ## Điều kiện chưa được phép làm
 

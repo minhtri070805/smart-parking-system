@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>smart-parking-billing-service-development</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

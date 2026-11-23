@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearAuthSession, setAuthSession } from "./authSession.js";
 import { collectPages, slotIsSelectable, staffApi } from "./staffApi.js";
+import { canUseStaffView } from "./staffDuty.js";
 
 const session = {
   id: 10,
@@ -103,6 +104,49 @@ describe("staff operation boundaries", () => {
       slotId: 101,
       checkInImageUrl: "https://images.example.invalid/entry.jpg",
     });
+  });
+
+  it("uses separate gate and dispatch endpoints for web bookings", async () => {
+    const fetch = vi.fn(async () => ok({
+      items: [{ id: 501, status: "CHECKED_IN" }],
+      totalCount: 1,
+      totalPages: 1,
+    }));
+    vi.stubGlobal("fetch", fetch);
+    const page = await staffApi.checkedInBookings(1);
+    expect(page.items[0].id).toBe(501);
+    expect(fetch.mock.calls[0][0]).toBe(
+      "/api/v1/bookings?lotId=1&status=CHECKED_IN&pageNumber=1&pageSize=100",
+    );
+
+    await staffApi.checkInBookingAtGate(
+      501,
+      "51A-888.88",
+      "https://images.example.invalid/plate.jpg",
+    );
+    expect(fetch.mock.calls[1][0]).toBe(
+      "/api/v1/parking-sessions/bookings/501/check-in-at-gate",
+    );
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+      plateNumber: "51A-888.88",
+      checkInImageUrl: "https://images.example.invalid/plate.jpg",
+    });
+
+    await staffApi.assignBookingSlot(20, 101, "Khu B1");
+    expect(fetch.mock.calls[2][0]).toBe(
+      "/api/v1/parking-sessions/20/assign-booking-slot",
+    );
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({
+      slotId: 101,
+      notes: "Khu B1",
+    });
+  });
+
+  it("shows booking check-in only to gate duty and slot assignment only to area duty", () => {
+    expect(canUseStaffView("GATE", "bookings")).toBe(true);
+    expect(canUseStaffView("GATE", "booking-dispatch")).toBe(false);
+    expect(canUseStaffView("SLOT_VERIFIER", "bookings")).toBe(false);
+    expect(canUseStaffView("SLOT_VERIFIER", "booking-dispatch")).toBe(true);
   });
 
   it("excludes a slot held by another open session even if its sensor says EMPTY", () => {

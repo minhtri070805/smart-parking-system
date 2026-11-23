@@ -19,6 +19,8 @@ public class BookingService : IBookingService
     private readonly IApplicationDbContext _context;
     private readonly IParkingAuthorizationService _authService;
     private readonly ILogger<BookingService> _logger;
+    private readonly IBookingPaymentGateway _bookingPaymentGateway;
+    private readonly IEmailService _emailService;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,11 +31,15 @@ public class BookingService : IBookingService
     public BookingService(
         IApplicationDbContext context,
         IParkingAuthorizationService authService,
-        ILogger<BookingService> logger)
+        ILogger<BookingService> logger,
+        IBookingPaymentGateway bookingPaymentGateway,
+        IEmailService emailService)
     {
         _context = context;
         _authService = authService;
         _logger = logger;
+        _bookingPaymentGateway = bookingPaymentGateway;
+        _emailService = emailService;
     }
 
     public async Task<(bool Success, int StatusCode, string Message, BookingDto? Data)> CreateBookingAsync(
@@ -54,9 +60,15 @@ public class BookingService : IBookingService
             return (false, 400, $"Bãi đỗ xe '{lot.Name}' hiện đang đóng cửa hoặc tạm ngừng hoạt động.", null);
         }
 
-        var bookingPolicy = await ParkingPolicyResolver.ResolveAsync(_context, lot.Id, null, DateTime.UtcNow, ct);
-        if (bookingPolicy == null && await _context.ParkingZones.AnyAsync(z => z.LotId == lot.Id, ct))
-            return (false, 409, "Chưa có chính sách đặt chỗ được duyệt có hiệu lực cho bãi.", null);
+        var paymentMode = userRole == Roles.User
+            ? "PREPAY"
+            : (request.PaymentMode ?? "PREPAY").Trim().ToUpperInvariant();
+        if (paymentMode is not ("PREPAY" or "PAY_AT_COUNTER"))
+            return (false, 400, "Phương thức thanh toán đặt chỗ không hợp lệ.", null);
+
+        // Chính sách vận hành tạm tắt trong demo; dùng khoản cọc cố định để luồng VNPay tiếp tục chạy.
+        const decimal demoDepositAmount = 50000m;
+        ParkingPolicy? bookingPolicy = null;
 
         var startTime = request.StartTime == default ? DateTime.UtcNow : request.StartTime;
         // Existing unzoned data retains its legacy tolerance. Configured sites read the approved source.
@@ -77,7 +89,42 @@ public class BookingService : IBookingService
         Vehicle? vehicle = null;
         string normalizedPlate = string.Empty;
 
-        if (request.VehicleId.HasValue)
+        // An explicit plate is a booking-only choice and takes precedence over a stale vehicle id.
+        if (!string.IsNullOrWhiteSpace(request.PlateNumber))
+        {
+            normalizedPlate = PlateNumberHelper.Normalize(request.PlateNumber);
+            if (!PlateNumberHelper.IsValidPlateFormat(normalizedPlate))
+            {
+                return (false, 400, "Biển số ô tô không đúng định dạng. Ví dụ hợp lệ: 51F-123.45.", null);
+            }
+
+            vehicle = await _context.Vehicles.FirstOrDefaultAsync(v => v.PlateNumber == normalizedPlate, ct);
+            if (vehicle == null)
+            {
+                vehicle = new Vehicle
+                {
+                    PlateNumber = normalizedPlate,
+                    // Booking-only plates must not become registered vehicles on the customer's account.
+                    UserId = null,
+                    // Keep the internal plate reference inactive so a later vehicle registration can claim it.
+                    IsActive = false,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _context.Vehicles.Add(vehicle);
+                await _context.SaveChangesAsync(ct);
+            }
+            else if (vehicle.UserId == userId && string.IsNullOrWhiteSpace(vehicle.Brand) &&
+                string.IsNullOrWhiteSpace(vehicle.Model) && string.IsNullOrWhiteSpace(vehicle.Color))
+            {
+                // Remove legacy booking-only records that were incorrectly attached to this account.
+                vehicle.UserId = null;
+                vehicle.IsActive = false;
+                vehicle.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync(ct);
+            }
+        }
+        else if (request.VehicleId.HasValue)
         {
             vehicle = await _context.Vehicles.FirstOrDefaultAsync(v => v.Id == request.VehicleId.Value, ct);
             if (vehicle == null)
@@ -96,41 +143,6 @@ public class BookingService : IBookingService
             }
 
             normalizedPlate = vehicle.PlateNumber;
-        }
-        else if (!string.IsNullOrWhiteSpace(request.PlateNumber))
-        {
-            normalizedPlate = PlateNumberHelper.Normalize(request.PlateNumber);
-            if (!PlateNumberHelper.IsValidPlateFormat(normalizedPlate))
-            {
-                return (false, 400, "Biển số xe không đúng định dạng. Độ dài hợp lệ từ 3 đến 20 ký tự.", null);
-            }
-
-            vehicle = await _context.Vehicles.FirstOrDefaultAsync(v => v.PlateNumber == normalizedPlate, ct);
-            if (vehicle != null)
-            {
-                if (userRole == Roles.User && vehicle.UserId.HasValue && vehicle.UserId.Value != userId)
-                {
-                    return (false, 403, "Phương tiện này đã được liên kết với một tài khoản người dùng khác.", null);
-                }
-
-                if (userRole == Roles.User && !vehicle.UserId.HasValue)
-                {
-                    vehicle.UserId = userId; // Gán phương tiện cho người dùng đặt chỗ
-                }
-            }
-            else
-            {
-                vehicle = new Vehicle
-                {
-                    PlateNumber = normalizedPlate,
-                    UserId = userRole == Roles.User ? userId : null,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-                _context.Vehicles.Add(vehicle);
-                await _context.SaveChangesAsync(ct);
-            }
         }
         else
         {
@@ -169,9 +181,7 @@ public class BookingService : IBookingService
                     await _context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0});", new object[] { lockKey }, cancellationToken: ct);
                 }
 
-                // Re-calculate authoritative capacity inside the lock with conservative IoT guard and strict slot fallback
                 var calc = await ParkingLotCapacityHelper.CalculateAsync(_context, lot.Id, lot, ct);
-
                 if (calc.AvailableCapacity <= 0)
                 {
                     await transaction.RollbackAsync(ct);
@@ -182,6 +192,7 @@ public class BookingService : IBookingService
                 var booking = new Booking
                 {
                     LotId = lot.Id,
+                    ParkingSlotId = null,
                     PolicyId = bookingPolicy?.Id,
                     UserId = userId,
                     VehicleId = vehicle.Id,
@@ -189,6 +200,9 @@ public class BookingService : IBookingService
                     StartTime = startTime,
                     EndTime = request.EndTime,
                     Status = BookingStatuses.Pending,
+                    PaymentMode = paymentMode,
+                    PaymentStatus = paymentMode == "PREPAY" ? "PENDING" : "PAY_AT_COUNTER",
+                    PrepaidAmount = paymentMode == "PREPAY" ? demoDepositAmount : null,
                     Notes = request.Notes?.Trim(),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -208,6 +222,7 @@ public class BookingService : IBookingService
                         booking.LotId,
                         booking.UserId,
                         booking.VehicleId,
+                        booking.ParkingSlotId,
                         booking.PlateNumber,
                         booking.StartTime,
                         booking.EndTime,
@@ -223,11 +238,38 @@ public class BookingService : IBookingService
 
                 await transaction.CommitAsync(ct);
 
+                var paymentUrl = (string?)null;
+                if (paymentMode == "PREPAY")
+                {
+                    var deposit = demoDepositAmount;
+
+                    try
+                    {
+                        var payment = await _bookingPaymentGateway.CreateBookingPaymentLinkAsync(
+                            booking.Id, deposit, normalizedPlate, startTime, ct);
+                        booking.PaymentInvoiceId = payment.InvoiceId;
+                        await _context.SaveChangesAsync(ct);
+                        paymentUrl = payment.PaymentUrl;
+                    }
+                    catch (Exception paymentError) when (paymentError is not OperationCanceledException)
+                    {
+                        booking.Status = BookingStatuses.Cancelled;
+                        booking.PaymentStatus = "FAILED";
+                        booking.CancelledAt = DateTime.UtcNow;
+                        booking.CancellationReason = "Không tạo được giao dịch thanh toán trước.";
+                        booking.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync(ct);
+                        _logger.LogError(paymentError, "Unable to create payment link for booking {BookingId}", booking.Id);
+                        return (false, 503, "Không kết nối được Payment Service để tạo thanh toán. Chỗ giữ tạm đã được giải phóng; hãy thử lại.", null);
+                    }
+                }
+
                 _logger.LogInformation("User {UserId} reserved capacity at lot {LotId} for vehicle {PlateNumber}. Booking ID: {BookingId}",
                     userId, lot.Id, normalizedPlate, booking.Id);
 
                 var dto = MapToDto(booking, lot.Name, lot.Address, user);
-                return (true, 201, "Đặt chỗ giữ sức chứa thành công.", dto);
+                dto.PaymentUrl = paymentUrl;
+                return (true, 201, "Đặt chỗ thành công. Vị trí đỗ sẽ được xác định khi xe đến bãi.", dto);
             }
             catch (DbUpdateException ex)
             {
@@ -252,6 +294,52 @@ public class BookingService : IBookingService
         }
     }
 
+    public async Task<(bool Success, string Message)> RecordBookingPaymentAsync(
+        long bookingId, decimal amount, string transactionRef, string? paymentMethod, DateTime? paidAt,
+        CancellationToken ct = default)
+    {
+        var booking = await _context.Bookings.Include(b => b.User).Include(b => b.Lot)
+            .Include(b => b.Vehicle).FirstOrDefaultAsync(b => b.Id == bookingId, ct);
+        if (booking == null) return (false, "Không tìm thấy lượt đặt chỗ.");
+        if (booking.PaymentStatus == "PAID")
+            return booking.PaymentTransactionRef == transactionRef && booking.PrepaidAmount == amount
+                ? (true, "Thanh toán đặt chỗ đã được xác nhận trước đó.")
+                : (false, "Lượt đặt chỗ đã được thanh toán bằng giao dịch khác.");
+        if (booking.PaymentMode != "PREPAY" || booking.PaymentStatus != "PENDING")
+            return (false, "Lượt đặt chỗ không chờ thanh toán trước.");
+        if (booking.Status != BookingStatuses.Pending && booking.Status != BookingStatuses.Expired)
+            return (false, "Lượt đặt chỗ đã bị hủy hoặc không còn chờ xe đến.");
+        if (booking.PrepaidAmount != amount)
+            return (false, "Số tiền thanh toán không khớp khoản đặt cọc của lượt đặt chỗ.");
+        if (string.IsNullOrWhiteSpace(transactionRef) || transactionRef.Length > 100)
+            return (false, "Mã giao dịch không hợp lệ.");
+
+        booking.PaymentStatus = "PAID";
+        booking.PaymentTransactionRef = transactionRef.Trim();
+        booking.PaymentPaidAt = paidAt?.ToUniversalTime() ?? DateTime.UtcNow;
+        booking.UpdatedAt = DateTime.UtcNow;
+        _context.AuditLogs.Add(new AuditLog
+        {
+            Action = "BOOKING_PAYMENT_CLEARED", TargetEntity = "bookings", TargetId = booking.Id.ToString(),
+            CreatedAt = DateTime.UtcNow,
+            NewValues = JsonSerializer.Serialize(new { booking.PaymentStatus, booking.PrepaidAmount,
+                TransactionRef = booking.PaymentTransactionRef, PaymentMethod = paymentMethod, booking.PaymentPaidAt,
+                NoRefund = booking.Status == BookingStatuses.Expired }, JsonOptions)
+        });
+        await _context.SaveChangesAsync(ct);
+        if (!string.IsNullOrWhiteSpace(booking.User?.Email))
+        {
+            var emailSent = await _emailService.SendBookingPaymentReceiptAsync(
+                booking.User.Email, booking.Id, booking.PlateNumber, booking.Lot?.Name ?? $"Bãi #{booking.LotId}",
+                amount, booking.PaymentTransactionRef, booking.PaymentPaidAt.Value, ct);
+            if (!emailSent)
+                _logger.LogWarning("Booking payment was confirmed but receipt email could not be delivered for booking {BookingId}.", booking.Id);
+        }
+        return (true, booking.Status == BookingStatuses.Expired
+            ? "Thanh toán đã ghi nhận sau khi lượt đặt chỗ hết hạn; khoản tiền không được hoàn."
+            : "Thanh toán trước cho lượt đặt chỗ đã được xác nhận.");
+    }
+
     public async Task<int> ExpireNoShowBookingsAsync(int? lotId = null, CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
@@ -268,18 +356,25 @@ public class BookingService : IBookingService
                 await using var transaction = await _context.BeginTransactionAsync(ct);
                 if (_context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
                     await _context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0});", new object[] { ParkingLotLockHelper.LotLockBase + id }, ct);
-                var pending = await _context.Bookings.Include(b => b.Policy)
+                var pending = await _context.Bookings
                     .Where(b => b.LotId == id && b.Status == BookingStatuses.Pending && b.StartTime <= now).ToListAsync(ct);
                 foreach (var booking in pending)
                 {
-                    var grace = booking.Policy?.LateArrivalMinutes ?? BookingStatuses.NoShowGracePeriodMinutes;
+                    var grace = BookingStatuses.NoShowGracePeriodMinutes;
                     if (booking.StartTime.AddMinutes(grace) > now) continue;
                     booking.Status = BookingStatuses.Expired;
                     booking.UpdatedAt = now;
                     _context.AuditLogs.Add(new AuditLog { Action = "EXPIRE_BOOKING_NO_SHOW", TargetEntity = "bookings",
                         TargetId = booking.Id.ToString(), CreatedAt = now,
                         OldValues = JsonSerializer.Serialize(new { Status = BookingStatuses.Pending }, JsonOptions),
-                        NewValues = JsonSerializer.Serialize(new { Status = BookingStatuses.Expired, GraceMinutes = grace, booking.PolicyId }, JsonOptions) });
+                        NewValues = JsonSerializer.Serialize(new
+                        {
+                            Status = BookingStatuses.Expired,
+                            Reason = "Khách không đến trong thời gian cho phép sau giờ hẹn.",
+                            GraceMinutes = grace,
+                            NoRefund = true,
+                            booking.PolicyId
+                        }, JsonOptions) });
                     expired++;
                 }
                 await _context.SaveChangesAsync(ct);
@@ -295,6 +390,7 @@ public class BookingService : IBookingService
         BookingFilterDto filter,
         CancellationToken ct = default)
     {
+        await ExpireNoShowBookingsAsync(ct: ct);
         var query = _context.Bookings
             .Include(b => b.Lot)
             .Include(b => b.User)
@@ -312,7 +408,18 @@ public class BookingService : IBookingService
         {
             var status = filter.Status.Trim().ToUpperInvariant();
             query = query.Where(b => b.Status == status);
+            if (status == BookingStatuses.CheckedIn)
+            {
+                query = query.Where(b => b.Session != null
+                    && b.Session.Status == SessionStatuses.Active
+                    && b.Session.CurrentSlotId == null);
+            }
         }
+
+        if (filter.FromDate.HasValue)
+            query = query.Where(b => b.StartTime >= filter.FromDate.Value);
+        if (filter.ToDate.HasValue)
+            query = query.Where(b => b.StartTime <= filter.ToDate.Value);
 
         var totalCount = await query.CountAsync(ct);
 
@@ -335,6 +442,7 @@ public class BookingService : IBookingService
         string currentUserRole,
         CancellationToken ct = default)
     {
+        await ExpireNoShowBookingsAsync(ct: ct);
         var booking = await _context.Bookings
             .Include(b => b.Lot)
             .Include(b => b.User)
@@ -449,17 +557,15 @@ public class BookingService : IBookingService
                     return (false, 400, $"Không thể hủy đặt chỗ ở trạng thái '{lockedBooking.Status}'.", null);
                 }
 
+                if (currentUserRole == Roles.User && lockedBooking.StartTime <= DateTime.UtcNow)
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, 409, "Chỉ có thể hủy vé trước giờ hẹn.", null);
+                }
+
                 var reason = string.IsNullOrWhiteSpace(request.Reason)
                     ? (currentUserRole == Roles.User ? "Người dùng yêu cầu hủy đặt chỗ." : "Nhân sự quản lý hủy đặt chỗ theo yêu cầu vận hành.")
                     : request.Reason.Trim();
-
-                if (lockedBooking.PolicyId.HasValue)
-                {
-                    var appliedPolicy = await _context.ParkingPolicies.AsNoTracking().FirstOrDefaultAsync(p => p.Id == lockedBooking.PolicyId, ct);
-                    if (appliedPolicy == null || appliedPolicy.CancellationAction == "DENY" ||
-                        (appliedPolicy.CancellationNoticeMinutes.HasValue && (lockedBooking.StartTime - DateTime.UtcNow).TotalMinutes < appliedPolicy.CancellationNoticeMinutes.Value))
-                        return (false, 409, "Không được hủy theo phiên bản chính sách đã áp dụng cho lượt đặt này.", null);
-                }
 
                 lockedBooking.Status = BookingStatuses.Cancelled;
                 lockedBooking.CancelledAt = DateTime.UtcNow;
@@ -514,6 +620,7 @@ public class BookingService : IBookingService
         string currentUserRole,
         CancellationToken ct = default)
     {
+        await ExpireNoShowBookingsAsync(ct: ct);
         var query = _context.Bookings
             .Include(b => b.Lot)
             .Include(b => b.User)
@@ -553,6 +660,12 @@ public class BookingService : IBookingService
         {
             var status = filter.Status.Trim().ToUpperInvariant();
             query = query.Where(b => b.Status == status);
+            if (status == BookingStatuses.CheckedIn)
+            {
+                query = query.Where(b => b.Session != null
+                    && b.Session.Status == SessionStatuses.Active
+                    && b.Session.CurrentSlotId == null);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
@@ -608,21 +721,37 @@ public class BookingService : IBookingService
 
         var calc = await ParkingLotCapacityHelper.CalculateAsync(_context, lotId, lot, ct);
         var physicalSlotsCount = await _context.ParkingSlots.CountAsync(s => s.Floor.LotId == lotId, ct);
-        var availableCapacity = lot.IsActive ? calc.AvailableCapacity : 0;
+        var physicallyAvailableSlots = await _context.ParkingSlots.CountAsync(s =>
+            s.Floor.LotId == lotId && s.IsActive && s.Floor.IsActive && s.Zone.IsActive &&
+            s.PhysicalStatus == SlotPhysicalStatuses.Empty &&
+            !s.CurrentSessions.Any(session => session.Status == SessionStatuses.Active || session.Status == SessionStatuses.Paid) &&
+            !s.AssignedDispatches.Any(dispatch => dispatch.Status == DispatchStatuses.Assigned) &&
+            !_context.Bookings.Any(booking => booking.ParkingSlotId == s.Id &&
+                (booking.Status == BookingStatuses.Pending || booking.Status == BookingStatuses.CheckedIn)), ct);
+        var unassignedPendingBookings = await _context.Bookings.CountAsync(b => b.LotId == lotId &&
+            b.Status == BookingStatuses.Pending && b.ParkingSlotId == null, ct);
+        var bookableTotalCapacity = await _context.ParkingSlots.CountAsync(s => s.Floor.LotId == lotId &&
+            s.IsActive && s.Floor.IsActive && s.Zone.IsActive &&
+            s.PhysicalStatus != SlotPhysicalStatuses.Maintenance &&
+            s.PhysicalStatus != SlotPhysicalStatuses.Unavailable, ct);
+        var availableForWalkIn = lot.IsActive ? calc.AvailableCapacity : 0;
+        var availableForBooking = lot.IsActive
+            ? Math.Max(0, physicallyAvailableSlots - unassignedPendingBookings)
+            : 0;
 
         return new LotCapacityDto
         {
             PolicyId = calc.PolicyId,
             NearFullThreshold = calc.NearFullThreshold,
-            IsNearFull = calc.NearFullThreshold.HasValue ? availableCapacity <= calc.NearFullThreshold.Value : null,
+            IsNearFull = calc.NearFullThreshold.HasValue ? availableForBooking <= calc.NearFullThreshold.Value : null,
             LotId = lot.Id,
             LotName = lot.Name,
             LotAddress = lot.Address,
-            TotalCapacity = calc.TotalCapacity,
-            AvailableForWalkIn = availableCapacity,
-            AvailableForBooking = availableCapacity,
+            TotalCapacity = bookableTotalCapacity,
+            AvailableForWalkIn = availableForWalkIn,
+            AvailableForBooking = availableForBooking,
             PendingBookingsCount = calc.PendingBookingsCount,
-            IsFull = !lot.IsActive || availableCapacity <= 0,
+            IsFull = !lot.IsActive || availableForBooking <= 0,
             PhysicalSlotsCount = physicalSlotsCount,
             ConfiguredCapacity = lot.TotalCapacity,
             ActiveSessionsCount = includeDiagnostics ? calc.ActiveSessionsCount : null,
@@ -669,15 +798,24 @@ public class BookingService : IBookingService
             Email = user?.Email,
             PhoneNumber = user?.PhoneNumber,
             VehicleId = b.VehicleId,
+            ParkingSlotId = b.ParkingSlotId,
             PlateNumber = b.PlateNumber,
             StartTime = b.StartTime,
             EndTime = b.EndTime,
             Status = b.Status,
+            PaymentMode = b.PaymentMode,
+            PaymentStatus = b.PaymentStatus,
+            PrepaidAmount = b.PrepaidAmount,
+            PaymentInvoiceId = b.PaymentInvoiceId,
+            PaymentPaidAt = b.PaymentPaidAt,
             SessionId = b.Session?.Id,
             CheckedInAt = b.CheckedInAt,
             CancelledAt = b.CancelledAt,
             CancellationReason = b.CancellationReason,
             Notes = b.Notes,
+            VehicleBrand = b.Vehicle?.UserId is null || b.Vehicle.UserId == b.UserId ? b.Vehicle?.Brand : null,
+            VehicleModel = b.Vehicle?.UserId is null || b.Vehicle.UserId == b.UserId ? b.Vehicle?.Model : null,
+            CheckInImageUrl = b.Session?.CheckInImageUrl,
             CreatedAt = b.CreatedAt,
             UpdatedAt = b.UpdatedAt
         };
@@ -702,16 +840,22 @@ public class BookingService : IBookingService
             StartTime = b.StartTime,
             EndTime = b.EndTime,
             Status = b.Status,
+            PaymentMode = b.PaymentMode,
+            PaymentStatus = b.PaymentStatus,
+            PrepaidAmount = b.PrepaidAmount,
+            PaymentInvoiceId = b.PaymentInvoiceId,
+            PaymentPaidAt = b.PaymentPaidAt,
             SessionId = b.Session?.Id,
             CheckedInAt = b.CheckedInAt,
             CancelledAt = b.CancelledAt,
             CancellationReason = b.CancellationReason,
             Notes = b.Notes,
+            VehicleBrand = b.Vehicle?.UserId is null || b.Vehicle.UserId == b.UserId ? b.Vehicle?.Brand : null,
+            VehicleModel = b.Vehicle?.UserId is null || b.Vehicle.UserId == b.UserId ? b.Vehicle?.Model : null,
+            CheckInImageUrl = b.Session?.CheckInImageUrl,
             CreatedAt = b.CreatedAt,
             UpdatedAt = b.UpdatedAt,
-            VehicleBrand = b.Vehicle?.Brand,
-            VehicleModel = b.Vehicle?.Model,
-            VehicleColor = b.Vehicle?.Color
+            VehicleColor = b.Vehicle?.UserId is null || b.Vehicle.UserId == b.UserId ? b.Vehicle?.Color : null
         };
     }
 }

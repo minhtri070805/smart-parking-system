@@ -133,49 +133,17 @@ public sealed class ParkingOperationsService(IApplicationDbContext db,
     public async Task<object> Policies(int lotId, long actor, string role, CancellationToken ct)
     {
         await Access(lotId, actor, role, "READ", ct);
-        return await db.ParkingPolicies.AsNoTracking().Where(p => p.LotId == lotId).OrderByDescending(p => p.Id).ToListAsync(ct);
+        return Array.Empty<object>();
     }
     public async Task<object> EffectivePolicy(int lotId, int? zoneId, long actor, string role, CancellationToken ct)
     {
         await Access(lotId, actor, role, "READ", ct);
-        return (object?)await ParkingPolicyResolver.ResolveAsync(db, lotId, zoneId, DateTime.UtcNow, ct)
-            ?? throw Error(409, "POLICY_UNAPPROVED", "Chưa có chính sách được duyệt có hiệu lực.");
+        throw Error(410, "POLICIES_DISABLED", "Chính sách vận hành đang tạm tắt trong giai đoạn demo.");
     }
     public async Task<object> CreatePolicy(int lotId, PolicyRequest r, long actor, string role, CancellationToken ct)
     {
         await Access(lotId, actor, role, "ADMIN", ct);
-        Require(r.EffectiveFrom != default && r.EffectiveFrom.Kind == DateTimeKind.Utc &&
-            r.HoldMinutes is null or > 0 && r.FeeUnitMinutes is null or > 0 &&
-            r.EarlyArrivalMinutes is null or >= 0 && r.LateArrivalMinutes is null or >= 0 &&
-            r.CancellationNoticeMinutes is null or >= 0 && r.DepositAmount is null or >= 0 &&
-            (r.DepositAmount == null || (r.DepositAmount <= 9999999999.99m && decimal.Round(r.DepositAmount.Value, 2) == r.DepositAmount)) &&
-            r.NearFullThreshold is null or >= 0 && (r.DecisionReference?.Length ?? 0) <= 500,
-            "Giá trị thiếu/sai: dùng giờ UTC, số không âm và đơn vị phí/hạn giữ lớn hơn 0.", status: 400);
-        Require(r.FeeRounding is null or "CEILING" or "FLOOR" or "NEAREST" &&
-            r.NoShowAction is null or "EXPIRE" && r.CancellationAction is null or "ALLOW" or "DENY" &&
-            r.RateSelection is null or "CHECK_IN", "Quy tắc chưa được hỗ trợ.", status: 400);
-        if (r.Approve)
-            Require(r.HoldMinutes.HasValue && r.EarlyArrivalMinutes.HasValue && r.LateArrivalMinutes.HasValue &&
-                r.CancellationNoticeMinutes.HasValue && r.DepositAmount.HasValue && r.NearFullThreshold.HasValue &&
-                r.FeeUnitMinutes.HasValue && r.FeeRounding != null && r.NoShowAction != null &&
-                r.CancellationAction != null && r.RateSelection != null && !string.IsNullOrWhiteSpace(r.DecisionReference),
-                "Chỉ duyệt khi đã điền đủ tham số và nguồn quyết định. Dữ liệu chưa chốt hãy lưu nháp.", status: 400);
-        return await writer.ExecuteAsync<object>(lotId, async () => {
-            if (r.ZoneId.HasValue) Require(await db.ParkingZones.AnyAsync(z => z.Id == r.ZoneId && z.LotId == lotId, ct), "Khu không thuộc bãi.", status: 400);
-            // Cho phép dung sai thời gian tạo/duyệt (tối đa 24 giờ trước) để chính sách có hiệu lực ngay lập tức cho bãi.
-            if (r.Approve) Require(r.EffectiveFrom >= DateTime.UtcNow.AddHours(-24), "Thời điểm bắt đầu hiệu lực không được quá 24 giờ trong quá khứ.", status: 400);
-            var p = new ParkingPolicy { LotId = lotId, ZoneId = r.ZoneId, EffectiveFrom = r.EffectiveFrom,
-                CreatedBy = actor, ApprovedBy = r.Approve ? actor : null, ApprovedAt = r.Approve ? DateTime.UtcNow : null,
-                DecisionReference = r.DecisionReference?.Trim() ?? "", HoldMinutes = r.HoldMinutes,
-                EarlyArrivalMinutes = r.EarlyArrivalMinutes, LateArrivalMinutes = r.LateArrivalMinutes,
-                CancellationNoticeMinutes = r.CancellationNoticeMinutes, DepositAmount = r.DepositAmount,
-                NearFullThreshold = r.NearFullThreshold, FeeUnitMinutes = r.FeeUnitMinutes,
-                FeeRounding = r.FeeRounding, NoShowAction = r.NoShowAction,
-                CancellationAction = r.CancellationAction, RateSelection = r.RateSelection };
-            db.ParkingPolicies.Add(p); await db.SaveChangesAsync(ct);
-            Audit("CREATE_POLICY_VERSION", "parking_policies", p.Id, actor, null, new { p.Id, p.ZoneId, p.EffectiveFrom, p.ApprovedBy, p.DecisionReference });
-            return p;
-        }, ct);
+        throw Error(410, "POLICIES_DISABLED", "Chính sách vận hành đang tạm tắt trong giai đoạn demo.");
     }
 
     public async Task<OperationSessionDto> Enter(int lotId, EntryRequest r, long actor, string role, CancellationToken ct)
@@ -203,13 +171,12 @@ public sealed class ParkingOperationsService(IApplicationDbContext db,
             var capacity = await ParkingLotCapacityHelper.CalculateAsync(db, lotId, ct: ct, zoneId: r.ZoneId);
             Require(capacity.AvailableCapacity > 0, "Khu đã hết khả năng nhận xe.", "CAPACITY_EXHAUSTED");
             var policy = await ParkingPolicyResolver.ResolveAsync(db, lotId, r.ZoneId, DateTime.UtcNow, ct);
-            Require(policy != null, "Chưa có chính sách được duyệt có hiệu lực cho khu.", "POLICY_UNAPPROVED");
             Require(!string.IsNullOrWhiteSpace(r.ManualReason) && r.ManualReason.Length <= 500,
                 "Nhập lý do tiếp nhận xe.", status: 400);
             if (r.ImageId.HasValue)
                 Require(await db.StoredImages.AnyAsync(i => i.Id == r.ImageId && i.UserId == actor, ct),
                     "Ảnh không tồn tại hoặc không thuộc người tiếp nhận.", "INVALID_IMAGE", 403);
-            var session = new ParkingSession { LotId = lotId, ZoneId = r.ZoneId, PolicyId = policy!.Id,
+            var session = new ParkingSession { LotId = lotId, ZoneId = r.ZoneId, PolicyId = policy?.Id,
                 EntryEventId = r.EventId, EntryRequestHash = hash, EntryImageId = r.ImageId,
                 PlateNumber = "", VerificationStatus = "WAITING_VERIFICATION", Status = "ACTIVE", Revision = 1 };
             db.ParkingSessions.Add(session); await db.SaveChangesAsync(ct);
@@ -289,8 +256,8 @@ public sealed class ParkingOperationsService(IApplicationDbContext db,
     {
         await Access(lotId, actor, role, "VERIFY", ct);
         var plate = PlateNumberHelper.NormalizeForComparison(r.PlateNumber);
-        Require(plate.Length is >= 3 and <= 20 && plate.All(char.IsAsciiLetterOrDigit) && r.FuelType is "PETROL" or "ELECTRIC" or "HYBRID" && r.VehicleObserved,
-            "Cần biển số, nhiên liệu và xác nhận đã đối chiếu xe thực tế tại ô.", status: 400);
+        Require(PlateNumberHelper.IsValidPlateFormat(r.PlateNumber) && r.FuelType is "PETROL" or "ELECTRIC" or "HYBRID" && r.VehicleObserved,
+            "Cần biển số ô tô đúng định dạng (ví dụ 51F-123.45), nhiên liệu và xác nhận đã đối chiếu xe thực tế tại ô.", status: 400);
         Require(r.Reason is null || r.Reason.Length <= 500, "Lý do tối đa 500 ký tự.", status: 400);
         return await writer.ExecuteAsync(lotId, async () => {
             var s = await LoadSession(lotId, id, r.ExpectedRevision, ct);

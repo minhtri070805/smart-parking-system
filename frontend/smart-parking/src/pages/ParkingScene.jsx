@@ -1,28 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import ParkingCanvas from "../components/ParkingCanvas.jsx";
 import { apiRequest } from "../services/api.js";
 import { getAuthSession, subscribeAuthSession } from "../services/authSession.js";
 import { Feedback, itemsOf, useResource, useMutation, write } from "../components/WorkspaceUI.jsx";
 import { sceneStatuses, sceneToDefinition } from "../services/parkingScene.js";
+import { initialSceneSnapshotState, sceneRequestKey, sceneSnapshotReducer } from "../services/sceneSnapshot.js";
 import { canUseStaffView } from "../services/staffDuty.js";
 import "../parking-scene.css";
 
 function useScene(lotId, revision, identity) {
-  const [state, setState] = useState({ data: null, error: "", loading: false });
+  const [state, dispatch] = useReducer(sceneSnapshotReducer, initialSceneSnapshotState);
+  const requestSequence = useRef(0);
   useEffect(() => {
     const controller = new AbortController(); let timer;
-    if (!lotId) { setState({ data: null, error: "", loading: false }); return () => controller.abort(); }
+    if (!lotId) { dispatch({ type: "reset" }); return () => controller.abort(); }
+    const key = sceneRequestKey(lotId, identity);
     async function load() {
-      setState(s => ({ ...s, error: "", loading: true }));
+      const requestId = ++requestSequence.current;
+      dispatch({ type: "begin", key, requestId });
       try {
         const result = await apiRequest(`/v1/parking-lots/${lotId}/scene`, { signal: controller.signal });
-        if (!result?.data || result.data.id !== Number(lotId)) throw new Error("Dữ liệu bãi không khớp với bãi đang chọn.");
-        if (!controller.signal.aborted) setState({ data: result.data, error: "", loading: false });
-      } catch (e) { if (!controller.signal.aborted) setState(s => ({ ...s, error: e.message, loading: false })); }
+        if (!result?.data) throw new Error("API không trả về snapshot bãi đỗ.");
+        if (!controller.signal.aborted) dispatch({ type: "success", key, requestId, lotId, data: result.data });
+      } catch (e) { if (!controller.signal.aborted) dispatch({ type: "failure", key, requestId, error: e.message }); }
       finally { if (!controller.signal.aborted) timer = setTimeout(load, 15000); }
     }
-    setState({ data: null, error: "", loading: true }); load();
+    load();
     return () => { controller.abort(); clearTimeout(timer); };
   }, [lotId, revision, identity]);
   return state;
@@ -68,7 +72,7 @@ export default function ParkingScene() {
     <div className="parking-toolbar"><label>Bãi đỗ<select aria-label="Bãi đỗ" disabled={action.busy || lots.loading} value={lot?.id || ""} onChange={e => { setLotChoice(e.target.value); setFloorChoice(""); setSelectedId(null); setNextStatus(""); setParams({ lotId: e.target.value }, { replace: true }); }}>
       {!choices.length && <option value="">Chưa có bãi</option>}{choices.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
       <label>Tầng<select aria-label="Tầng" disabled={action.busy || !floor} value={floor?.id || ""} onChange={e => selectFloor(e.target.value)}>{!floor && <option value="">Chưa có tầng</option>}{floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
-      <div className="parking-sync"><i className={state.error ? "is-stale" : ""} /><div><strong>{state.error ? "Chưa đồng bộ" : state.loading ? "Đang đồng bộ…" : scene ? "Dữ liệu hệ thống" : "Đang tải bãi"}</strong><small>{scene ? `Cập nhật ${new Date(scene.generatedAtUtc).toLocaleTimeString("vi-VN")}` : "Tự cập nhật mỗi 15 giây"}</small></div></div>
+      <div className="parking-sync"><i className={state.stale || state.error ? "is-stale" : ""} /><div><strong>{state.stale ? "Dữ liệu có thể đã cũ" : state.error ? "Chưa đồng bộ" : state.loading ? "Đang đồng bộ…" : scene ? "Dữ liệu hệ thống" : "Đang tải bãi"}</strong><small>{scene ? `Cập nhật ${new Date(scene.generatedAtUtc).toLocaleTimeString("vi-VN")} · v${scene.snapshotVersion ?? "cũ"}` : "Tự cập nhật mỗi 15 giây"}</small></div></div>
       <button className="btn btn--outline" disabled={state.loading || action.busy} onClick={refresh}>↻ Làm mới</button>
     </div>
     <Feedback error={lots.error || state.error || action.error} message={action.message} />
@@ -83,7 +87,7 @@ export default function ParkingScene() {
           <div className="parking-inspector-title"><h2>{slot ? slot.code : "Danh sách ô đỗ"}</h2>{slot && <button className="parking-clear" onClick={() => { setSelectedId(null); setNextStatus(""); }}>Bỏ chọn</button>}</div>
           {slot && <div className="parking-slot-detail"><span className={`slot-status slot-status--${slot.status.toLowerCase()}`}>{sceneStatuses[slot.status] || slot.status}</span><dl><div><dt>Tầng</dt><dd>{floor.name}</dd></div><div><dt>Khu vực</dt><dd>{slot.zoneName}</dd></div>{slot.plate && <div><dt>Biển số</dt><dd>{slot.plate}</dd></div>}<div><dt>Tiếp nhận</dt><dd>{slot.isAvailable ? "Có thể sử dụng" : "Chưa khả dụng"}</dd></div></dl>
             {slot.isProtected && <p className="parking-protection">Ô đang gắn với xe hoặc điều phối. Thao tác chỉnh sửa được khóa.</p>}
-            {scene.canManage && <><Link className="btn btn--outline" to={`/parking/slots?${context}`}>Quản lý ô tại tầng</Link>{!slot.isProtected && <div className="parking-status-edit"><label>Đổi trạng thái<select aria-label="Đổi trạng thái ô" value={nextStatus} disabled={action.busy || Boolean(state.error)} onChange={e => setNextStatus(e.target.value)}><option value="">Chọn trạng thái mới</option>{Object.entries(sceneStatuses).filter(([k]) => k !== "UNAVAILABLE" && k !== slot.status).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>{nextStatus && <form onSubmit={e => { e.preventDefault(); action.run(() => write(`/v1/parking-slots/${slot.id}/status`, { physicalStatus: nextStatus, reason: reason.trim() || null }, "PATCH"), () => { setNextStatus(""); refresh(); }); }}><label>Ghi chú<input value={reason} maxLength={255} disabled={action.busy} onChange={e => setReason(e.target.value)} /></label><button className="btn btn--primary" disabled={action.busy || Boolean(state.error)}>Xác nhận đổi trạng thái</button></form>}</div>}</>}
+            {scene.canManage && <><Link className="btn btn--outline" to={`/parking/slots?${context}`}>Quản lý ô tại tầng</Link>{!slot.isProtected && <div className="parking-status-edit"><label>Đổi trạng thái<select aria-label="Đổi trạng thái ô" value={nextStatus} disabled={action.busy || state.stale || Boolean(state.error)} onChange={e => setNextStatus(e.target.value)}><option value="">Chọn trạng thái mới</option>{Object.entries(sceneStatuses).filter(([k]) => k !== "UNAVAILABLE" && k !== slot.status).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>{nextStatus && <form onSubmit={e => { e.preventDefault(); action.run(() => write(`/v1/parking-slots/${slot.id}/status`, { physicalStatus: nextStatus, reason: reason.trim() || null }, "PATCH"), () => { setNextStatus(""); refresh(); }); }}><label>Ghi chú<input value={reason} maxLength={255} disabled={action.busy || state.stale} onChange={e => setReason(e.target.value)} /></label><button className="btn btn--primary" disabled={action.busy || state.stale || Boolean(state.error)}>Xác nhận đổi trạng thái</button></form>}</div>}</>}
             {role === "STAFF" && canArea && floor.canVerify && <div style={{ display: "grid", gap: "6px" }}>
               <Link className="btn btn--outline" to={`/staff?view=verify&${context}${slot.sessionId ? `&sessionId=${slot.sessionId}` : ""}`}>🔍 Xác minh ô này</Link>
               {slot.status === "OCCUPIED" && <Link className="btn btn--outline" to={`/staff?view=dispatches&${context}${slot.sessionId ? `&sessionId=${slot.sessionId}` : ""}`}>📋 Báo điều phối / sai ô</Link>}
@@ -107,7 +111,6 @@ export default function ParkingScene() {
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
           {role === "ADMIN" && <>
             <Link className="btn btn--outline" to={`/admin/parking-settings?view=slots&${context}`}>Quản lý bãi xe</Link>
-            <Link className="btn btn--outline" to={`/admin/policies?${context}`}>Chính sách</Link>
             <Link className="btn btn--outline" to="/admin/people?view=assignments">Phân công ca trực</Link>
           </>}
           {role === "MANAGER" && <>
@@ -121,7 +124,7 @@ export default function ParkingScene() {
           </>}
           {role === "STAFF" && canArea && <>
             <Link className="btn btn--primary" to={`/staff?view=verify&${context}`}>Xác minh ô thực tế</Link>
-            <Link className="btn btn--outline" to={`/staff?view=bookings&${context}`}>Xe đặt qua web</Link>
+            <Link className="btn btn--outline" to={`/staff?view=booking-dispatch&${context}`}>Phân ô xe đặt web</Link>
             <Link className="btn btn--outline" to={`/staff?view=dispatches&${context}`}>Điều phối bãi</Link>
           </>}
           {role === "USER" && <>

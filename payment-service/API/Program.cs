@@ -9,6 +9,7 @@ builder.Services.AddDbContext<PaymentDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddControllers();
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<IBillingEngine, BillingEngine>();
 
 builder.Services.AddEndpointsApiExplorer();
