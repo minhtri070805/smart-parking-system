@@ -376,11 +376,16 @@ section[id] { scroll-margin-top: 16px; }
   min-height: 98px; padding: 13px; display: flex; flex-direction: column;
   align-items: flex-start; justify-content: center; gap: 3px; border-radius: 12px;
   border: 1px solid var(--line); background: #f7f9fc;
+  width: 100%; text-align: left; font: inherit;
 }
+.customer-slot:not(:disabled) { cursor: pointer; }
+.customer-slot:disabled { cursor: not-allowed; opacity: .82; }
+.customer-slot.is-selected { outline: 3px solid #2563eb; outline-offset: 1px; }
 .customer-slot strong { font-size: 17px; }
 .customer-slot span, .customer-slot small { font-size: 11px; }
 .customer-slot--empty { border: 1px dashed #27804d; background: #edf9f1; color: #17663b; }
 .customer-slot--occupied { border-color: #c8d0dc; background: #eef1f5; color: #48566a; }
+.customer-slot--reserved { border-color: #a5b4fc; background: #eef2ff; color: #3730a3; }
 .customer-slot--maintenance { border-color: #f0c868; background: #fff7df; color: #775600; }
 .customer-slot--unavailable { border-color: #e6b5b2; background: #fff1f0; color: #9b2721; }
 .customer-message {

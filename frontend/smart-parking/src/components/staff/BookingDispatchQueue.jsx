@@ -88,7 +88,7 @@ export default function BookingDispatchQueue({
         (slot) =>
           slot.isActive &&
           slot.physicalStatus === "EMPTY" &&
-          slot.isAvailable,
+          (slot.isAvailable || Number(slot.id) === Number(selectedBooking?.parkingSlotId)),
       ),
     [slots],
   );

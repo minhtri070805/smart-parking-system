@@ -30,7 +30,7 @@ Content-Type: application/json
 
 ###
 
-# Start, then complete the shift after its work and handover are settled.
+# Start, then complete the shift after its scheduled work is settled.
 POST {{ParkingOperations_HostAddress}}/api/v1/operations/shifts/{{shiftId}}/start
 Authorization: Bearer {{accessToken}}
 
@@ -38,28 +38,3 @@ Authorization: Bearer {{accessToken}}
 
 POST {{ParkingOperations_HostAddress}}/api/v1/operations/shifts/{{shiftId}}/complete
 Authorization: Bearer {{accessToken}}
-
-###
-
-# Create a handover (use a MANAGER token and active staff IDs assigned to this lot).
-POST {{ParkingOperations_HostAddress}}/api/v1/operations/handovers
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "outgoingShiftId": "00000000-0000-0000-0000-000000000001",
-  "incomingShiftId": "00000000-0000-0000-0000-000000000002",
-  "outgoingStaffId": 101,
-  "incomingStaffId": 102
-}
-
-###
-
-# Each staff member confirms their independently counted cash amount.
-POST {{ParkingOperations_HostAddress}}/api/v1/operations/handovers/{{handoverId}}/confirm
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "countedAmount": 1250000
-}

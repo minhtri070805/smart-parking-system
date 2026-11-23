@@ -1,45 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import RequireCustomer from "../components/RequireCustomer.jsx";
 import { apiRequest } from "../services/api.js";
-import { updateAuthProfile } from "../services/authSession.js";
 
 const emptyVehicleForm = { plateNumber: "", brand: "", model: "", color: "" };
 
 function ProfileContent() {
-  const [profile, setProfile] = useState(null);
   const [vehicles, setVehicles] = useState([]);
-  const [profileForm, setProfileForm] = useState({ fullName: "", phoneNumber: "" });
   const [newVehicle, setNewVehicle] = useState(emptyVehicleForm);
   const [vehicleForms, setVehicleForms] = useState({});
-  const [profileLoading, setProfileLoading] = useState(true);
   const [vehiclesLoading, setVehiclesLoading] = useState(true);
-  const [savingProfile, setSavingProfile] = useState(false);
   const [savingVehicle, setSavingVehicle] = useState(false);
   const [addingVehicle, setAddingVehicle] = useState(false);
-  const [profileError, setProfileError] = useState("");
   const [vehicleError, setVehicleError] = useState("");
-  const [profileMessage, setProfileMessage] = useState("");
   const [vehicleMessage, setVehicleMessage] = useState("");
-
-  const loadProfile = useCallback(async () => {
-    setProfileLoading(true);
-    setProfileError("");
-    try {
-      const response = await apiRequest("/v1/users/me");
-      const data = response?.data;
-      if (!data) throw new Error("API không trả về thông tin hồ sơ.");
-      setProfile(data);
-      setProfileForm({
-        fullName: data.fullName || "",
-        phoneNumber: data.phoneNumber || "",
-      });
-    } catch (error) {
-      setProfileError(error.message);
-    } finally {
-      setProfileLoading(false);
-    }
-  }, []);
 
   const loadVehicles = useCallback(async () => {
     setVehiclesLoading(true);
@@ -70,34 +43,8 @@ function ProfileContent() {
   }, []);
 
   useEffect(() => {
-    void loadProfile();
     void loadVehicles();
-  }, [loadProfile, loadVehicles]);
-
-  const saveProfile = async (event) => {
-    event.preventDefault();
-    setSavingProfile(true);
-    setProfileError("");
-    setProfileMessage("");
-    try {
-      const response = await apiRequest("/v1/users/me", {
-        method: "PUT",
-        body: JSON.stringify(profileForm),
-      });
-      if (!response?.data) throw new Error("API không trả về hồ sơ sau khi cập nhật.");
-      setProfile(response.data);
-      setProfileForm({
-        fullName: response.data.fullName || "",
-        phoneNumber: response.data.phoneNumber || "",
-      });
-      updateAuthProfile(response.data);
-      setProfileMessage(response.message || "Đã cập nhật thông tin cá nhân.");
-    } catch (error) {
-      setProfileError(error.message);
-    } finally {
-      setSavingProfile(false);
-    }
-  };
+  }, [loadVehicles]);
 
   const addVehicle = async (event) => {
     event.preventDefault();
@@ -155,57 +102,7 @@ function ProfileContent() {
       <div className="customer-card">
         <div className="customer-card__heading">
           <div>
-            <h2>Thông tin cá nhân</h2>
-            <p className="muted">Tên đăng nhập và email được hệ thống quản lý, không thể sửa ở đây.</p>
-          </div>
-          <Link to="/customer" className="btn btn--outline">Xem bãi đỗ</Link>
-        </div>
-        {profileLoading ? (
-          <p className="customer-message">Đang tải hồ sơ...</p>
-        ) : profileError && !profile ? (
-          <div className="customer-message customer-message--error" role="alert">
-            <span>{profileError}</span>
-            <button type="button" className="text-button" onClick={() => void loadProfile()}>Thử lại</button>
-          </div>
-        ) : (
-          <>
-            <div className="customer-readonly-grid">
-              <div><span>Tên đăng nhập</span><strong>{profile?.username || "—"}</strong></div>
-              <div><span>Email</span><strong>{profile?.email || "—"}</strong></div>
-            </div>
-            <form className="customer-form" onSubmit={saveProfile}>
-              <label>
-                Họ và tên
-                <input
-                  value={profileForm.fullName}
-                  onChange={(event) => setProfileForm((current) => ({ ...current, fullName: event.target.value }))}
-                  maxLength={100}
-                  required
-                />
-              </label>
-              <label>
-                Số điện thoại
-                <input
-                  type="tel"
-                  value={profileForm.phoneNumber}
-                  onChange={(event) => setProfileForm((current) => ({ ...current, phoneNumber: event.target.value }))}
-                  maxLength={20}
-                />
-              </label>
-              {profileError && <p className="customer-message customer-message--error" role="alert">{profileError}</p>}
-              {profileMessage && <p className="customer-message customer-message--success" role="status">{profileMessage}</p>}
-              <button type="submit" className="btn btn--primary" disabled={savingProfile}>
-                {savingProfile ? "Đang lưu..." : "Lưu thông tin"}
-              </button>
-            </form>
-          </>
-        )}
-      </div>
-
-      <div className="customer-card">
-        <div className="customer-card__heading">
-          <div>
-            <h2>Phương tiện</h2>
+            <h2>Xe của tôi</h2>
             <p className="muted">Thêm xe và cập nhật hãng xe, dòng xe hoặc màu sắc.</p>
           </div>
           <button type="button" className="btn btn--outline" onClick={() => void loadVehicles()} disabled={vehiclesLoading}>

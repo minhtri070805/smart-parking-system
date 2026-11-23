@@ -731,7 +731,8 @@ public class ParkingManagementService : IParkingManagementService
         var pageSlotIds = slots.Select(s => s.Id).ToArray();
         var protectedSlotIds = (await _context.ParkingSlots.Where(s => pageSlotIds.Contains(s.Id) &&
             (_context.ParkingSessions.Any(p => p.CurrentSlotId == s.Id && (p.Status == SessionStatuses.Active || p.Status == SessionStatuses.Paid)) ||
-             _context.ParkingDispatches.Any(d => d.AssignedSlotId == s.Id && d.Status == DispatchStatuses.Assigned)))
+             _context.ParkingDispatches.Any(d => d.AssignedSlotId == s.Id && d.Status == DispatchStatuses.Assigned) ||
+             _context.Bookings.Any(b => b.ParkingSlotId == s.Id && (b.Status == BookingStatuses.Pending || b.Status == BookingStatuses.CheckedIn))))
             .Select(s => s.Id).ToListAsync(ct)).ToHashSet();
         var dtos = slots.Select(s => new ParkingSlotDto
         {
@@ -744,7 +745,7 @@ public class ParkingManagementService : IParkingManagementService
             LotName = s.Floor.Lot.Name,
             SlotCode = s.SlotCode,
             PhysicalStatus = s.PhysicalStatus,
-            IsAvailable = s.IsActive && s.PhysicalStatus == SlotPhysicalStatuses.Empty && !protectedSlotIds.Contains(s.Id),
+            IsAvailable = s.IsActive && s.Floor.IsActive && s.Zone.IsActive && s.PhysicalStatus == SlotPhysicalStatuses.Empty && !protectedSlotIds.Contains(s.Id),
             IsProtected = protectedSlotIds.Contains(s.Id),
             PositionX = s.PositionX,
             PositionY = s.PositionY,

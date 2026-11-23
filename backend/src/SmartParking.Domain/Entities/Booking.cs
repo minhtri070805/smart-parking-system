@@ -13,6 +13,9 @@ public class Booking
     public long VehicleId { get; set; }
     public Vehicle Vehicle { get; set; } = null!;
 
+    public long? ParkingSlotId { get; set; }
+    public ParkingSlot? ParkingSlot { get; set; }
+
     private string _plateNumber = string.Empty;
     public string PlateNumber
     {

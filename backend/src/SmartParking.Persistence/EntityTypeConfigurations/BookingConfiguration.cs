@@ -52,6 +52,15 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_bookings_vehicle");
 
+        builder.Property(b => b.ParkingSlotId)
+            .HasColumnName("parking_slot_id");
+
+        builder.HasOne(b => b.ParkingSlot)
+            .WithMany()
+            .HasForeignKey(b => b.ParkingSlotId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_bookings_parking_slot");
+
         builder.Property(b => b.PlateNumber)
             .HasColumnName("plate_number")
             .HasMaxLength(20)
@@ -101,6 +110,11 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
 
         builder.HasIndex(b => new { b.PlateNumber, b.Status })
             .HasDatabaseName("ix_bookings_plate_status");
+
+        builder.HasIndex(b => b.ParkingSlotId)
+            .IsUnique()
+            .HasFilter("status = 'PENDING' AND parking_slot_id IS NOT NULL")
+            .HasDatabaseName("uq_bookings_pending_parking_slot");
 
         // Unique index: No vehicle can have more than one PENDING booking at any time
         builder.HasIndex(b => b.VehicleId)

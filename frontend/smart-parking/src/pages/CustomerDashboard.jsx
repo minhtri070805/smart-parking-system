@@ -23,11 +23,11 @@ function localDateTimeValue(date = new Date()) {
 }
 
 const slotLabels = {
-  EMPTY: "Còn trống",
+  EMPTY: "Có thể đặt",
   OCCUPIED: "Đang sử dụng",
   MAINTENANCE: "Đang bảo trì",
   UNAVAILABLE: "Không khả dụng",
-  RESERVED: "Đang giữ chỗ",
+  RESERVED: "Đã đặt / đang giữ chỗ",
 };
 
 const bookingStatusLabels = {
@@ -65,6 +65,7 @@ function DashboardContent({ publicView = false }) {
   const [cancellingBookingId, setCancellingBookingId] = useState(null);
   const [bookingCancelError, setBookingCancelError] = useState("");
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [selectedBookingSlotId, setSelectedBookingSlotId] = useState("");
   const [bookingProfile, setBookingProfile] = useState(null);
   const [bookingVehicles, setBookingVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
@@ -344,13 +345,20 @@ function DashboardContent({ publicView = false }) {
   const selectedVehicle = bookingVehicles.find(
     (vehicle) => String(vehicle.id) === selectedVehicleId,
   );
+  const selectedBookingSlot = slots.find(
+    (slot) => String(slot.id) === selectedBookingSlotId,
+  );
+
+  useEffect(() => {
+    setSelectedBookingSlotId("");
+  }, [selectedLotId, selectedFloorId]);
   const currentCapacity =
     capacity?.lotId === Number(selectedLotId) ? capacity : null;
   const vehicleName = (vehicle) =>
     [vehicle.brand, vehicle.model].filter(Boolean).join(" ") ||
     `Xe cá nhân`;
 
-  const openBookingForm = () => {
+  const openBookingForm = (slotId = "") => {
     setBookingError("");
     setBookingMessage("");
     setBookingProfile(null);
@@ -358,9 +366,18 @@ function DashboardContent({ publicView = false }) {
     setSelectedVehicleId("");
     setBookingDetailsError("");
     setVehiclePickerOpen(false);
+    setSelectedBookingSlotId(String(slotId || ""));
     const startTime = new Date();
     setBookingStartTime(localDateTimeValue(startTime));
     setBookingOpen(true);
+    if (slotId) {
+      window.setTimeout(() => {
+        document.getElementById("customer-booking-form")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 0);
+    }
   };
 
   const submitBooking = async (event) => {
@@ -374,11 +391,21 @@ function DashboardContent({ publicView = false }) {
       if (bookingVehicles.length > 0 && !selectedVehicle) {
         throw new Error("Vui lòng chọn xe bạn sẽ sử dụng.");
       }
+      if (!selectedBookingSlot) {
+        throw new Error("Vui lòng chọn một ô còn trống để đặt.");
+      }
+      if (
+        selectedBookingSlot.physicalStatus !== "EMPTY" ||
+        !selectedBookingSlot.isAvailable
+      ) {
+        throw new Error("Ô vừa chọn không còn trống. Hãy chọn ô khác.");
+      }
 
       const response = await apiRequest("/v1/bookings", {
         method: "POST",
         body: JSON.stringify({
           lotId: Number(selectedLotId),
+          parkingSlotId: Number(selectedBookingSlot.id),
           ...(selectedVehicle
             ? { vehicleId: selectedVehicle.id }
             : { plateNumber: bookingPlateNumber.trim() }),
@@ -388,11 +415,12 @@ function DashboardContent({ publicView = false }) {
       });
       setBookingMessage(
         response?.data?.id
-          ? `Đặt chỗ tại ${selectedLot?.name || "bãi đỗ"} thành công. Mã đặt chỗ #${response.data.id}.`
+          ? `Đặt ô ${selectedBookingSlot.slotCode} tại ${selectedLot?.name || "bãi đỗ"} thành công. Mã đặt chỗ #${response.data.id}.`
           : response?.message ||
               `Đặt chỗ tại ${selectedLot?.name || "bãi đỗ"} thành công.`,
       );
       setBookingOpen(false);
+      setSelectedBookingSlotId("");
       setBookingPlateNumber("");
       setBookingNotes("");
       setRevision((value) => value + 1);
@@ -586,8 +614,10 @@ function DashboardContent({ publicView = false }) {
               <div className="customer-booking-form__heading">
                 <h3>Thông tin đặt chỗ</h3>
                 <p className="muted">
-                  Thông tin liên hệ và xe đã đăng ký sẽ được điền tự động. Chọn
-                  thời gian dự kiến để hoàn tất đặt chỗ.
+                  {selectedBookingSlot
+                    ? `Ô đã chọn: ${selectedBookingSlot.slotCode}. `
+                    : "Chọn một ô trống trên sơ đồ trước khi gửi đặt chỗ. "}
+                  Thông tin liên hệ và xe đã đăng ký sẽ được điền tự động.
                 </p>
               </div>
               {bookingDetailsLoading ? (
@@ -780,6 +810,8 @@ function DashboardContent({ publicView = false }) {
                   disabled={
                     bookingSaving ||
                     bookingDetailsLoading ||
+                    !selectedBookingSlot ||
+                    !selectedBookingSlot.isAvailable ||
                     Boolean(bookingDetailsError)
                   }
                 >
@@ -861,7 +893,7 @@ function DashboardContent({ publicView = false }) {
                   >
                     <div>
                       <strong>{availableCount}</strong>
-                      <span>Ô trống vật lý</span>
+                      <span>Có thể đặt</span>
                     </div>
                     <div>
                       <strong>{occupiedCount}</strong>
@@ -889,20 +921,32 @@ function DashboardContent({ publicView = false }) {
                       {slots.map((slot) => {
                         const effectiveStatus =
                           slot.physicalStatus === "EMPTY" && !slot.isAvailable
-                            ? "UNAVAILABLE"
+                            ? slot.isActive ? "RESERVED" : "UNAVAILABLE"
                             : slot.physicalStatus;
                         const status =
                           slot.physicalStatus === "EMPTY" &&
                           slot.isBookingEligible === false
                             ? `${slot.zoneName || "Khu này"} · không nhận đặt trước`
                             : slotLabels[effectiveStatus] || effectiveStatus;
+                        const selectable =
+                          !publicView &&
+                          slot.physicalStatus === "EMPTY" &&
+                          slot.isAvailable &&
+                          slot.isActive;
+                        const isSelected = String(slot.id) === selectedBookingSlotId;
                         return (
-                          <li
-                            key={slot.id}
-                            className={`customer-slot customer-slot--${String(effectiveStatus).toLowerCase()}`}
-                          >
-                            <strong>{slot.slotCode}</strong>
-                            <span>{status}</span>
+                          <li key={slot.id}>
+                            <button
+                              type="button"
+                              className={`customer-slot customer-slot--${String(effectiveStatus).toLowerCase()} ${isSelected ? "is-selected" : ""}`}
+                              disabled={!selectable || bookingSaving}
+                              aria-pressed={isSelected}
+                              aria-label={`${slot.slotCode}: ${selectable ? "Còn trống, chọn để đặt" : status}`}
+                              onClick={() => openBookingForm(slot.id)}
+                            >
+                              <strong>{slot.slotCode}</strong>
+                              <span>{selectable ? "Còn trống · bấm để đặt" : status}</span>
+                            </button>
                           </li>
                         );
                       })}

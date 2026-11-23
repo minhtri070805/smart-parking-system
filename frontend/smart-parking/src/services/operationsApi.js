@@ -16,7 +16,7 @@ export async function operationsRequest(path, options = {}) {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok)
-    throw Object.assign(new Error(body.message || "Không thể thực hiện thao tác handover."), {
+    throw Object.assign(new Error(body.message || "Không thể thực hiện thao tác vận hành."), {
       status: response.status,
     });
   return body;

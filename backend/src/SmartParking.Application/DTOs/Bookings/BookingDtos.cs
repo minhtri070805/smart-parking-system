@@ -16,6 +16,7 @@ public class BookingDto
     public string? Email { get; set; }
     public string? PhoneNumber { get; set; }
     public long VehicleId { get; set; }
+    public long? ParkingSlotId { get; set; }
     public string PlateNumber { get; set; } = null!;
     public DateTime StartTime { get; set; }
     public DateTime? EndTime { get; set; }
@@ -43,6 +44,8 @@ public class CreateBookingRequestDto
     public int LotId { get; set; }
 
     public long? VehicleId { get; set; }
+
+    public long? ParkingSlotId { get; set; }
 
     [MaxLength(20, ErrorMessage = "Biển số xe không được vượt quá 20 ký tự")]
     public string? PlateNumber { get; set; }

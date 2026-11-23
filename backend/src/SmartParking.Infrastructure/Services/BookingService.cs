@@ -54,9 +54,20 @@ public class BookingService : IBookingService
             return (false, 400, $"Bãi đỗ xe '{lot.Name}' hiện đang đóng cửa hoặc tạm ngừng hoạt động.", null);
         }
 
-        var bookingPolicy = await ParkingPolicyResolver.ResolveAsync(_context, lot.Id, null, DateTime.UtcNow, ct);
+        int? bookingZoneId = null;
+        if (request.ParkingSlotId.HasValue)
+        {
+            bookingZoneId = await _context.ParkingSlots
+                .Where(s => s.Id == request.ParkingSlotId.Value && s.Floor.LotId == lot.Id)
+                .Select(s => (int?)s.ZoneId)
+                .FirstOrDefaultAsync(ct);
+            if (!bookingZoneId.HasValue)
+                return (false, 404, "Không tìm thấy ô đỗ được chọn trong bãi này.", null);
+        }
+
+        var bookingPolicy = await ParkingPolicyResolver.ResolveAsync(_context, lot.Id, bookingZoneId, DateTime.UtcNow, ct);
         if (bookingPolicy == null && await _context.ParkingZones.AnyAsync(z => z.LotId == lot.Id, ct))
-            return (false, 409, "Chưa có chính sách đặt chỗ được duyệt có hiệu lực cho bãi.", null);
+            return (false, 409, "Chưa có chính sách đặt chỗ được duyệt có hiệu lực cho khu vực đã chọn.", null);
 
         var startTime = request.StartTime == default ? DateTime.UtcNow : request.StartTime;
         // Existing unzoned data retains its legacy tolerance. Configured sites read the approved source.
@@ -169,19 +180,42 @@ public class BookingService : IBookingService
                     await _context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0});", new object[] { lockKey }, cancellationToken: ct);
                 }
 
-                // Re-calculate authoritative capacity inside the lock with conservative IoT guard and strict slot fallback
-                var calc = await ParkingLotCapacityHelper.CalculateAsync(_context, lot.Id, lot, ct);
-
-                if (calc.AvailableCapacity <= 0)
+                // Re-check a specifically requested slot inside the lot lock so two
+                // customers cannot reserve the same physical space concurrently.
+                ParkingSlot? selectedSlot = null;
+                if (request.ParkingSlotId.HasValue)
                 {
-                    await transaction.RollbackAsync(ct);
-                    return (false, 409, $"Bãi đỗ xe '{lot.Name}' đã hết chỗ khả dụng để đặt trước (Sức chứa: {calc.TotalCapacity}, Đang sử dụng hiệu dụng: {calc.EffectiveOccupied}, Đang giữ chỗ: {calc.PendingBookingsCount}).", null);
+                    selectedSlot = await _context.ParkingSlots
+                        .Include(s => s.Floor)
+                        .Include(s => s.Zone)
+                        .FirstOrDefaultAsync(s => s.Id == request.ParkingSlotId.Value && s.Floor.LotId == lot.Id, ct);
+                    if (selectedSlot == null || !selectedSlot.IsActive || !selectedSlot.Floor.IsActive ||
+                        !selectedSlot.Zone.IsActive || selectedSlot.PhysicalStatus != SlotPhysicalStatuses.Empty ||
+                        await _context.ParkingSessions.AnyAsync(s => s.CurrentSlotId == selectedSlot.Id &&
+                            (s.Status == SessionStatuses.Active || s.Status == SessionStatuses.Paid), ct) ||
+                        await _context.ParkingDispatches.AnyAsync(d => d.AssignedSlotId == selectedSlot.Id && d.Status == DispatchStatuses.Assigned, ct) ||
+                        await _context.Bookings.AnyAsync(b => b.ParkingSlotId == selectedSlot.Id &&
+                            (b.Status == BookingStatuses.Pending || b.Status == BookingStatuses.CheckedIn), ct))
+                    {
+                        await transaction.RollbackAsync(ct);
+                        return (false, 409, "Ô đã chọn không còn trống hoặc không thể đặt. Hãy tải lại và chọn ô khác.", null);
+                    }
+                }
+                else
+                {
+                    var calc = await ParkingLotCapacityHelper.CalculateAsync(_context, lot.Id, lot, ct);
+                    if (calc.AvailableCapacity <= 0)
+                    {
+                        await transaction.RollbackAsync(ct);
+                        return (false, 409, $"Bãi đỗ xe '{lot.Name}' đã hết chỗ khả dụng để đặt trước (Sức chứa: {calc.TotalCapacity}, Đang sử dụng hiệu dụng: {calc.EffectiveOccupied}, Đang giữ chỗ: {calc.PendingBookingsCount}).", null);
+                    }
                 }
 
                 var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
                 var booking = new Booking
                 {
                     LotId = lot.Id,
+                    ParkingSlotId = selectedSlot?.Id,
                     PolicyId = bookingPolicy?.Id,
                     UserId = userId,
                     VehicleId = vehicle.Id,
@@ -208,6 +242,7 @@ public class BookingService : IBookingService
                         booking.LotId,
                         booking.UserId,
                         booking.VehicleId,
+                        booking.ParkingSlotId,
                         booking.PlateNumber,
                         booking.StartTime,
                         booking.EndTime,
@@ -223,11 +258,11 @@ public class BookingService : IBookingService
 
                 await transaction.CommitAsync(ct);
 
-                _logger.LogInformation("User {UserId} reserved capacity at lot {LotId} for vehicle {PlateNumber}. Booking ID: {BookingId}",
-                    userId, lot.Id, normalizedPlate, booking.Id);
+                _logger.LogInformation("User {UserId} reserved a parking slot at lot {LotId} for vehicle {PlateNumber}. Booking ID: {BookingId}, Slot ID: {SlotId}",
+                    userId, lot.Id, normalizedPlate, booking.Id, booking.ParkingSlotId);
 
                 var dto = MapToDto(booking, lot.Name, lot.Address, user);
-                return (true, 201, "Đặt chỗ giữ sức chứa thành công.", dto);
+                return (true, 201, selectedSlot == null ? "Đặt chỗ thành công." : $"Đặt ô {selectedSlot.SlotCode} thành công.", dto);
             }
             catch (DbUpdateException ex)
             {
@@ -620,21 +655,37 @@ public class BookingService : IBookingService
 
         var calc = await ParkingLotCapacityHelper.CalculateAsync(_context, lotId, lot, ct);
         var physicalSlotsCount = await _context.ParkingSlots.CountAsync(s => s.Floor.LotId == lotId, ct);
-        var availableCapacity = lot.IsActive ? calc.AvailableCapacity : 0;
+        var physicallyAvailableSlots = await _context.ParkingSlots.CountAsync(s =>
+            s.Floor.LotId == lotId && s.IsActive && s.Floor.IsActive && s.Zone.IsActive &&
+            s.PhysicalStatus == SlotPhysicalStatuses.Empty &&
+            !s.CurrentSessions.Any(session => session.Status == SessionStatuses.Active || session.Status == SessionStatuses.Paid) &&
+            !s.AssignedDispatches.Any(dispatch => dispatch.Status == DispatchStatuses.Assigned) &&
+            !_context.Bookings.Any(booking => booking.ParkingSlotId == s.Id &&
+                (booking.Status == BookingStatuses.Pending || booking.Status == BookingStatuses.CheckedIn)), ct);
+        var unassignedPendingBookings = await _context.Bookings.CountAsync(b => b.LotId == lotId &&
+            b.Status == BookingStatuses.Pending && b.ParkingSlotId == null, ct);
+        var bookableTotalCapacity = await _context.ParkingSlots.CountAsync(s => s.Floor.LotId == lotId &&
+            s.IsActive && s.Floor.IsActive && s.Zone.IsActive &&
+            s.PhysicalStatus != SlotPhysicalStatuses.Maintenance &&
+            s.PhysicalStatus != SlotPhysicalStatuses.Unavailable, ct);
+        var availableForWalkIn = lot.IsActive ? calc.AvailableCapacity : 0;
+        var availableForBooking = lot.IsActive
+            ? Math.Max(0, physicallyAvailableSlots - unassignedPendingBookings)
+            : 0;
 
         return new LotCapacityDto
         {
             PolicyId = calc.PolicyId,
             NearFullThreshold = calc.NearFullThreshold,
-            IsNearFull = calc.NearFullThreshold.HasValue ? availableCapacity <= calc.NearFullThreshold.Value : null,
+            IsNearFull = calc.NearFullThreshold.HasValue ? availableForBooking <= calc.NearFullThreshold.Value : null,
             LotId = lot.Id,
             LotName = lot.Name,
             LotAddress = lot.Address,
-            TotalCapacity = calc.TotalCapacity,
-            AvailableForWalkIn = availableCapacity,
-            AvailableForBooking = availableCapacity,
+            TotalCapacity = bookableTotalCapacity,
+            AvailableForWalkIn = availableForWalkIn,
+            AvailableForBooking = availableForBooking,
             PendingBookingsCount = calc.PendingBookingsCount,
-            IsFull = !lot.IsActive || availableCapacity <= 0,
+            IsFull = !lot.IsActive || availableForBooking <= 0,
             PhysicalSlotsCount = physicalSlotsCount,
             ConfiguredCapacity = lot.TotalCapacity,
             ActiveSessionsCount = includeDiagnostics ? calc.ActiveSessionsCount : null,
@@ -681,6 +732,7 @@ public class BookingService : IBookingService
             Email = user?.Email,
             PhoneNumber = user?.PhoneNumber,
             VehicleId = b.VehicleId,
+            ParkingSlotId = b.ParkingSlotId,
             PlateNumber = b.PlateNumber,
             StartTime = b.StartTime,
             EndTime = b.EndTime,
