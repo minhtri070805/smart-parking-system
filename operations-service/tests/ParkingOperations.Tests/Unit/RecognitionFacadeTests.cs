@@ -12,12 +12,13 @@ public class RecognitionFacadeTests
 {
     private readonly Mock<IRecognitionClient> _clientMock = new();
     private readonly Mock<IFileValidationService> _validationMock = new();
+    private readonly Mock<IIdempotencyCache> _idempotencyCacheMock = new();
     private readonly Mock<ILogger<RecognitionFacade>> _loggerMock = new();
     private readonly RecognitionFacade _facade;
 
     public RecognitionFacadeTests()
     {
-        _facade = new RecognitionFacade(_clientMock.Object, _validationMock.Object, _loggerMock.Object);
+        _facade = new RecognitionFacade(_clientMock.Object, _validationMock.Object, _idempotencyCacheMock.Object, _loggerMock.Object);
     }
 
     [Fact]
