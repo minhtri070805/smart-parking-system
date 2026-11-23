@@ -28,6 +28,13 @@ public class Booking
 
     public string Status { get; set; } = "PENDING"; // PENDING, CHECKED_IN, CANCELLED, EXPIRED
 
+    public string PaymentMode { get; set; } = "PAY_AT_COUNTER"; // PREPAY, PAY_AT_COUNTER
+    public string PaymentStatus { get; set; } = "PAY_AT_COUNTER"; // PENDING, PAID, PAY_AT_COUNTER, FAILED
+    public decimal? PrepaidAmount { get; set; }
+    public string? PaymentInvoiceId { get; set; }
+    public string? PaymentTransactionRef { get; set; }
+    public DateTime? PaymentPaidAt { get; set; }
+
     public ParkingSession? Session { get; set; }
 
     public DateTime? CheckedInAt { get; set; }

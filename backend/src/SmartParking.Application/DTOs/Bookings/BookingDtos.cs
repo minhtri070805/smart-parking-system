@@ -21,6 +21,12 @@ public class BookingDto
     public DateTime StartTime { get; set; }
     public DateTime? EndTime { get; set; }
     public string Status { get; set; } = null!;
+    public string PaymentMode { get; set; } = "PAY_AT_COUNTER";
+    public string PaymentStatus { get; set; } = "PAY_AT_COUNTER";
+    public decimal? PrepaidAmount { get; set; }
+    public string? PaymentInvoiceId { get; set; }
+    public string? PaymentUrl { get; set; }
+    public DateTime? PaymentPaidAt { get; set; }
     public long? SessionId { get; set; }
     public DateTime? CheckedInAt { get; set; }
     public DateTime? CancelledAt { get; set; }
@@ -45,13 +51,14 @@ public class CreateBookingRequestDto
 
     public long? VehicleId { get; set; }
 
-    public long? ParkingSlotId { get; set; }
-
     [MaxLength(20, ErrorMessage = "Biển số xe không được vượt quá 20 ký tự")]
     public string? PlateNumber { get; set; }
 
     [Required(ErrorMessage = "Thời gian bắt đầu đặt chỗ không được để trống")]
     public DateTime StartTime { get; set; }
+
+    [MaxLength(20)]
+    public string PaymentMode { get; set; } = "PAY_AT_COUNTER";
 
     public DateTime? EndTime { get; set; }
 

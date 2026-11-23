@@ -266,13 +266,24 @@ public class ParkingSessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Thống kê lưu lượng xe theo ngày trong tháng (chỉ ADMIN).
+    /// Báo cáo lưu lượng và doanh thu tháng. Manager chỉ được xem đúng bãi được phân công.
     /// </summary>
     [HttpGet("monthly-stats")]
-    [Authorize(Roles = Roles.Admin)]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
     [ProducesResponseType(typeof(MonthlyTrafficStatsDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMonthlyStats([FromQuery] int? year, [FromQuery] int? month, [FromQuery] int? lotId, CancellationToken ct)
     {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value;
+        if (role == Roles.Manager)
+        {
+            if (!lotId.HasValue)
+                return BadRequest(new { message = "Manager cần chỉ định bãi đang quản lý." });
+            var userId = GetCurrentUserId();
+            if (!userId.HasValue || !await HttpContext.RequestServices.GetRequiredService<IParkingAuthorizationService>()
+                    .HasLotAccessAsync(userId.Value, role, lotId.Value, ct))
+                return Forbid();
+        }
+
         var now = DateTime.UtcNow.AddHours(7);
         var y = year ?? now.Year;
         var m = month ?? now.Month;
@@ -580,6 +591,18 @@ public class ParkingSessionsController : ControllerBase
             message,
             data = session
         });
+    }
+
+    [HttpPost("{id:long}/counter-payment")]
+    [Authorize(Roles = $"{Roles.Manager},{Roles.Staff}")]
+    public async Task<IActionResult> RecordCounterPayment(long id, CancellationToken ct)
+    {
+        var actorId = GetCurrentUserId();
+        if (actorId == null) return Unauthorized(new { message = "Không xác định được người dùng." });
+        var actorRole = User.FindFirst(ClaimTypes.Role)?.Value ?? Roles.Staff;
+        var (success, message, receipt) = await _sessionService.RecordCounterPaymentAsync(id, actorId, actorRole, ct);
+        if (!success) return BadRequest(new { message });
+        return Ok(new { message, data = receipt });
     }
 
     private long? GetCurrentUserId()

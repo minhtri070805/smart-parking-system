@@ -55,8 +55,8 @@ function generateSlotCodes(slots, zone, quantity) {
 function LotSettings({ lot, view: selectedView, onBusyChange }) {
   const view = selectedView.id === "tickets" ? ticketView : selectedView;
   const load = useCallback(async signal => {
-    const [zones, policies, layout] = await Promise.all(["zones", "policies", "layout"].map(path => operationsApi(lot.id, path, null, null, signal)));
-    return { zones, policies, layout };
+    const [zones, layout] = await Promise.all(["zones", "layout"].map(path => operationsApi(lot.id, path, null, null, signal)));
+    return { zones, layout };
   }, [lot.id]);
   const query = useStaffQuery(load);
   const action = useStaffAction(onBusyChange);
@@ -453,23 +453,6 @@ function Content() {
                 }) });
               }
             }
-            await operationsApi(res.data.id, "policies", {
-              zoneId: null,
-              effectiveFrom: new Date(Date.now() - 60000).toISOString(),
-              approve: true,
-              decisionReference: "Quy định vận hành chuẩn mặc định khi khởi tạo bãi đỗ",
-              holdMinutes: 15,
-              earlyArrivalMinutes: 15,
-              lateArrivalMinutes: 10,
-              cancellationNoticeMinutes: 30,
-              depositAmount: 0,
-              nearFullThreshold: 5,
-              feeUnitMinutes: 60,
-              feeRounding: "CEILING",
-              noShowAction: "EXPIRE",
-              cancellationAction: "ALLOW",
-              rateSelection: "CHECK_IN",
-            }, "POST");
           } catch (bootstrapError) {
             bootstrapWarning = ` Cấu trúc nhanh chưa hoàn tất (${bootstrapError.message || "lỗi khởi tạo"}); có thể bổ sung tại Tầng, Khu vực và Ô đỗ.`;
           }
@@ -613,7 +596,7 @@ function Content() {
         <section className="workspace-panel" style={{ width: "100%", maxWidth: "500px", background: "#fff", borderRadius: "14px", boxShadow: "0 20px 50px rgba(0,0,0,0.3)" }}>
           <h2 id="delete-lot-title" style={{ marginTop: 0 }}>Xóa bãi đỗ?</h2>
           <p id="delete-lot-description" style={{ marginBottom: "14px" }}>
-            Bạn sắp xóa bãi <strong>{lot.name}</strong> cùng toàn bộ tầng, khu vực, ô đỗ và chính sách cấu hình.
+            Bạn sắp xóa bãi <strong>{lot.name}</strong> cùng toàn bộ tầng, khu vực và ô đỗ.
           </p>
           <div style={{ padding: "12px 14px", borderRadius: "10px", background: "#fff7ed", color: "#9a3412", border: "1px solid #fed7aa", lineHeight: 1.55 }}>
             Bãi có lịch sử phiên xe, đặt chỗ, ô đang có xe/giữ chỗ, điều phối hoặc phân công nhân viên sẽ được giữ lại để bảo toàn dữ liệu.

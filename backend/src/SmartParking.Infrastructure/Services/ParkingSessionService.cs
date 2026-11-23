@@ -18,6 +18,7 @@ public class ParkingSessionService : IParkingSessionService
     private readonly IParkingAuthorizationService _authService;
     private readonly ILogger<ParkingSessionService> _logger;
     private readonly IExitRecognitionLookup? _exitRecognition;
+    private readonly IBookingPaymentGateway? _bookingPaymentGateway;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,12 +30,51 @@ public class ParkingSessionService : IParkingSessionService
         IApplicationDbContext context,
         IParkingAuthorizationService authService,
         ILogger<ParkingSessionService> logger,
-        IExitRecognitionLookup? exitRecognition = null)
+        IExitRecognitionLookup? exitRecognition = null,
+        IBookingPaymentGateway? bookingPaymentGateway = null)
     {
         _context = context;
         _authService = authService;
         _logger = logger;
         _exitRecognition = exitRecognition;
+        _bookingPaymentGateway = bookingPaymentGateway;
+    }
+
+    public async Task<(bool Success, string Message, CounterPaymentReceipt? Data)> RecordCounterPaymentAsync(
+        long sessionId, long? actorId, string actorRole, CancellationToken ct = default)
+    {
+        var session = await _context.ParkingSessions.Include(s => s.Booking)
+            .Include(s => s.CurrentSlot).ThenInclude(slot => slot!.Floor)
+            .FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+        if (session == null) return (false, "Không tìm thấy phiên gửi xe.", null);
+        if (actorId == null || !await _authService.CanOperateGateOutAsync(actorId.Value, actorRole, session.LotId, ct))
+            return (false, "Bạn không được phân công xử lý thanh toán tại cổng ra của bãi này.", null);
+        if (!await _authService.CanOperateAreaAsync(actorId.Value, actorRole, session.LotId, StaffDuties.GateOut,
+                session.CurrentSlot?.FloorId, session.ZoneId ?? session.CurrentSlot?.ZoneId, ct))
+            return (false, "Phiên xe nằm ngoài tầng hoặc khu vực được phân công.", null);
+        if (session.Status == SessionStatuses.Paid)
+            return (true, "Phiên xe đã thanh toán trước đó.", new CounterPaymentReceipt("", "", session.TotalFee, 0));
+        if (session.Status != SessionStatuses.Active)
+            return (false, $"Không thể thu tiền cho phiên ở trạng thái {session.Status}.", null);
+        if (session.EntryEventId.HasValue && session.VerificationStatus != "VERIFIED")
+            return (false, "Xe chưa được xác minh đã đỗ; chưa thể thanh toán khi checkout.", null);
+        if (_bookingPaymentGateway == null)
+            return (false, "Chưa cấu hình kết nối Billing Service.", null);
+
+        var prepaidAmount = session.Booking?.PaymentStatus == "PAID"
+            ? session.Booking.PrepaidAmount ?? 0m
+            : 0m;
+        try
+        {
+            var receipt = await _bookingPaymentGateway.RecordCounterPaymentAsync(
+                session.Id, session.BookingId, session.PlateNumber, session.CheckInTime, prepaidAmount, ct);
+            return (true, "Đã ghi nhận thanh toán tại quầy qua Billing Service.", receipt);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Unable to record counter payment for session {SessionId}", session.Id);
+            return (false, "Không ghi nhận được thanh toán tại quầy. Hãy kiểm tra Billing Service rồi thử lại.", null);
+        }
     }
 
     public async Task<MonthlyTrafficStatsDto> GetMonthlyTrafficStatsAsync(int year, int month, int? lotId, CancellationToken ct = default)
@@ -103,7 +143,7 @@ public class ParkingSessionService : IParkingSessionService
         var normalizedPlate = PlateNumberHelper.Normalize(request.PlateNumber);
         if (!PlateNumberHelper.IsValidPlateFormat(normalizedPlate))
         {
-            return (false, "Biển số xe không hợp lệ. Độ dài phải từ 3 đến 20 ký tự.", null);
+            return (false, "Biển số ô tô không đúng định dạng. Ví dụ hợp lệ: 51F-123.45.", null);
         }
 
         var lot = await _context.ParkingLots.FirstOrDefaultAsync(l => l.Id == request.LotId, ct);
@@ -138,7 +178,7 @@ public class ParkingSessionService : IParkingSessionService
     {
         var normalizedPlate = PlateNumberHelper.Normalize(request.PlateNumber);
         if (!PlateNumberHelper.IsValidPlateFormat(normalizedPlate))
-            return (false, "Biển số xe không hợp lệ. Độ dài phải từ 3 đến 20 ký tự.", null);
+            return (false, "Biển số ô tô không đúng định dạng. Ví dụ hợp lệ: 51F-123.45.", null);
 
         var imageUrl = request.CheckInImageUrl?.Trim() ?? string.Empty;
         var databaseImage = imageUrl.StartsWith("/api/v1/images/content/", StringComparison.Ordinal)
@@ -175,7 +215,6 @@ public class ParkingSessionService : IParkingSessionService
 
                 var booking = await _context.Bookings
                     .Include(b => b.Lot)
-                    .Include(b => b.Policy)
                     .Include(b => b.Vehicle)
                         .ThenInclude(v => v!.User)
                     .Include(b => b.User)
@@ -190,6 +229,11 @@ public class ParkingSessionService : IParkingSessionService
                     await transaction.RollbackAsync(ct);
                     return (false, $"Booking #{booking.Id} không còn chờ xe đến (trạng thái: {booking.Status}).", null);
                 }
+                if (booking.PaymentMode == "PREPAY" && booking.PaymentStatus != "PAID")
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, "Booking chưa thanh toán trước thành công; chưa thể xác nhận xe đến.", null);
+                }
                 if (!PlateNumberHelper.IsMatch(booking.PlateNumber, normalizedPlate))
                 {
                     await transaction.RollbackAsync(ct);
@@ -202,7 +246,7 @@ public class ParkingSessionService : IParkingSessionService
                 }
 
                 var now = DateTime.UtcNow;
-                var graceMinutes = booking.Policy?.LateArrivalMinutes ?? BookingStatuses.NoShowGracePeriodMinutes;
+                var graceMinutes = BookingStatuses.NoShowGracePeriodMinutes;
                 if (booking.StartTime <= now.AddMinutes(-graceMinutes))
                 {
                     booking.Status = BookingStatuses.Expired;
@@ -973,7 +1017,7 @@ public class ParkingSessionService : IParkingSessionService
     {
         var normalizedPlate = PlateNumberHelper.Normalize(request.PlateNumber);
         if (!PlateNumberHelper.IsValidPlateFormat(normalizedPlate))
-            return (false, "Biển số xe không hợp lệ. Độ dài phải từ 3 đến 20 ký tự.", null);
+            return (false, "Biển số ô tô không đúng định dạng. Ví dụ hợp lệ: 51F-123.45.", null);
         var imageUrl = request.CheckInImageUrl?.Trim() ?? "";
         var databaseImage = imageUrl.StartsWith("/api/v1/images/content/", StringComparison.Ordinal)
             && Guid.TryParseExact(imageUrl["/api/v1/images/content/".Length..], "N", out _);
@@ -1014,7 +1058,6 @@ public class ParkingSessionService : IParkingSessionService
 
                 var booking = await _context.Bookings
                     .Include(b => b.Lot)
-                    .Include(b => b.Policy)
                     .Include(b => b.User)
                     .FirstOrDefaultAsync(b => b.Id == bookingId, ct);
                 if (booking == null)
@@ -1040,7 +1083,7 @@ public class ParkingSessionService : IParkingSessionService
                 }
 
                 var now = DateTime.UtcNow;
-                var graceMinutes = booking.Policy?.LateArrivalMinutes ?? BookingStatuses.NoShowGracePeriodMinutes;
+                var graceMinutes = BookingStatuses.NoShowGracePeriodMinutes;
                 if (booking.StartTime <= now.AddMinutes(-graceMinutes))
                 {
                     booking.Status = BookingStatuses.Expired;
@@ -1629,7 +1672,8 @@ public class ParkingSessionService : IParkingSessionService
         string actorRole,
         string? ipAddress,
         bool isTrustedPaymentServerFlow = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        decimal? totalFee = null)
     {
         // 0. Fail-Closed Boundary: Không chấp nhận thanh toán tự khai báo từ client / người dùng / staff / admin.
         // Bắt buộc phải đến từ luồng Server-to-Server đáng tin cậy (Trusted Server Flow) của module Payment do Nam Anh sở hữu.
@@ -1645,9 +1689,9 @@ public class ParkingSessionService : IParkingSessionService
         }
 
         // 2. Kiểm tra số tiền thanh toán hợp lệ (> 0)
-        if (amountPaid <= 0)
+        if (amountPaid < 0 || (amountPaid == 0 && (!isTrustedPaymentServerFlow || !totalFee.HasValue)))
         {
-            return (false, "Số tiền thanh toán phải lớn hơn 0 VNĐ.", null);
+            return (false, "Số tiền thanh toán phải hợp lệ theo hóa đơn Payment Service.", null);
         }
 
         if (string.IsNullOrWhiteSpace(transactionRef))
@@ -1687,12 +1731,19 @@ public class ParkingSessionService : IParkingSessionService
 
                     var session = await _context.ParkingSessions
                         .Include(s => s.Lot)
+                        .Include(s => s.Booking)
                         .Include(s => s.CurrentSlot)
                             .ThenInclude(slot => slot != null ? slot.Floor : null!)
                         .FirstOrDefaultAsync(s => s.Id == sessionId, ct);
                     if (session == null)
                     {
                         return (false, $"Không tìm thấy phiên gửi xe với ID: {sessionId}.", null);
+                    }
+                    if (totalFee.HasValue)
+                    {
+                        if (totalFee.Value < 0 || (session.TotalFee > 0 && session.TotalFee != totalFee.Value))
+                            return (false, "Tổng phí Payment Service không khớp với phí đã ghi nhận trên phiên.", null);
+                        if (session.TotalFee == 0) session.TotalFee = totalFee.Value;
                     }
                     // Đọc lại trạng thái mới nhất dưới khóa (có thể vừa bị checkout/clearance khác đổi).
                     if (_context is DbContext freshCtx) await freshCtx.Entry(session).ReloadAsync(ct);
@@ -1737,8 +1788,12 @@ public class ParkingSessionService : IParkingSessionService
 
                     // Phí do Core đã tính (nếu có) phải khớp tuyệt đối: thiếu hoặc thừa đều bị từ chối (fail-closed).
                     // Core chưa có bảng giá/quote nên TotalFee=0 nghĩa là "chưa tính"; khi đó chỉ chấp nhận số tiền > 0 đã ký.
-                    if (session.TotalFee > 0 && amountPaid != session.TotalFee)
-                        return (false, $"Số tiền thanh toán ({amountPaid:N0} VNĐ) không khớp phí gửi xe cần thanh toán ({session.TotalFee:N0} VNĐ).", null);
+                    var prepaidDeposit = session.Booking?.PaymentStatus == "PAID"
+                        ? session.Booking.PrepaidAmount ?? 0m
+                        : 0m;
+                    var amountDue = Math.Max(0m, session.TotalFee - prepaidDeposit);
+                    if (session.TotalFee > 0 && amountPaid != amountDue)
+                        return (false, $"Số tiền thanh toán ({amountPaid:N0} VNĐ) không khớp số tiền còn lại sau khi trừ cọc ({amountDue:N0} VNĐ).", null);
 
                     var feeDue = session.TotalFee;
                     var oldState = new { session.Status, session.TotalFee, session.PaidAt };
@@ -1750,7 +1805,8 @@ public class ParkingSessionService : IParkingSessionService
                     session.Status = SessionStatuses.Paid;
                     session.UpdatedAt = DateTime.UtcNow;
 
-                    var newState = new { session.Status, session.TotalFee, session.PaidAt, TransactionRef = trimmedRef, AmountPaid = amountPaid, FeeDue = feeDue, PaymentMethod = paymentMethod };
+                    var newState = new { session.Status, session.TotalFee, session.PaidAt, TransactionRef = trimmedRef,
+                        AmountPaid = amountPaid, FeeDue = feeDue, PrepaidDepositApplied = prepaidDeposit, PaymentMethod = paymentMethod };
                     await LogAuditAsync("PAYMENT_CLEARED", nameof(ParkingSession), session.Id.ToString(), oldState, newState, actorId, ct);
                     await _context.SaveChangesAsync(ct);
                     await transaction.CommitAsync(ct);

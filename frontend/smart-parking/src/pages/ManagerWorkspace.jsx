@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import RequireRole from "../components/RequireRole.jsx";
 import OperationsOverviewSummary from "../components/OperationsOverviewSummary.jsx";
+import RevenueReport from "../components/RevenueReport.jsx";
 import { SafePhoto } from "../components/staff/StaffUI.jsx";
 import { apiRequest } from "../services/api.js";
 import { staffApi } from "../services/staffApi.js";
@@ -145,6 +146,7 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
       </div>
       {view === "overview" && (
         <>
+          <RevenueReport lotId={lotId} revision={revision} title="Doanh thu bãi đang quản lý" />
           <section className="workspace-panel">
             <div className="workspace-heading">
               <div>

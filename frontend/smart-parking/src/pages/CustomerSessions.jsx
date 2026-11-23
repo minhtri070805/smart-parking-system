@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import RequireCustomer from "../components/RequireCustomer.jsx";
 import { useImageUrl } from "../services/useImageUrl.js";
 import {
@@ -103,19 +102,6 @@ function Sessions() {
               : list.error
           }
         />
-        {!list.loading &&
-          !list.error &&
-          !invalidDates &&
-          itemsOf(list.data).length === 0 && (
-            <div className="workspace-empty">
-              <h2>Chưa có phiên phù hợp</h2>
-              <p>
-                Phiên gửi xe sẽ xuất hiện khi xe thuộc tài khoản của bạn được
-                ghi nhận vào bãi.
-              </p>
-              <Link to="/customer/profile">Kiểm tra hồ sơ và xe của tôi</Link>
-            </div>
-          )}
         <div className="workspace-table">
           <table>
             <thead>

@@ -12,7 +12,6 @@ export const roleNavigation = {
     ["/admin/people", "Tài khoản"],
     ["/parking", "3D"],
     ["/admin/parking-settings?view=tickets", "Xử lý vé"],
-    ["/admin/policies", "Chính sách"],
   ],
   MANAGER: [
     ["/manager", "Tổng quan"],
@@ -31,6 +30,7 @@ export const roleNavigation = {
     ["/parking", "3D"],
     ["/customer", "Bãi đỗ"],
     ["/customer/sessions", "Phiên gửi xe"],
+    ["/customer/my-tickets", "Vé của tôi"],
     ["/customer/profile", "Xe của tôi"],
   ],
 };

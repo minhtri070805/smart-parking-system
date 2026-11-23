@@ -239,6 +239,25 @@ export function StaffExit({
                 )}
               </Notice>
             )}
+            {session.status === "ACTIVE" &&
+              (!isTicketed || session.verificationStatus === "VERIFIED") && (
+                <div style={{ marginTop: 12 }}>
+                  <p>Khách thanh toán tiền mặt tại quầy trước khi checkout.</p>
+                  <button
+                    type="button"
+                    className="staff-button staff-button--primary"
+                    disabled={busy}
+                    onClick={() => action.run(async () => {
+                      await staffApi.recordCounterPayment(session.id);
+                      await recheck();
+                      onChanged();
+                    })}
+                  >
+                    {action.busy ? "Đang ghi nhận thanh toán…" : "Thu tiền tại quầy & xác nhận"}
+                  </button>
+                  <StaffError error={action.error} />
+                </div>
+              )}
             {session.status === "COMPLETED" && (
               <Notice kind="success">
                 Đã ghi nhận xe ra bãi lúc{" "}

@@ -154,6 +154,8 @@ public class AuthServiceTests
             LastOtpCode = otpCode;
             return Task.FromResult(true);
         }
+        public Task<bool> SendBookingPaymentReceiptAsync(string toEmail, long bookingId, string plateNumber, string lotName,
+            decimal amount, string transactionRef, DateTime paidAtUtc, CancellationToken cancellationToken = default) => Task.FromResult(true);
     }
 
     private class DummyRecaptchaService : IRecaptchaService

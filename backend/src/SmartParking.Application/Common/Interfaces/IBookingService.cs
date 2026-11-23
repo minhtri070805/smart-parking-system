@@ -5,6 +5,11 @@ namespace SmartParking.Application.Common.Interfaces;
 
 public interface IBookingService
 {
+    Task<int> ExpireNoShowBookingsAsync(int? lotId = null, CancellationToken ct = default);
+
+    Task<(bool Success, string Message)> RecordBookingPaymentAsync(
+        long bookingId, decimal amount, string transactionRef, string? paymentMethod, DateTime? paidAt, CancellationToken ct = default);
+
     Task<(bool Success, int StatusCode, string Message, BookingDto? Data)> CreateBookingAsync(
         CreateBookingRequestDto request,
         long userId,

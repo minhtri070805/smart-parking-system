@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import RequireCustomer from "../components/RequireCustomer.jsx";
 import { apiRequest } from "../services/api.js";
+import { formatVietnameseCarPlateInput, validateVietnameseCarPlate } from "../services/plateNumber.js";
 
 const emptyVehicleForm = { plateNumber: "", brand: "", model: "", color: "" };
 
@@ -11,6 +12,7 @@ function ProfileContent() {
   const [vehiclesLoading, setVehiclesLoading] = useState(true);
   const [savingVehicle, setSavingVehicle] = useState(false);
   const [addingVehicle, setAddingVehicle] = useState(false);
+  const [deletingVehicleId, setDeletingVehicleId] = useState(null);
   const [vehicleError, setVehicleError] = useState("");
   const [vehicleMessage, setVehicleMessage] = useState("");
 
@@ -52,9 +54,10 @@ function ProfileContent() {
     setVehicleError("");
     setVehicleMessage("");
     try {
+      const plateNumber = validateVietnameseCarPlate(newVehicle.plateNumber);
       const response = await apiRequest("/v1/vehicles", {
         method: "POST",
-        body: JSON.stringify(newVehicle),
+        body: JSON.stringify({ ...newVehicle, plateNumber }),
       });
       if (!response?.data) throw new Error("API không trả về phương tiện mới.");
       setNewVehicle(emptyVehicleForm);
@@ -97,6 +100,22 @@ function ProfileContent() {
     }
   };
 
+  const deleteVehicle = async (vehicle) => {
+    if (!window.confirm(`Xóa xe ${vehicle.plateNumber} khỏi tài khoản? Biển số sẽ bị khóa đăng ký trên mọi tài khoản trong 7 ngày.`)) return;
+    setDeletingVehicleId(vehicle.id);
+    setVehicleError("");
+    setVehicleMessage("");
+    try {
+      const response = await apiRequest(`/v1/vehicles/${vehicle.id}`, { method: "DELETE" });
+      setVehicleMessage(response?.message || "Đã xóa xe khỏi tài khoản.");
+      await loadVehicles();
+    } catch (error) {
+      setVehicleError(error.message);
+    } finally {
+      setDeletingVehicleId(null);
+    }
+  };
+
   return (
     <section className="customer-page container">
       <div className="customer-card">
@@ -122,7 +141,14 @@ function ProfileContent() {
               <form className="customer-vehicle" key={vehicle.id} onSubmit={(event) => void saveVehicle(event, vehicle.id)}>
                 <div className="customer-vehicle__heading">
                   <strong>{vehicle.plateNumber}</strong>
-                  <span>{vehicle.isActive ? "Đang hoạt động" : "Đã ngừng hoạt động"}</span>
+                  <div className="customer-vehicle__actions">
+                    <span>{vehicle.isActive ? "Đang hoạt động" : "Đã ngừng hoạt động"}</span>
+                    <button type="button" className="btn btn--outline customer-vehicle__delete"
+                      disabled={deletingVehicleId === vehicle.id}
+                      onClick={() => void deleteVehicle(vehicle)}>
+                      {deletingVehicleId === vehicle.id ? "Đang xóa..." : "Xóa xe"}
+                    </button>
+                  </div>
                 </div>
                 <div className="customer-form customer-form--compact">
                   <label>
@@ -174,9 +200,11 @@ function ProfileContent() {
               Biển số xe
               <input
                 value={newVehicle.plateNumber}
-                onChange={(event) => setNewVehicle((current) => ({ ...current, plateNumber: event.target.value }))}
-                minLength={3}
-                maxLength={20}
+                onChange={(event) => setNewVehicle((current) => ({ ...current, plateNumber: formatVietnameseCarPlateInput(event.target.value) }))}
+                placeholder="Ví dụ: 51F-123.45"
+                pattern="[0-9]{2}[A-Za-z][ -]?[0-9]{3}[.]?[0-9]{2}"
+                title="Nhập theo dạng biển số ô tô Việt Nam, ví dụ 51F-123.45"
+                maxLength={12}
                 required
               />
             </label>

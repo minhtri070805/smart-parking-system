@@ -79,6 +79,13 @@ public class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .HasDefaultValue("PENDING")
             .IsRequired();
 
+        builder.Property(b => b.PaymentMode).HasColumnName("payment_mode").HasMaxLength(20).HasDefaultValue("PAY_AT_COUNTER").IsRequired();
+        builder.Property(b => b.PaymentStatus).HasColumnName("payment_status").HasMaxLength(20).HasDefaultValue("PAY_AT_COUNTER").IsRequired();
+        builder.Property(b => b.PrepaidAmount).HasColumnName("prepaid_amount").HasPrecision(12, 2);
+        builder.Property(b => b.PaymentInvoiceId).HasColumnName("payment_invoice_id").HasMaxLength(36);
+        builder.Property(b => b.PaymentTransactionRef).HasColumnName("payment_transaction_ref").HasMaxLength(100);
+        builder.Property(b => b.PaymentPaidAt).HasColumnName("payment_paid_at");
+
         builder.Property(b => b.CheckedInAt)
             .HasColumnName("checked_in_at");
 

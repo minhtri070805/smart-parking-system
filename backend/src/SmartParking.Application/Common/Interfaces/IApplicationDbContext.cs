@@ -15,6 +15,7 @@ public interface IApplicationDbContext
     DbSet<ParkingFloor> ParkingFloors { get; }
     DbSet<ParkingSlot> ParkingSlots { get; }
     DbSet<Vehicle> Vehicles { get; }
+    DbSet<VehicleRegistrationBlock> VehicleRegistrationBlocks { get; }
     DbSet<ParkingSession> ParkingSessions { get; }
     DbSet<ParkingDispatch> ParkingDispatches { get; }
     DbSet<StaffLotAssignment> StaffLotAssignments { get; }

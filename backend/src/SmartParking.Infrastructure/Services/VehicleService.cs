@@ -29,6 +29,27 @@ public class VehicleService : IVehicleService
 
     public async Task<PagedResult<VehicleDto>> GetVehiclesAsync(VehicleFilterDto filter, long? currentUserId, bool isAdmin, CancellationToken ct = default)
     {
+        if (!isAdmin && currentUserId.HasValue)
+        {
+            // Repair legacy booking-only vehicles created by the former booking flow.
+            var legacyBookingVehicles = await _context.Vehicles.Where(v => v.UserId == currentUserId.Value &&
+                v.Brand == null && v.Model == null && v.Color == null &&
+                v.Bookings.Any(b => b.UserId == currentUserId.Value && b.PlateNumber == v.PlateNumber &&
+                    b.CreatedAt >= v.CreatedAt.AddMinutes(-1) && b.CreatedAt <= v.CreatedAt.AddMinutes(10)))
+                .ToListAsync(ct);
+            if (legacyBookingVehicles.Count > 0)
+            {
+                var repairedAt = DateTime.UtcNow;
+                foreach (var vehicle in legacyBookingVehicles)
+                {
+                    vehicle.UserId = null;
+                    vehicle.IsActive = false;
+                    vehicle.UpdatedAt = repairedAt;
+                }
+                await _context.SaveChangesAsync(ct);
+            }
+        }
+
         var query = _context.Vehicles
             .AsNoTracking()
             .Include(v => v.User)
@@ -147,7 +168,7 @@ public class VehicleService : IVehicleService
         var normalizedPlate = PlateNumberHelper.Normalize(request.PlateNumber);
         if (!PlateNumberHelper.IsValidPlateFormat(normalizedPlate))
         {
-            return (false, "Biển số xe không hợp lệ. Độ dài phải từ 3 đến 20 ký tự.", null);
+            return (false, "Biển số ô tô không đúng định dạng. Ví dụ hợp lệ: 51F-123.45.", null);
         }
 
         long? targetUserId = isAdmin ? request.UserId : currentUserId;
@@ -155,6 +176,18 @@ public class VehicleService : IVehicleService
         if (!isAdmin && currentUserId == null)
         {
             return (false, "Không xác định được danh tính người dùng.", null);
+        }
+
+        var registrationBlock = await _context.VehicleRegistrationBlocks
+            .FirstOrDefaultAsync(block => block.PlateNumber == normalizedPlate, ct);
+        if (registrationBlock?.BlockedUntilUtc > DateTime.UtcNow)
+        {
+            return (false, $"Biển số xe này đang bị khóa đăng ký đến {registrationBlock.BlockedUntilUtc.ToLocalTime():dd/MM/yyyy HH:mm}.", null);
+        }
+        if (registrationBlock != null)
+        {
+            _context.VehicleRegistrationBlocks.Remove(registrationBlock);
+            await _context.SaveChangesAsync(ct);
         }
 
         var existingVehicle = await _context.Vehicles
@@ -173,6 +206,27 @@ public class VehicleService : IVehicleService
             }
 
             // Xe vãng lai đã tồn tại (UserId == null)
+            if (!existingVehicle.IsActive)
+            {
+                existingVehicle.UserId = targetUserId;
+                if (!string.IsNullOrWhiteSpace(request.Brand)) existingVehicle.Brand = request.Brand.Trim();
+                if (!string.IsNullOrWhiteSpace(request.Model)) existingVehicle.Model = request.Model.Trim();
+                if (!string.IsNullOrWhiteSpace(request.Color)) existingVehicle.Color = request.Color.Trim();
+                existingVehicle.IsActive = true;
+                existingVehicle.UpdatedAt = DateTime.UtcNow;
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    Action = "RE_REGISTER_VEHICLE_AFTER_COOLDOWN",
+                    TargetEntity = "vehicles",
+                    TargetId = existingVehicle.Id.ToString(),
+                    ActorId = currentUserId,
+                    CreatedAt = DateTime.UtcNow,
+                    NewValues = JsonSerializer.Serialize(new { existingVehicle.PlateNumber, existingVehicle.UserId }, JsonOptions)
+                });
+                await _context.SaveChangesAsync(ct);
+                return (true, "Đăng ký lại phương tiện thành công.", MapToDto(existingVehicle));
+            }
+
             // Bảo mật quyền sở hữu: Không tự động công nhận quyền sở hữu cho USER chỉ dựa vào việc biết biển số!
             if (!isAdmin)
             {
@@ -325,26 +379,34 @@ public class VehicleService : IVehicleService
             return (false, "Bạn không có quyền xóa phương tiện của người khác.");
         }
 
-        var hasSessions = await _context.ParkingSessions.AnyAsync(s => s.VehicleId == id, ct);
-        if (hasSessions)
+        var now = DateTime.UtcNow;
+        var block = await _context.VehicleRegistrationBlocks
+            .FirstOrDefaultAsync(item => item.PlateNumber == vehicle.PlateNumber, ct);
+        if (block == null)
         {
-            return (false, "Phương tiện đã có lịch sử gửi xe, không thể xóa khỏi hệ thống. Vui lòng cập nhật trạng thái ngừng hoạt động (IsActive = false).");
+            block = new VehicleRegistrationBlock { PlateNumber = vehicle.PlateNumber };
+            _context.VehicleRegistrationBlocks.Add(block);
         }
+        block.BlockedUntilUtc = now.AddDays(7);
+        block.CreatedAtUtc = now;
 
-        _context.Vehicles.Remove(vehicle);
+        var oldValues = new { vehicle.PlateNumber, vehicle.UserId, vehicle.IsActive };
+        vehicle.UserId = null;
+        vehicle.IsActive = false;
+        vehicle.UpdatedAt = now;
 
         await LogAuditAsync(
             action: "DELETE_VEHICLE",
             targetEntity: "vehicles",
             targetId: id.ToString(),
-            oldValues: new { vehicle.PlateNumber, vehicle.UserId },
-            newValues: null,
+            oldValues,
+            newValues: new { vehicle.PlateNumber, vehicle.UserId, vehicle.IsActive, RegistrationBlockedUntilUtc = block.BlockedUntilUtc },
             actorId: currentUserId,
             ct: ct
         );
 
         await _context.SaveChangesAsync(ct);
-        return (true, "Xóa phương tiện thành công.");
+        return (true, "Đã gỡ xe khỏi tài khoản. Biển số này không thể đăng ký trên bất kỳ tài khoản nào trong 7 ngày.");
     }
 
     private static VehicleDto MapToDto(Vehicle vehicle)

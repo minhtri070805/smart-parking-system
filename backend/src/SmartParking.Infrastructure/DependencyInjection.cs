@@ -104,6 +104,7 @@ public static class DependencyInjection
         services.AddScoped<IStaffLotAssignmentService, StaffLotAssignmentService>();
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IBookingService, BookingService>();
+        services.AddScoped<IBookingPaymentGateway, BookingPaymentGateway>();
         services.AddScoped<IImageService, ImageService>();
         services.AddRecognitionPersistence(configuration);
         AddInternalServiceClients(services, configuration);

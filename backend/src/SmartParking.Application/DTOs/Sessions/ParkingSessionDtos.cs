@@ -43,7 +43,7 @@ public class CheckInRequestDto
     public int LotId { get; set; }
 
     [Required(ErrorMessage = "Biển số xe không được để trống.")]
-    [StringLength(20, MinimumLength = 3, ErrorMessage = "Biển số xe phải từ 3 đến 20 ký tự.")]
+    [RegularExpression(@"^\d{2}[A-Za-z][ -]?\d{3}\.?\d{2}$", ErrorMessage = "Biển số ô tô không đúng định dạng. Ví dụ hợp lệ: 51F-123.45.")]
     public string PlateNumber { get; set; } = string.Empty;
 
     public long? SlotId { get; set; }
@@ -57,7 +57,7 @@ public class CheckInRequestDto
 public class ConfirmBookingParkedRequestDto
 {
     [Required(ErrorMessage = "Biển số xe không được để trống.")]
-    [StringLength(20, MinimumLength = 3, ErrorMessage = "Biển số xe phải từ 3 đến 20 ký tự.")]
+    [RegularExpression(@"^\d{2}[A-Za-z][ -]?\d{3}\.?\d{2}$", ErrorMessage = "Biển số ô tô không đúng định dạng. Ví dụ hợp lệ: 51F-123.45.")]
     public string PlateNumber { get; set; } = string.Empty;
 
     [Range(1, long.MaxValue, ErrorMessage = "ID ô đỗ không hợp lệ.")]
@@ -71,7 +71,7 @@ public class ConfirmBookingParkedRequestDto
 public class CheckInBookingRequestDto
 {
     [Required(ErrorMessage = "Biển số xe không được để trống.")]
-    [StringLength(20, MinimumLength = 3, ErrorMessage = "Biển số xe phải từ 3 đến 20 ký tự.")]
+    [RegularExpression(@"^\d{2}[A-Za-z][ -]?\d{3}\.?\d{2}$", ErrorMessage = "Biển số ô tô không đúng định dạng. Ví dụ hợp lệ: 51F-123.45.")]
     public string PlateNumber { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Ảnh biển số xe là bắt buộc.")]
