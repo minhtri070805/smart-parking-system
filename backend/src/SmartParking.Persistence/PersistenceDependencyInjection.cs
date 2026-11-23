@@ -24,6 +24,8 @@ public static class PersistenceDependencyInjection
         if (string.IsNullOrWhiteSpace(connection))
             connection = configuration.GetConnectionString("AiService");
         if (string.IsNullOrWhiteSpace(connection))
+            connection = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connection))
             throw new InvalidOperationException("Configure ConnectionStrings:AiRecognitionConnection for the Recognition Service.");
 
         services.AddDbContext<AiRecognitionDbContext>(options =>
