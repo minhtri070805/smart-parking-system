@@ -6,6 +6,7 @@ import {
   staffApi,
   validatePlate,
 } from "../../services/staffApi.js";
+import { formatVietnameseCarPlateInput } from "../../services/plateNumber.js";
 import {
   formatTime,
   Notice,
@@ -303,13 +304,15 @@ export default function StaffVerification({
                         <input
                           value={observedPlate}
                           onChange={(event) => {
-                            setObservedPlate(event.target.value.toUpperCase());
+                            setObservedPlate(formatVietnameseCarPlateInput(event.target.value));
                             setChecked(false);
                           }}
-                          maxLength={20}
+                          maxLength={12}
                           required
                           disabled={action.busy}
-                          placeholder="Nhập biển số sau khi đối chiếu"
+                          pattern="[0-9]{2}[A-Za-z][ -]?[0-9]{3}[.]?[0-9]{2}"
+                          title="Nhập theo dạng biển số ô tô Việt Nam, ví dụ 51F-123.45"
+                          placeholder="Ví dụ: 51F-123.45"
                         />
                       </label>
                     )}

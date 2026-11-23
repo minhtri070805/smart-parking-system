@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ParkingOperations.Application.Common.Interfaces;
-using ParkingOperations.Application.UseCases.CashHandovers;
 using ParkingOperations.Application.UseCases.CashReconciliation;
 using ParkingOperations.Application.UseCases.ShiftManagement;
 using ParkingOperations.Persistence;
@@ -13,7 +12,6 @@ public static class InfrastructureDependencyInjection
     public static IServiceCollection AddOperationsInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOperationsPersistence(configuration);
-        services.AddScoped<ICashHandoverService, CashHandoverService>();
         services.AddScoped<IParkingShiftService, ParkingShiftService>();
         services.AddScoped<ICashReconciliationService, CashReconciliationService>();
 

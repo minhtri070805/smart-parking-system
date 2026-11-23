@@ -20,7 +20,7 @@ public class VehicleDto
 public class CreateVehicleRequestDto
 {
     [Required(ErrorMessage = "Biển số xe không được để trống.")]
-    [StringLength(20, MinimumLength = 3, ErrorMessage = "Biển số xe phải từ 3 đến 20 ký tự.")]
+    [RegularExpression(@"^\d{2}[A-Za-z][ -]?\d{3}\.?\d{2}$", ErrorMessage = "Biển số ô tô không đúng định dạng. Ví dụ hợp lệ: 51F-123.45.")]
     public string PlateNumber { get; set; } = string.Empty;
 
     [MaxLength(50, ErrorMessage = "Hãng xe không được vượt quá 50 ký tự.")]

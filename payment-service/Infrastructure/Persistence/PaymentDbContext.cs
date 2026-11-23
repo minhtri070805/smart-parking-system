@@ -27,6 +27,11 @@ namespace Infrastructure.Persistence
                 
             modelBuilder.Entity<Invoice>()
                 .Property(i => i.TotalAmount).HasColumnType("numeric(18,2)");
+            modelBuilder.Entity<Invoice>()
+                .Property(i => i.GrossAmount).HasColumnType("numeric(18,2)");
+            modelBuilder.Entity<Invoice>().HasIndex(i => i.BookingId);
+            modelBuilder.Entity<Invoice>().HasIndex(i => i.CoreSessionId)
+                .IsUnique().HasFilter("\"Purpose\" = 'COUNTER_CHECKOUT' AND \"CoreSessionId\" IS NOT NULL");
                 
             modelBuilder.Entity<PaymentTransaction>()
                 .Property(pt => pt.Amount).HasColumnType("numeric(18,2)");

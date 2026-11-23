@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { bookingWorkflowStore } from "../services/bookingWorkflowStore.js";
+import { formatVietnameseCarPlateInput, validateVietnameseCarPlate } from "../services/plateNumber.js";
 import "../booking-workflow.css";
 
 const roles = [
@@ -43,7 +44,7 @@ function CustomerBooking({ bookings, now }) {
       const booking = bookingWorkflowStore.createBooking({
         customerName: formData.get("customerName"),
         phoneNumber: formData.get("phoneNumber"),
-        licensePlate: formData.get("licensePlate"),
+        licensePlate: validateVietnameseCarPlate(formData.get("licensePlate")),
         vehicleType: formData.get("vehicleType"),
         paymentMethod: formData.get("paymentMethod"),
       });
@@ -78,7 +79,7 @@ function CustomerBooking({ bookings, now }) {
           </label>
           <label>
             Biển số xe
-            <input name="licensePlate" required maxLength={20} placeholder="51A-123.45" />
+            <input name="licensePlate" required maxLength={12} pattern="[0-9]{2}[A-Za-z][ -]?[0-9]{3}[.]?[0-9]{2}" title="Nhập theo dạng biển số ô tô Việt Nam, ví dụ 51F-123.45" placeholder="51F-123.45" onChange={event => { event.target.value = formatVietnameseCarPlateInput(event.target.value); }} />
           </label>
           <label>
             Loại xe

@@ -28,13 +28,26 @@ namespace Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<long?>("BookingId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("CoreSessionId")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("GrossAmount")
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("SessionId")
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("SessionId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Status")
@@ -45,6 +58,12 @@ namespace Infrastructure.Migrations
                         .HasColumnType("numeric(18,2)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("CoreSessionId")
+                        .IsUnique()
+                        .HasFilter("\"Purpose\" = 'COUNTER_CHECKOUT' AND \"CoreSessionId\" IS NOT NULL");
 
                     b.HasIndex("SessionId");
 
@@ -173,9 +192,7 @@ namespace Infrastructure.Migrations
                 {
                     b.HasOne("Domain.Entities.ParkingSessionBilling", "Session")
                         .WithMany()
-                        .HasForeignKey("SessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("SessionId");
 
                     b.Navigation("Session");
                 });

@@ -10,7 +10,8 @@ namespace SmartParking.Api.Controllers;
 public class PaymentServiceClearanceDto
 {
     [Range(1, long.MaxValue)] public long SessionId { get; set; }
-    [Range(0.01, 100_000_000)] public decimal Amount { get; set; }
+    [Range(0, 100_000_000)] public decimal Amount { get; set; }
+    [Range(0, 100_000_000)] public decimal? TotalFee { get; set; }
     [Required, MaxLength(100)] public string TransactionRef { get; set; } = string.Empty;
     [MaxLength(50)] public string? PaymentMethod { get; set; }
     public DateTime? PaidAt { get; set; }
@@ -28,11 +29,13 @@ public class InternalPaymentClearancesController : ControllerBase
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private readonly IParkingSessionService _sessions;
+    private readonly IBookingService _bookings;
     private readonly IConfiguration _config;
 
-    public InternalPaymentClearancesController(IParkingSessionService sessions, IConfiguration config)
+    public InternalPaymentClearancesController(IParkingSessionService sessions, IBookingService bookings, IConfiguration config)
     {
         _sessions = sessions;
+        _bookings = bookings;
         _config = config;
     }
 
@@ -86,18 +89,37 @@ public class InternalPaymentClearancesController : ControllerBase
         try { dto = JsonSerializer.Deserialize<PaymentServiceClearanceDto>(raw, Json); }
         catch (JsonException) { return BadRequest(new { code = "INVALID_BODY", message = "Body không hợp lệ." }); }
         string? error = null;
-        if (dto == null || !TryValidate(dto, out error)) return BadRequest(new { code = "INVALID_BODY", message = error ?? "Body trống." });
+        if (dto == null || !TryValidate(dto, out error) || (dto.Amount == 0 && !dto.TotalFee.HasValue))
+            return BadRequest(new { code = "INVALID_BODY", message = error ?? "Thanh toán 0 đồng cần kèm tổng phí để đối chiếu khoản cọc." });
 
         var (ok, message, data) = await _sessions.RecordPaymentClearanceAsync(
             dto.SessionId, dto.Amount, dto.TransactionRef, dto.PaymentMethod, null,
             PaymentServiceSignature.ServiceActorRole, HttpContext.Connection.RemoteIpAddress?.ToString(),
-            isTrustedPaymentServerFlow: true, ct);
+            isTrustedPaymentServerFlow: true, ct, dto.TotalFee);
 
         if (ok) return Ok(new { message, data });
         if (message.Contains("Không tìm thấy")) return NotFound(new { code = "SESSION_NOT_FOUND", message });
         if (message.Contains("đã kết thúc") || message.Contains("đã bị hủy") || message.Contains("đã được sử dụng") || message.Contains("giao dịch khác"))
             return Conflict(new { code = "CLEARANCE_CONFLICT", message });
         return BadRequest(new { code = "CLEARANCE_REJECTED", message });
+    }
+
+    [HttpPost("booking")]
+    public async Task<IActionResult> ReceiveBookingClearance(CancellationToken ct)
+    {
+        var (error, raw) = await ReadSignedBodyAsync(ct);
+        if (error != null) return error;
+        BookingPaymentClearanceDto? dto;
+        try { dto = JsonSerializer.Deserialize<BookingPaymentClearanceDto>(raw, Json); }
+        catch (JsonException) { return BadRequest(new { code = "INVALID_BODY", message = "Body không hợp lệ." }); }
+        if (dto == null || dto.BookingId <= 0 || dto.Amount <= 0 || string.IsNullOrWhiteSpace(dto.TransactionRef))
+            return BadRequest(new { code = "INVALID_BODY", message = "Thông tin thanh toán đặt chỗ không hợp lệ." });
+        var (ok, message) = await _bookings.RecordBookingPaymentAsync(
+            dto.BookingId, dto.Amount, dto.TransactionRef, dto.PaymentMethod, dto.PaidAt, ct);
+        if (ok) return Ok(new { message });
+        return message.Contains("Không tìm thấy", StringComparison.OrdinalIgnoreCase)
+            ? NotFound(new { code = "BOOKING_NOT_FOUND", message })
+            : Conflict(new { code = "BOOKING_PAYMENT_REJECTED", message });
     }
 
     private static bool TryValidate(PaymentServiceClearanceDto dto, out string error)
@@ -107,4 +129,13 @@ public class InternalPaymentClearancesController : ControllerBase
         error = string.Join("; ", results.Select(r => r.ErrorMessage));
         return false;
     }
+}
+
+public sealed class BookingPaymentClearanceDto
+{
+    public long BookingId { get; set; }
+    public decimal Amount { get; set; }
+    public string TransactionRef { get; set; } = string.Empty;
+    public string? PaymentMethod { get; set; }
+    public DateTime? PaidAt { get; set; }
 }

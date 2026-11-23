@@ -5,6 +5,7 @@ import {
   staffApi,
   validatePhoto,
 } from "../../services/staffApi.js";
+import { formatVietnameseCarPlateInput } from "../../services/plateNumber.js";
 import { Notice, SafePhoto, StaffError, StaffIcon } from "./StaffUI.jsx";
 
 export const emptyCapture = () => ({
@@ -219,10 +220,12 @@ export default function PlateCapture({
           className="staff-plate-input"
           autoComplete="off"
           placeholder="Ví dụ: 51F-123.45"
-          maxLength={20}
+          pattern="[0-9]{2}[A-Za-z][ -]?[0-9]{3}[.]?[0-9]{2}"
+          title="Nhập theo dạng biển số ô tô Việt Nam, ví dụ 51F-123.45"
+          maxLength={12}
           value={value.plate}
           onChange={(event) =>
-            update({ plate: event.target.value.toUpperCase() })
+            update({ plate: formatVietnameseCarPlateInput(event.target.value) })
           }
           required
         />
