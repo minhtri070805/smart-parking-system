@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import RequireRole from "../components/RequireRole.jsx";
+import ParkingLotLocationPicker from "../components/ParkingLotLocationPicker.jsx";
 import { apiRequest } from "../services/api.js";
 import { operationsApi } from "../services/operationsApi.js";
 import { collectPages } from "../services/staffApi.js";
@@ -376,33 +377,107 @@ function Content() {
   const [showLotModal, setShowLotModal] = useState(false);
   const [showDeleteLotModal, setShowDeleteLotModal] = useState(false);
   const [editingLot, setEditingLot] = useState(null);
-  const [lotForm, setLotForm] = useState({ name: "", address: "", totalCapacity: 100, isActive: true,
-    quickSetup: true, floorName: "Tầng G", floorNumber: 0, zoneCode: "KHU-G", zoneName: "Khu vé tháng", slotPrefix: "G", slotCount: 0 });
+  const [managers, setManagers] = useState([]);
+  const [lotForm, setLotForm] = useState({
+    name: "",
+    address: "",
+    managerId: "",
+    floorCount: 1,
+    zoneCount: 2,
+    slotCount: 50,
+    isActive: true,
+  });
   const [lotModalBusy, setLotModalBusy] = useState(false);
   const [lotModalError, setLotModalError] = useState("");
   const [lotActionMessage, setLotActionMessage] = useState("");
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [addressLookupBusy, setAddressLookupBusy] = useState(false);
+  const addressLookupController = useRef(null);
+
+  useEffect(() => {
+    apiRequest("/v1/staff-assignments/candidates?role=MANAGER&page=1&pageSize=100")
+      .then(r => setManagers(r?.data?.items || []))
+      .catch(() => {});
+  }, []);
 
   const lot = lots.data?.find(l => String(l.id) === selected) || lots.data?.[0];
   const openView = id => setParams(previous => { const next = new URLSearchParams(previous); next.set("view", id); return next; });
 
   const openCreateLotModal = () => {
     setEditingLot(null);
-    setLotForm({ name: "", address: "", totalCapacity: 100, isActive: true, quickSetup: true, floorName: "Tầng G", floorNumber: 0, zoneCode: "KHU-G", zoneName: "Khu vé tháng", slotPrefix: "G", slotCount: 0 });
+    setLotForm({
+      name: "",
+      address: "",
+      latitude: null,
+      longitude: null,
+      managerId: managers[0]?.id ? String(managers[0].id) : "",
+      floorCount: 1,
+      zoneCount: 2,
+      slotCount: 50,
+      isActive: true,
+    });
     setLotModalError("");
+    setAddressSuggestions([]);
     setShowLotModal(true);
   };
 
-  const openEditLotModal = () => {
+  const openEditLotModal = async () => {
     if (!lot) return;
     setEditingLot(lot);
+    let currentManagerId = "";
+    try {
+      const assignmentsRes = await apiRequest(`/v1/staff-assignments?lotId=${lot.id}&page=1&pageSize=100`);
+      const items = assignmentsRes?.data?.items || [];
+      const managerAssignment = items.find(a => a.userRole === "MANAGER" || a.role === "MANAGER");
+      if (managerAssignment) currentManagerId = String(managerAssignment.userId);
+    } catch {}
     setLotForm({
       name: lot.name || "",
       address: lot.address || "",
-      totalCapacity: lot.configuredCapacity ?? lot.totalCapacity ?? 100,
+      latitude: lot.latitude ?? null,
+      longitude: lot.longitude ?? null,
+      managerId: currentManagerId,
+      _originalManagerId: currentManagerId,
+      floorCount: 1,
+      zoneCount: 2,
+      slotCount: 50,
       isActive: lot.isActive !== false,
     });
     setLotModalError("");
+    setAddressSuggestions([]);
     setShowLotModal(true);
+  };
+
+  const lookupNearbyAddresses = async ({ latitude, longitude }) => {
+    addressLookupController.current?.abort();
+    const controller = new AbortController();
+    addressLookupController.current = controller;
+    setLotModalError("");
+    setLotForm(previous => ({ ...previous, latitude, longitude, address: "" }));
+    setAddressSuggestions([]);
+    setAddressLookupBusy(true);
+    try {
+      const query = new URLSearchParams({ lat: String(latitude), lon: String(longitude), limit: "8" });
+      const response = await fetch(`https://photon.komoot.io/reverse?${query}`, { signal: controller.signal });
+      if (!response.ok) throw new Error("Không lấy được gợi ý địa chỉ.");
+      const data = await response.json();
+      const suggestions = [...new Set((data.features || []).map(feature => {
+        const p = feature.properties || {};
+        const street = [p.housenumber, p.street || (p.type === "street" ? p.name : "")].filter(Boolean).join(" ");
+        const place = p.name && p.name !== p.street && p.name !== street ? p.name : "";
+        return [place, street || p.name, p.district, p.city || p.locality, p.state, p.country].filter(Boolean).join(", ");
+      }).filter(Boolean))].slice(0, 8);
+      setAddressSuggestions(suggestions);
+      if (suggestions.length) setLotForm(previous => ({ ...previous, address: suggestions[0] }));
+      else setLotModalError("Chưa tìm thấy địa chỉ gần điểm này. Bạn có thể tự nhập địa chỉ bên dưới.");
+    } catch (error) {
+      if (error.name !== "AbortError") setLotModalError("Không tải được gợi ý địa chỉ. Bạn vẫn có thể tự nhập địa chỉ.");
+    } finally {
+      if (addressLookupController.current === controller) {
+        setAddressLookupBusy(false);
+        addressLookupController.current = null;
+      }
+    }
   };
 
   const handleSaveLot = async (e) => {
@@ -421,48 +496,125 @@ function Content() {
             isActive: Boolean(lotForm.isActive),
           }),
         });
+
+        if (lotForm.managerId && String(lotForm.managerId) !== String(lotForm._originalManagerId)) {
+          try {
+            await apiRequest("/v1/staff-assignments", {
+              method: "POST",
+              body: JSON.stringify({
+                userId: Number(lotForm.managerId),
+                lotId: editingLot.id,
+                duty: "GATE",
+                notes: "Manager phụ trách bãi",
+              }),
+            });
+          } catch (mErr) {
+            console.warn("Could not update manager assignment:", mErr);
+          }
+        }
+
         setShowLotModal(false);
         await lots.reload();
         setLotActionMessage(`Đã cập nhật bãi đỗ "${lotForm.name.trim()}".`);
       } else {
-        let bootstrapWarning = "";
+        if (!lotForm.managerId) {
+          throw new Error("Vui lòng phân công 1 Manager vận hành bãi đỗ xe.");
+        }
+        if (lotForm.latitude == null || lotForm.longitude == null || !Number.isFinite(Number(lotForm.latitude)) || !Number.isFinite(Number(lotForm.longitude))) {
+          throw new Error("Hãy chọn vị trí bãi trên bản đồ trước khi tạo.");
+        }
+        if (!lotForm.address.trim()) throw new Error("Hãy chọn hoặc nhập địa chỉ bãi đỗ.");
+        const floorCount = Math.max(1, Number(lotForm.floorCount) || 1);
+        const zoneCount = Math.max(1, Number(lotForm.zoneCount) || 1);
+        const slotCount = Math.max(1, Number(lotForm.slotCount) || 1);
+        const totalCapacity = floorCount * zoneCount * slotCount;
+
         const res = await apiRequest("/v1/parking-lots", {
           method: "POST",
           body: JSON.stringify({
             name: lotForm.name.trim(),
-            address: lotForm.address.trim() || null,
-            totalCapacity: Number(lotForm.totalCapacity) || 0,
+            address: lotForm.address.trim(),
+            latitude: Number(lotForm.latitude),
+            longitude: Number(lotForm.longitude),
+            totalCapacity,
             isActive: Boolean(lotForm.isActive),
           }),
         });
         if (res?.data?.id) {
+          const newLotId = res.data.id;
+
+          // 1. Phân công 1 Manager vận hành bãi
           try {
-            if (lotForm.quickSetup) {
-              const floorResponse = await apiRequest(`/v1/parking-lots/${res.data.id}/floors`, {
+            await apiRequest("/v1/staff-assignments", {
+              method: "POST",
+              body: JSON.stringify({
+                userId: Number(lotForm.managerId),
+                lotId: newLotId,
+                duty: "GATE",
+                notes: "Manager phụ trách bãi",
+              }),
+            });
+          } catch (assignErr) {
+            console.error("Assign manager error:", assignErr);
+          }
+
+          // 2. Tự động tạo cấu trúc: Số tầng, Số khu vực, Số slot
+          try {
+            for (let f = 0; f < floorCount; f++) {
+              const isGround = f === 0;
+              const fName = isGround ? "Tầng G" : `Tầng ${f}`;
+              const fNumber = f;
+              const fZoneType = isGround ? "FIXED" : "TRANSIENT";
+
+              const floorRes = await apiRequest(`/v1/parking-lots/${newLotId}/floors`, {
                 method: "POST",
-                body: JSON.stringify({ name: lotForm.floorName.trim(), floorNumber: Number(lotForm.floorNumber), totalSlots: 0, isActive: true }),
+                body: JSON.stringify({
+                  name: fName,
+                  floorNumber: fNumber,
+                  totalSlots: zoneCount * slotCount,
+                  isActive: true,
+                }),
               });
-              const floor = floorResponse.data;
-              const zone = await operationsApi(res.data.id, "zones", {
-                code: lotForm.zoneCode.trim(), name: lotForm.zoneName.trim(), type: "FIXED", layout: "INSIDE", isActive: true, floorId: floor.id,
-              }, "POST");
-              const count = Math.max(0, Math.min(500, Number(lotForm.slotCount) || 0));
-              for (let i = 1; i <= count; i += 1) {
-                await apiRequest(`/v1/parking-floors/${floor.id}/slots`, { method: "POST", body: JSON.stringify({
-                  zoneId: zone.id, slotCode: `${lotForm.slotPrefix.trim() || "G"}${String(i).padStart(3, "0")}`, physicalStatus: "EMPTY", isActive: true,
-                }) });
+              const createdFloor = floorRes.data;
+
+              for (let z = 1; z <= zoneCount; z++) {
+                const zoneLetter = String.fromCharCode(64 + z);
+                const prefix = isGround ? "G" : String(f);
+                const zoneCode = `KHU-${prefix}-${zoneLetter}`;
+                const zoneName = `Khu ${zoneLetter} - ${fName}`;
+
+                const zone = await operationsApi(newLotId, "zones", {
+                  code: zoneCode,
+                  name: zoneName,
+                  type: fZoneType,
+                  layout: "INSIDE",
+                  isActive: true,
+                  floorId: createdFloor.id,
+                }, "POST");
+
+                for (let s = 1; s <= slotCount; s++) {
+                  const slotCode = `${prefix}-${zoneLetter}${String(s).padStart(3, "0")}`;
+                  await apiRequest(`/v1/parking-floors/${createdFloor.id}/slots`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      zoneId: zone.id,
+                      slotCode,
+                      physicalStatus: "EMPTY",
+                      isActive: true,
+                    }),
+                  });
+                }
               }
             }
-          } catch (bootstrapError) {
-            bootstrapWarning = ` Cấu trúc nhanh chưa hoàn tất (${bootstrapError.message || "lỗi khởi tạo"}); có thể bổ sung tại Tầng, Khu vực và Ô đỗ.`;
+          } catch (createErr) {
+            console.error("Auto provision error:", createErr);
           }
+
+          setShowLotModal(false);
+          await lots.reload();
+          select(String(newLotId));
+          setLotActionMessage(`Đã tạo thành công bãi đỗ "${lotForm.name.trim()}" cùng ${floorCount} tầng, ${floorCount * zoneCount} khu vực và ${totalCapacity} slot.`);
         }
-        setShowLotModal(false);
-        await lots.reload();
-        if (res?.data?.id) {
-          select(String(res.data.id));
-        }
-        setLotActionMessage(`Đã tạo bãi đỗ "${lotForm.name.trim()}".${bootstrapWarning}`);
       }
     } catch (err) {
       setLotModalError(err.message || "Không thể lưu thông tin bãi đỗ.");
@@ -543,40 +695,94 @@ function Content() {
 
     {showLotModal && (
       <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title-lot" style={{ position: "fixed", inset: 0, background: "rgba(16,36,59,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
-        <div className="workspace-panel" style={{ width: "100%", maxWidth: "640px", maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: "14px", boxShadow: "0 20px 50px rgba(0,0,0,0.3)" }}>
+        <div className="workspace-panel" style={{ width: "100%", maxWidth: editingLot ? "640px" : "920px", maxHeight: "92vh", overflowY: "auto", background: "#fff", borderRadius: "14px", boxShadow: "0 20px 50px rgba(0,0,0,0.3)" }}>
           <h2 id="modal-title-lot" style={{ marginTop: 0 }}>{editingLot ? `Sửa bãi đỗ: ${editingLot.name}` : "Thêm bãi đỗ xe mới"}</h2>
           <p className="operations-settings-hint" style={{ margin: "4px 0 16px" }}>{editingLot ? "Cập nhật thông tin tòa nhà / bãi đỗ xe." : "Khai báo tòa nhà / bãi đỗ xe mới trong hệ thống."}</p>
           {lotModalError && <p className="feedback feedback--error" role="alert" style={{ color: "#d14343", margin: "8px 0" }}>{lotModalError}</p>}
           <form onSubmit={handleSaveLot}>
-            <fieldset disabled={lotModalBusy} style={{ border: 0, padding: 0, margin: 0, display: "grid", gap: "12px" }}>
-              <Field label="Tên bãi đỗ xe (bắt buộc)">
-                <input required minLength={2} maxLength={100} placeholder="Ví dụ: Tòa nhà Landmark 81..." value={lotForm.name} onChange={e => setLotForm({ ...lotForm, name: e.target.value })} />
-              </Field>
-              <Field label="Địa chỉ">
-                <input maxLength={255} placeholder="Ví dụ: 720A Điện Biên Phủ, P. 22, Bình Thạnh..." value={lotForm.address} onChange={e => setLotForm({ ...lotForm, address: e.target.value })} />
-              </Field>
-              <Field label="Sức chứa dự kiến">
-                <input type="number" min={0} max={100000} value={lotForm.totalCapacity} onChange={e => setLotForm({ ...lotForm, totalCapacity: e.target.value })} />
-              </Field>
-              {!editingLot && <>
-                <label className="staff-check"><input type="checkbox" checked={lotForm.quickSetup} onChange={e => setLotForm({ ...lotForm, quickSetup: e.target.checked })} />Tạo nhanh tầng, khu vực và ô đỗ ban đầu</label>
-                <div className="operations-form-grid">
-                  <Field label="Tên tầng"><input required={lotForm.quickSetup} value={lotForm.floorName} onChange={e => setLotForm({ ...lotForm, floorName: e.target.value })} /></Field>
-                  <Field label="Số tầng (G = 0)"><input type="number" min={-10} max={100} required={lotForm.quickSetup} value={lotForm.floorNumber} onChange={e => setLotForm({ ...lotForm, floorNumber: e.target.value })} /></Field>
-                  <Field label="Mã khu vé tháng"><input required={lotForm.quickSetup} value={lotForm.zoneCode} onChange={e => setLotForm({ ...lotForm, zoneCode: e.target.value })} /></Field>
-                  <Field label="Tên khu"><input required={lotForm.quickSetup} value={lotForm.zoneName} onChange={e => setLotForm({ ...lotForm, zoneName: e.target.value })} /></Field>
-                  <Field label="Tiền tố mã ô"><input required={lotForm.quickSetup} maxLength={10} value={lotForm.slotPrefix} onChange={e => setLotForm({ ...lotForm, slotPrefix: e.target.value })} /></Field>
-                  <Field label="Số ô tạo nhanh"><input type="number" min={0} max={500} required={lotForm.quickSetup} value={lotForm.slotCount} onChange={e => setLotForm({ ...lotForm, slotCount: e.target.value })} /></Field>
+            <fieldset disabled={lotModalBusy} style={{ border: 0, padding: 0, margin: 0, display: "grid", gap: "18px" }}>
+              <section style={{ border: "1px solid #d8e2ef", borderRadius: 12, padding: 16, display: "grid", gap: 12 }}>
+                <div><h3 style={{ margin: 0 }}>1. Thông tin bãi</h3><p className="operations-settings-hint" style={{ margin: "4px 0 0" }}>Đặt tên và chọn người quản lý bãi.</p></div>
+                <div className="operations-form-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+                  <Field label="Tên bãi đỗ xe *">
+                    <input required minLength={2} maxLength={100} placeholder="Ví dụ: Bãi xe FPT University HCMC" value={lotForm.name} onChange={e => setLotForm({ ...lotForm, name: e.target.value })} />
+                  </Field>
+                  <Field label="Manager phụ trách *">
+                    <select required value={lotForm.managerId} onChange={e => setLotForm({ ...lotForm, managerId: e.target.value })}>
+                      <option value="">Chọn manager</option>
+                      {managers.map(m => <option key={m.id} value={m.id}>{m.fullName || m.username} ({m.username})</option>)}
+                    </select>
+                  </Field>
                 </div>
-                <small>Khu tạo nhanh mặc định là Vé tháng. Tầng/khu/ô bổ sung sau được quản lý riêng theo đúng thứ tự.</small>
-              </>}
+              </section>
+
+              {!editingLot && <section style={{ border: "1px solid #d8e2ef", borderRadius: 12, padding: 16, display: "grid", gap: 12 }}>
+                <div><h3 style={{ margin: 0 }}>2. Chọn vị trí trên bản đồ</h3><p className="operations-settings-hint" style={{ margin: "4px 0 0" }}>Bấm vào vị trí bãi xe. Hệ thống sẽ tìm tối đa 8 địa chỉ lân cận để bạn chọn; địa chỉ gợi ý dùng dữ liệu OpenStreetMap.</p></div>
+                <ParkingLotLocationPicker value={lotForm.latitude != null && lotForm.longitude != null ? { latitude: lotForm.latitude, longitude: lotForm.longitude } : null} onChange={lookupNearbyAddresses} />
+                <Field label="Địa chỉ bãi *">
+                  <input required maxLength={255} placeholder="Chọn điểm trên bản đồ hoặc nhập địa chỉ" value={lotForm.address} onChange={e => setLotForm({ ...lotForm, address: e.target.value })} />
+                </Field>
+                {addressLookupBusy && <p role="status" style={{ margin: 0, color: "#52657c" }}>Đang tìm địa chỉ gần điểm đã chọn…</p>}
+                {addressSuggestions.length > 0 && <div aria-label="Địa chỉ gần điểm đã chọn" style={{ display: "grid", gap: 6 }}>
+                  <strong style={{ fontSize: 13 }}>Địa chỉ gần vị trí (bấm để điền):</strong>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 6 }}>
+                    {addressSuggestions.map((address, index) => <button key={`${address}-${index}`} type="button" className="btn btn--outline" aria-pressed={lotForm.address === address} onClick={() => setLotForm(previous => ({ ...previous, address }))} style={{ textAlign: "left", justifyContent: "flex-start", whiteSpace: "normal" }}>{address}</button>)}
+                  </div>
+                </div>}
+                {lotForm.latitude != null && lotForm.longitude != null && <small style={{ color: "#52657c" }}>Tọa độ: {Number(lotForm.latitude).toFixed(6)}, {Number(lotForm.longitude).toFixed(6)}</small>}
+              </section>}
+
+              {!editingLot && (
+                <>
+                  <section style={{ border: "1px solid #d8e2ef", borderRadius: 12, padding: 16, display: "grid", gap: 12 }}>
+                  <div><h3 style={{ margin: 0 }}>3. Quy mô bãi</h3><p className="operations-settings-hint" style={{ margin: "4px 0 0" }}>Nhập số tầng, khu vực mỗi tầng và ô đỗ mỗi khu vực.</p></div>
+                  <div className="operations-form-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+                    <Field label="Số tầng">
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        required
+                        value={lotForm.floorCount}
+                        onChange={e => setLotForm({ ...lotForm, floorCount: Math.max(1, parseInt(e.target.value) || 1) })}
+                      />
+                    </Field>
+                    <Field label="Số khu vực (mỗi tầng)">
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        required
+                        value={lotForm.zoneCount}
+                        onChange={e => setLotForm({ ...lotForm, zoneCount: Math.max(1, parseInt(e.target.value) || 1) })}
+                      />
+                    </Field>
+                    <Field label="Số slot (mỗi khu vực)">
+                      <input
+                        type="number"
+                        min={1}
+                        max={500}
+                        required
+                        value={lotForm.slotCount}
+                        onChange={e => setLotForm({ ...lotForm, slotCount: Math.max(1, parseInt(e.target.value) || 1) })}
+                      />
+                    </Field>
+                  </div>
+                  <p style={{ margin: 0, padding: "10px 12px", borderRadius: 8, background: "#f2f6fc", color: "#203d5d" }}>Dự kiến tạo <strong>{Number(lotForm.floorCount) * Number(lotForm.zoneCount)}</strong> khu vực và <strong>{Number(lotForm.floorCount) * Number(lotForm.zoneCount) * Number(lotForm.slotCount)}</strong> ô đỗ.</p>
+                  </section>
+                </>
+              )}
+
               <label className="staff-check">
                 <input type="checkbox" checked={lotForm.isActive} onChange={e => setLotForm({ ...lotForm, isActive: e.target.checked })} />
-                Đang hoạt động (cho phép tiếp nhận xe)
+                Bãi đang hoạt động, cho phép tiếp nhận xe
               </label>
+
               <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "14px" }}>
                 <button type="button" className="btn btn--outline" disabled={lotModalBusy} onClick={() => { setShowLotModal(false); setLotModalError(""); }}>Hủy</button>
-                <button type="submit" className="btn btn--primary" disabled={lotModalBusy || !lotForm.name.trim()}>{lotModalBusy ? "Đang lưu…" : editingLot ? "Lưu cập nhật" : "Tạo bãi đỗ"}</button>
+                <button type="submit" className="btn btn--primary" disabled={lotModalBusy || addressLookupBusy || !lotForm.name.trim() || (!editingLot && (!lotForm.managerId || lotForm.latitude == null || lotForm.longitude == null || !lotForm.address.trim()))}>
+                  {lotModalBusy ? "Đang tạo bãi…" : editingLot ? "Lưu cập nhật" : "Tạo bãi và sơ đồ chỗ đỗ"}
+                </button>
               </div>
             </fieldset>
           </form>
