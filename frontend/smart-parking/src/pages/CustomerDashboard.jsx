@@ -592,7 +592,6 @@ function DashboardContent({ publicView = false }) {
                 {lots.map((lot) => (
                   <option value={lot.id} key={lot.id}>
                     {lot.name}
-                    {lot.address ? ` · ${lot.address}` : ""}
                   </option>
                 ))}
               </select>
