@@ -36,4 +36,9 @@ public interface IRecognitionFacade
         long recognitionId,
         string? correlationId,
         CancellationToken cancellationToken = default);
+
+    Task<RecognitionResultDto?> GetByCaptureIdAsync(
+        string captureId,
+        string? correlationId,
+        CancellationToken cancellationToken = default);
 }
