@@ -7,6 +7,8 @@ public class ParkingLotDto
     public int Id { get; set; }
     public string Name { get; set; } = null!;
     public string? Address { get; set; }
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
     public int TotalCapacity { get; set; }
     public int TotalFloors { get; set; }
     public int AvailableSlotsCount { get; set; }
@@ -32,6 +34,12 @@ public class CreateParkingLotRequestDto
     [StringLength(255, ErrorMessage = "Địa chỉ bãi đỗ xe tối đa 255 ký tự.")]
     public string? Address { get; set; }
 
+    [Range(-90, 90, ErrorMessage = "Vĩ độ phải nằm trong khoảng -90 đến 90.")]
+    public double? Latitude { get; set; }
+
+    [Range(-180, 180, ErrorMessage = "Kinh độ phải nằm trong khoảng -180 đến 180.")]
+    public double? Longitude { get; set; }
+
     [Range(0, 100000, ErrorMessage = "Sức chứa bãi đỗ xe phải từ 0 đến 100.000.")]
     public int TotalCapacity { get; set; } = 0;
 
@@ -46,6 +54,12 @@ public class UpdateParkingLotRequestDto
 
     [StringLength(255, ErrorMessage = "Địa chỉ bãi đỗ xe tối đa 255 ký tự.")]
     public string? Address { get; set; }
+
+    [Range(-90, 90, ErrorMessage = "Vĩ độ phải nằm trong khoảng -90 đến 90.")]
+    public double? Latitude { get; set; }
+
+    [Range(-180, 180, ErrorMessage = "Kinh độ phải nằm trong khoảng -180 đến 180.")]
+    public double? Longitude { get; set; }
 
     [Range(0, 100000, ErrorMessage = "Sức chứa bãi đỗ xe phải từ 0 đến 100.000.")]
     public int TotalCapacity { get; set; }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import RequireCustomer from "../components/RequireCustomer.jsx";
+import ParkingLocationsMap from "../components/ParkingLocationsMap.jsx";
 import ParkingSlotManagement from "./ParkingSlotManagement.jsx";
 import { getAuthSession, subscribeAuthSession } from "../services/authSession.js";
 import { apiRequest } from "../services/api.js";
@@ -57,6 +58,10 @@ function DashboardContent({ publicView = false }) {
   const [customerLocation, setCustomerLocation] = useState(null);
   const [locationError, setLocationError] = useState("");
   const [locationLoading, setLocationLoading] = useState(false);
+  const [routeGeometry, setRouteGeometry] = useState(null);
+  const [routeSummary, setRouteSummary] = useState("");
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState("");
   const [floorsError, setFloorsError] = useState("");
   const [slotsError, setSlotsError] = useState("");
   const [capacity, setCapacity] = useState(null);
@@ -371,16 +376,6 @@ function DashboardContent({ publicView = false }) {
   const vehicleName = (vehicle) =>
     [vehicle.brand, vehicle.model].filter(Boolean).join(" ") ||
     `Xe cá nhân`;
-  const selectedLotAddress = selectedLot
-    ? [selectedLot.name, selectedLot.address].filter(Boolean).join(", ")
-    : "";
-  const mapEmbedUrl = selectedLotAddress
-    ? `https://maps.google.com/maps?q=${encodeURIComponent(selectedLotAddress)}&output=embed`
-    : "";
-  const directionsUrl = selectedLotAddress
-    ? `https://www.google.com/maps/dir/?api=1${customerLocation ? `&origin=${customerLocation.latitude},${customerLocation.longitude}` : ""}&destination=${encodeURIComponent(selectedLotAddress)}&travelmode=driving`
-    : "";
-
   const useCurrentLocation = () => {
     setLocationError("");
     if (!navigator.geolocation) {
@@ -390,19 +385,50 @@ function DashboardContent({ publicView = false }) {
     setLocationLoading(true);
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        setCustomerLocation({ latitude: coords.latitude, longitude: coords.longitude });
+        setCustomerLocation({ latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy });
         setLocationLoading(false);
       },
       (error) => {
         setLocationError(
           error.code === error.PERMISSION_DENIED
-            ? "Bạn chưa cho phép truy cập vị trí. Bạn vẫn có thể xem đường đi từ Google Maps."
-            : "Không lấy được vị trí hiện tại. Hãy thử lại hoặc mở chỉ đường trực tiếp.",
+            ? "Bạn chưa cho phép truy cập vị trí. Hãy bật quyền Vị trí cho trang web trong cài đặt trình duyệt rồi thử lại."
+            : error.code === error.TIMEOUT
+              ? "Trình duyệt mất quá nhiều thời gian để xác định vị trí. Hãy bật GPS hoặc thử lại ngoài trời."
+              : "Không đọc được vị trí hiện tại. Kiểm tra GPS và quyền vị trí của trình duyệt rồi thử lại.",
         );
         setLocationLoading(false);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     );
+  };
+
+  const showRouteToLot = async () => {
+    setRouteError("");
+    setRouteSummary("");
+    setRouteGeometry(null);
+    if (!customerLocation) {
+      setRouteError("Hãy xác định vị trí hiện tại trước để xem đường đi trên bản đồ.");
+      return;
+    }
+    if (!selectedLot?.latitude || !selectedLot?.longitude) {
+      setRouteError("Bãi này chưa có tọa độ bản đồ.");
+      return;
+    }
+    setRouteLoading(true);
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${customerLocation.longitude},${customerLocation.latitude};${selectedLot.longitude},${selectedLot.latitude}?overview=full&geometries=geojson`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Không kết nối được dịch vụ tìm đường.");
+      const result = await response.json();
+      const route = result.code === "Ok" ? result.routes?.[0] : null;
+      if (!route) throw new Error("Không tìm thấy đường đi giữa vị trí của bạn và bãi.");
+      setRouteGeometry(route.geometry);
+      setRouteSummary(`Khoảng ${(route.distance / 1000).toFixed(1)} km · ${Math.ceil(route.duration / 60)} phút lái xe`);
+    } catch (error) {
+      setRouteError(error.message || "Không thể tìm đường lúc này. Hãy thử lại.");
+    } finally {
+      setRouteLoading(false);
+    }
   };
 
   const openBookingForm = () => {
@@ -606,11 +632,14 @@ function DashboardContent({ publicView = false }) {
                 >
                   {locationLoading ? "Đang xác định vị trí..." : customerLocation ? "Cập nhật vị trí của tôi" : "Dùng vị trí của tôi"}
                 </button>
-                {directionsUrl && (
-                  <a className="btn btn--primary" href={directionsUrl} target="_blank" rel="noreferrer">
-                    Chỉ đường đến bãi
-                  </a>
-                )}
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={showRouteToLot}
+                  disabled={routeLoading || !selectedLot.latitude || !selectedLot.longitude}
+                >
+                  {routeLoading ? "Đang tìm đường..." : "Chỉ đường trên bản đồ"}
+                </button>
               </div>
             </div>
             {locationError && (
@@ -618,20 +647,17 @@ function DashboardContent({ publicView = false }) {
                 {locationError}
               </p>
             )}
-            {selectedLot.address ? (
-              <iframe
-                className="customer-map__frame"
-                title={`Bản đồ vị trí ${selectedLot.name}`}
-                src={mapEmbedUrl}
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                allowFullScreen
-              />
-            ) : (
-              <p className="customer-message">
-                Bãi này chưa được cấu hình địa chỉ. Vui lòng chọn bãi khác hoặc liên hệ quản lý bãi.
-              </p>
+            {routeError && (
+              <p className="customer-message customer-message--error" role="status">{routeError}</p>
             )}
+            {routeSummary && <p className="customer-map__route-summary">{routeSummary}</p>}
+            <ParkingLocationsMap
+              lots={lots}
+              selectedLotId={selectedLotId}
+              customerLocation={customerLocation}
+              routeGeometry={routeGeometry}
+              onSelectLot={setSelectedLotId}
+            />
           </section>
         )}
 
