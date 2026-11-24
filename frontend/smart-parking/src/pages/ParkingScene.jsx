@@ -1,36 +1,12 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import ParkingCanvas from "../components/ParkingCanvas.jsx";
-import { apiRequest } from "../services/api.js";
 import { getAuthSession, subscribeAuthSession } from "../services/authSession.js";
 import { Feedback, itemsOf, useResource, useMutation, write } from "../components/WorkspaceUI.jsx";
 import { sceneStatuses, sceneToDefinition } from "../services/parkingScene.js";
-import { initialSceneSnapshotState, sceneRequestKey, sceneSnapshotReducer } from "../services/sceneSnapshot.js";
+import { useSceneSnapshot } from "../services/useSceneSnapshot.js";
 import { canUseStaffView } from "../services/staffDuty.js";
 import "../parking-scene.css";
-
-function useScene(lotId, revision, identity) {
-  const [state, dispatch] = useReducer(sceneSnapshotReducer, initialSceneSnapshotState);
-  const requestSequence = useRef(0);
-  useEffect(() => {
-    const controller = new AbortController(); let timer;
-    if (!lotId) { dispatch({ type: "reset" }); return () => controller.abort(); }
-    const key = sceneRequestKey(lotId, identity);
-    async function load() {
-      const requestId = ++requestSequence.current;
-      dispatch({ type: "begin", key, requestId });
-      try {
-        const result = await apiRequest(`/v1/parking-lots/${lotId}/scene`, { signal: controller.signal });
-        if (!result?.data) throw new Error("API không trả về snapshot bãi đỗ.");
-        if (!controller.signal.aborted) dispatch({ type: "success", key, requestId, lotId, data: result.data });
-      } catch (e) { if (!controller.signal.aborted) dispatch({ type: "failure", key, requestId, error: e.message }); }
-      finally { if (!controller.signal.aborted) timer = setTimeout(load, 15000); }
-    }
-    load();
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [lotId, revision, identity]);
-  return state;
-}
 
 export default function ParkingScene() {
   const session = useSyncExternalStore(subscribeAuthSession, getAuthSession, getAuthSession);
@@ -54,7 +30,7 @@ export default function ParkingScene() {
   const staffDuty = lot?.duty;
   const canGate = role === "STAFF" && canUseStaffView(staffDuty, "entry");
   const canArea = role === "STAFF" && canUseStaffView(staffDuty, "verify");
-  const state = useScene(lot?.id, revision, `${session?.userProfile.id || "guest"}:${role || ""}`);
+  const state = useSceneSnapshot(lot?.id, revision, `${session?.userProfile.id || "guest"}:${role || ""}`);
   const scene = state.data?.id === lot?.id ? state.data : null;
   const definition = useMemo(() => sceneToDefinition(scene), [JSON.stringify(scene?.floors), scene?.id, scene?.name]);
   const floors = definition?.liveFloors || [];
