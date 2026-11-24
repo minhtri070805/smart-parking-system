@@ -81,6 +81,11 @@ public class RecognitionController(
         {
             return BadRequest(ErrorResponseDto.Create("INVALID_INPUT", ex.Message, correlationId));
         }
+        catch (OperationConflictException ex)
+        {
+            logger.LogWarning("Detect conflict: {Message}, CorrelationId: {CorrelationId}", ex.Message, correlationId);
+            return StatusCode(StatusCodes.Status409Conflict, ErrorResponseDto.Create("CONFLICT", ex.Message, correlationId));
+        }
         catch (RecognitionServiceException ex)
         {
             logger.LogWarning(ex, "Downstream recognition service returned {StatusCode}: {Message}", ex.StatusCode, ex.Message);
@@ -111,6 +116,11 @@ public class RecognitionController(
     {
         var correlationId = GetCorrelationId();
         var staffUserId = GetCurrentUserId();
+        var headerIdempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey) && !string.IsNullOrWhiteSpace(headerIdempotencyKey))
+        {
+            request = request with { IdempotencyKey = headerIdempotencyKey };
+        }
 
         if (staffUserId <= 0)
         {
@@ -143,6 +153,11 @@ public class RecognitionController(
         {
             return BadRequest(ErrorResponseDto.Create("INVALID_INPUT", ex.Message, correlationId));
         }
+        catch (OperationConflictException ex)
+        {
+            logger.LogWarning("Confirm ENTRY conflict: {Message}, CorrelationId: {CorrelationId}", ex.Message, correlationId);
+            return StatusCode(StatusCodes.Status409Conflict, ErrorResponseDto.Create("CONFLICT", ex.Message, correlationId));
+        }
         catch (RecognitionServiceException ex)
         {
             return StatusCode((int)ex.StatusCode, ErrorResponseDto.Create("RECOGNITION_ERROR", ex.Message, correlationId));
@@ -162,6 +177,11 @@ public class RecognitionController(
     {
         var correlationId = GetCorrelationId();
         var staffUserId = GetCurrentUserId();
+        var headerIdempotencyKey = Request.Headers["Idempotency-Key"].ToString();
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey) && !string.IsNullOrWhiteSpace(headerIdempotencyKey))
+        {
+            request = request with { IdempotencyKey = headerIdempotencyKey };
+        }
 
         if (staffUserId <= 0)
         {
@@ -194,6 +214,11 @@ public class RecognitionController(
         {
             return BadRequest(ErrorResponseDto.Create("INVALID_INPUT", ex.Message, correlationId));
         }
+        catch (OperationConflictException ex)
+        {
+            logger.LogWarning("Confirm EXIT conflict: {Message}, CorrelationId: {CorrelationId}", ex.Message, correlationId);
+            return StatusCode(StatusCodes.Status409Conflict, ErrorResponseDto.Create("CONFLICT", ex.Message, correlationId));
+        }
         catch (RecognitionServiceException ex)
         {
             return StatusCode((int)ex.StatusCode, ErrorResponseDto.Create("RECOGNITION_ERROR", ex.Message, correlationId));
@@ -202,6 +227,71 @@ public class RecognitionController(
         {
             logger.LogError(ex, "Unexpected error handling confirm-exit request. CorrelationId: {CorrelationId}", correlationId);
             return StatusCode(500, ErrorResponseDto.Create("INTERNAL_ERROR", "An unexpected error occurred during exit confirmation.", correlationId));
+        }
+    }
+
+    [HttpGet("{id:long}")]
+    public async Task<IActionResult> GetById(long id, CancellationToken ct)
+    {
+        var correlationId = GetCorrelationId();
+        var staffUserId = GetCurrentUserId();
+
+        if (staffUserId <= 0)
+        {
+            return Unauthorized(ErrorResponseDto.Create("UNAUTHORIZED", "Invalid or missing authenticated staff user claim.", correlationId));
+        }
+
+        try
+        {
+            var result = await recognitionFacade.GetByIdAsync(id, correlationId, ct);
+            if (result is null)
+            {
+                return NotFound(ErrorResponseDto.Create("NOT_FOUND", "Recognition record not found.", correlationId));
+            }
+
+            return Ok(result);
+        }
+        catch (ImageValidationException ex)
+        {
+            return BadRequest(ErrorResponseDto.Create("INVALID_INPUT", ex.Message, correlationId));
+        }
+        catch (RecognitionServiceException ex)
+        {
+            return StatusCode((int)ex.StatusCode, ErrorResponseDto.Create("RECOGNITION_ERROR", ex.Message, correlationId));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error querying recognition record. Id: {Id}, CorrelationId: {CorrelationId}", id, correlationId);
+            return StatusCode(500, ErrorResponseDto.Create("INTERNAL_ERROR", "An unexpected error occurred during recognition lookup.", correlationId));
+        }
+    }
+
+    [HttpGet("by-capture/{captureId}")]
+    public async Task<IActionResult> GetByCaptureId(string captureId, CancellationToken ct)
+    {
+        var correlationId = GetCorrelationId();
+        var staffUserId = GetCurrentUserId();
+        if (staffUserId <= 0)
+        {
+            return Unauthorized(ErrorResponseDto.Create("UNAUTHORIZED", "Invalid or missing authenticated staff user claim.", correlationId));
+        }
+
+        try
+        {
+            var result = await recognitionFacade.GetByCaptureIdAsync(captureId, correlationId, ct);
+            if (result is null)
+            {
+                return NotFound(ErrorResponseDto.Create("NOT_FOUND", "Recognition record not found.", correlationId));
+            }
+            return Ok(result);
+        }
+        catch (ImageValidationException ex)
+        {
+            return BadRequest(ErrorResponseDto.Create("INVALID_INPUT", ex.Message, correlationId));
+        }
+        catch (RecognitionServiceException ex)
+        {
+            return StatusCode((int)ex.StatusCode, ErrorResponseDto.Create("RECOGNITION_ERROR", ex.Message, correlationId));
         }
     }
 

@@ -16,11 +16,11 @@ const canArea = (duty) => ["SLOT_VERIFIER", "BOTH"].includes(duty);
 const viewRules = {
   entry: canEnter,
   exit: canExit,
-  bookings: canArea,
+  bookings: canEnter,
+  "booking-dispatch": canArea,
   verify: canArea,
   sessions: canArea,
   dispatches: canArea,
-  handovers: () => true,
 };
 
 // Duty chưa biết (API cũ, dữ liệu thiếu) -> không ẩn gì, backend vẫn là nơi quyết định quyền.
@@ -42,10 +42,10 @@ const staffNavItems = [
   ["entry", "/staff?view=entry", "Xe vào vãng lai"],
   ["exit", "/staff?view=exit", "Xe ra"],
   ["bookings", "/staff?view=bookings", "Xe đặt qua web"],
+  ["booking-dispatch", "/staff?view=booking-dispatch", "Phân ô xe đặt web"],
   ["verify", "/staff?view=verify", "Xác minh ô"],
   ["sessions", "/staff?view=sessions", "Xe đang gửi"],
   ["dispatches", "/staff?view=dispatches", "Điều phối"],
-  ["handovers", "/handovers", "Bàn giao ca"],
 ];
 
 // Menu của Staff chỉ chứa chức năng thuộc loại phân công của họ.

@@ -10,6 +10,28 @@ namespace SmartParking.Tests;
 
 public class StaffLotAssignmentTests
 {
+    [Fact]
+    public async Task AdminCanAssignManagerToLotWithoutStaffFloorOrZone()
+    {
+        var (service, _, admin, manager, _, _, lot, _) = await SetupContextAsync();
+
+        var saved = await service.CreateAssignmentAsync(
+            new CreateStaffAssignmentRequestDto
+            {
+                UserId = manager.Id,
+                LotId = lot.Id,
+                Duty = StaffDuties.Gate
+            },
+            admin.Id,
+            null);
+
+        Assert.True(saved.Success);
+        Assert.Equal(Roles.Manager, saved.Data!.UserRole);
+        Assert.Equal(StaffDuties.Gate, saved.Data.Duty);
+        Assert.Null(saved.Data.FloorId);
+        Assert.Null(saved.Data.ZoneId);
+    }
+
     [Theory]
     [InlineData(StaffDuties.GateIn)]
     [InlineData(StaffDuties.GateOut)]
@@ -215,15 +237,23 @@ public class StaffLotAssignmentTests
 
         context.Users.AddRange(admin, manager, staff, user);
         context.ParkingLots.AddRange(lot1, lot2);
-        context.ParkingZones.AddRange(new ParkingZone { Id = 1, LotId = 1, Code = "Z1", Name = "Khu 1" }, new ParkingZone { Id = 2, LotId = 2, Code = "Z2", Name = "Khu 2" });
-        context.ParkingFloors.AddRange(new ParkingFloor { Id = 1, LotId = 1, ZoneId = 1, Name = "Tầng 1" }, new ParkingFloor { Id = 2, LotId = 2, ZoneId = 2, Name = "Tầng 2" });
+        var floor1 = new ParkingFloor { Id = 1, LotId = 1, Name = "Tầng 1", FloorNumber = 1 };
+        var floor2 = new ParkingFloor { Id = 2, LotId = 2, Name = "Tầng 2", FloorNumber = 2 };
+        var zone1 = new ParkingZone { Id = 1, LotId = 1, FloorId = 1, Floor = floor1, Code = "Z1", Name = "Khu 1" };
+        var zone2 = new ParkingZone { Id = 2, LotId = 2, FloorId = 2, Floor = floor2, Code = "Z2", Name = "Khu 2" };
+        floor1.ZoneId = 1;
+        floor1.Zone = zone1;
+        floor2.ZoneId = 2;
+        floor2.Zone = zone2;
+        context.ParkingFloors.AddRange(floor1, floor2);
+        context.ParkingZones.AddRange(zone1, zone2);
         await context.SaveChangesAsync();
 
         return (service, context, admin, manager, staff, user, lot1, lot2);
     }
 
     [Fact]
-    public async Task CreateAssignment_RejectsManagerAndAllowsStaff()
+    public async Task CreateAssignment_AllowsManagerAndStaff()
     {
         var (service, context, admin, manager, staff, _, lot1, _) = await SetupContextAsync();
 
@@ -233,11 +263,11 @@ public class StaffLotAssignmentTests
             LotId = lot1.Id, FloorId = lot1.Id, ZoneId = lot1.Id,
             Notes = "Phân công quản lý bãi 1", Duty = StaffDuties.SlotVerifier
         };
-        var (s1, msg1, d1) = await service.CreateAssignmentAsync(req1, admin.Id, "127.0.0.1");
+        var (s1, _, d1) = await service.CreateAssignmentAsync(req1, admin.Id, "127.0.0.1");
 
-        Assert.False(s1);
-        Assert.Null(d1);
-        Assert.Contains("STAFF", msg1);
+        Assert.True(s1);
+        Assert.NotNull(d1);
+        Assert.Equal(manager.Id, d1.UserId);
 
         var req2 = new CreateStaffAssignmentRequestDto
         {
@@ -266,7 +296,7 @@ public class StaffLotAssignmentTests
 
         Assert.False(s);
         Assert.Null(d);
-        Assert.Contains("STAFF", msg);
+        Assert.Contains("tài khoản khác không hợp lệ", msg);
     }
 
     [Fact]

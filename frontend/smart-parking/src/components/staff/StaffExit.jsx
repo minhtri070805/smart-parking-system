@@ -30,8 +30,10 @@ export function StaffExit({
   const [capture, setCapture] = useState(emptyCapture);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [checked, setChecked] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
+  const [checkedAt, setCheckedAt] = useState(null);
   const action = useStaffAction(onBusyChange);
-  const busy = action.busy || captureBusy;
+  const busy = action.busy || captureBusy || rechecking;
   const isTicketed = Boolean(session?.verificationStatus && session.verificationStatus !== "LEGACY");
   useEffect(() => {
     lookupId.current = initialSessionId || null;
@@ -62,8 +64,29 @@ export function StaffExit({
     lookupId.current = null;
     setCapture(emptyCapture());
     setChecked(false);
+    setCheckedAt(null);
     setLookupError(null);
     action.setError(null);
+  };
+  // Đọc lại trạng thái thật từ Core sau khi Payment clearance; UI không bao giờ tự đặt PAID.
+  const recheck = async () => {
+    if (rechecking || !session) return;
+    setRechecking(true);
+    onBusyChange(true);
+    setLookupError(null);
+    try {
+      const fresh = await staffApi.findSession(lot.lotId, String(session.id), "id");
+      setSession((current) => ({
+        ...fresh,
+        ticketCode: fresh.ticketCode ?? current?.ticketCode,
+      }));
+      setCheckedAt(new Date());
+    } catch (error) {
+      setLookupError(error);
+    } finally {
+      setRechecking(false);
+      onBusyChange(false);
+    }
   };
   const lookup = async (event) => {
     event.preventDefault();
@@ -93,15 +116,15 @@ export function StaffExit({
         throw new Error(
           "Biển số tại cổng ra không khớp với phiên xe. Hãy kiểm tra lại.",
         );
-      const exitCapture = isTicketed ? { ...capture, recognition: null } : capture;
-      const imageUrl = await prepareCapture(exitCapture, setCapture, lot.lotId, session.id);
+      // AI chỉ được gửi kèm khi staff đã xác nhận qua confirm-exit gắn với đúng phiên này.
+      const imageUrl = await prepareCapture(capture, setCapture, lot.lotId, session.id);
       const result = await staffApi.checkOut(
         session.id,
         lot.lotId,
         capture.plate,
         imageUrl,
         isTicketed ? exitTicketCode : null,
-        isTicketed ? null : capture.recognition?.id,
+        capture.recognition?.id,
         capture.note,
       );
       const updatedSession = result?.data ?? result;
@@ -180,11 +203,61 @@ export function StaffExit({
             <SessionInfo session={session} />
             {session.status === "ACTIVE" && (
               <Notice kind="warning">
-                <strong>Chưa xác nhận thanh toán.</strong> Phiên cần hoàn tất
-                tính phí và thanh toán trước khi cho xe ra. Chức năng thu phí
-                chưa sẵn sàng trên màn hình này.
+                {isTicketed && session.verificationStatus !== "VERIFIED" ? (
+                  <>
+                    <strong>Chưa xác minh xe tại ô.</strong> Vé điện tử cần
+                    nhân viên trực khu vực xác minh xe đã đỗ trước khi thanh
+                    toán và ra bãi.
+                  </>
+                ) : (
+                  <>
+                    <strong>Chưa xác nhận thanh toán.</strong> Phiên vẫn ở
+                    trạng thái ACTIVE: Payment Service chưa gửi xác nhận thanh
+                    toán cho Core. Màn hình này không thu phí hoặc tự đặt
+                    PAID; xe chỉ được ra sau khi phiên chuyển sang PAID.
+                  </>
+                )}{" "}
+                <button
+                  type="button"
+                  className="staff-text-button"
+                  disabled={busy}
+                  onClick={recheck}
+                >
+                  {rechecking ? "Đang kiểm tra…" : "Kiểm tra lại trạng thái"}
+                </button>
+                {checkedAt && (
+                  <small>
+                    {" "}
+                    Kiểm tra lúc{" "}
+                    {checkedAt.toLocaleTimeString("vi-VN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    })}
+                    : trạng thái vẫn là ACTIVE.
+                  </small>
+                )}
               </Notice>
             )}
+            {session.status === "ACTIVE" &&
+              (!isTicketed || session.verificationStatus === "VERIFIED") && (
+                <div style={{ marginTop: 12 }}>
+                  <p>Khách thanh toán tiền mặt tại quầy trước khi checkout.</p>
+                  <button
+                    type="button"
+                    className="staff-button staff-button--primary"
+                    disabled={busy}
+                    onClick={() => action.run(async () => {
+                      await staffApi.recordCounterPayment(session.id);
+                      await recheck();
+                      onChanged();
+                    })}
+                  >
+                    {action.busy ? "Đang ghi nhận thanh toán…" : "Thu tiền tại quầy & xác nhận"}
+                  </button>
+                  <StaffError error={action.error} />
+                </div>
+              )}
             {session.status === "COMPLETED" && (
               <Notice kind="success">
                 Đã ghi nhận xe ra bãi lúc{" "}
@@ -215,7 +288,6 @@ export function StaffExit({
                   plateLabel="Biển số thực tế tại cổng ra"
                   lotId={lot.lotId}
                   purpose="EXIT"
-                  enableRecognition={!isTicketed}
                   value={capture}
                   onChange={setCapture}
                   disabled={busy}

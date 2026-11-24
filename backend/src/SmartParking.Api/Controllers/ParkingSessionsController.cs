@@ -52,6 +52,10 @@ public class ParkingSessionsController : ControllerBase
         var (success, message, session) = await _sessionService.CheckInAsync(request, actorId, actorRole, clientIp, ct);
         if (!success)
         {
+            if (message == SmartParking.Infrastructure.Services.ParkingSessionService.LegacyCheckInRetiredMessage)
+            {
+                return StatusCode(StatusCodes.Status410Gone, new { code = "LEGACY_CHECKIN_RETIRED", message });
+            }
             if (message.Contains("không có quyền"))
             {
                 return StatusCode(StatusCodes.Status403Forbidden, new { message });
@@ -76,6 +80,88 @@ public class ParkingSessionsController : ControllerBase
             message,
             data = session
         });
+    }
+
+    /// <summary>
+    /// Staff trực cổng xác nhận xe đến theo booking và chuyển phiên xe sang hàng chờ điều phối.
+    /// </summary>
+    [HttpPost("bookings/{bookingId:long}/check-in-at-gate")]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager},{Roles.Staff}")]
+    [ProducesResponseType(typeof(ParkingSessionDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CheckInBookingAtGate(
+        long bookingId,
+        [FromBody] CheckInBookingRequestDto request,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var actorId = GetCurrentUserId();
+        var actorRole = User.FindFirst(ClaimTypes.Role)?.Value ?? Roles.Admin;
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var (success, message, session) = await _sessionService.CheckInBookingAtGateAsync(
+            bookingId, request, actorId, actorRole, clientIp, ct);
+        if (!success)
+        {
+            if (message.Contains("không có quyền"))
+                return StatusCode(StatusCodes.Status403Forbidden, new { message });
+            if (message.Contains("Không tìm thấy"))
+                return NotFound(new { message });
+            if (message.Contains("không còn chờ")
+                || message.Contains("đã hết hạn")
+                || message.Contains("đã có phiên"))
+                return Conflict(new { message });
+            return BadRequest(new { message });
+        }
+
+        return CreatedAtAction(nameof(GetSessionById), new { id = session!.Id }, new
+        {
+            message,
+            data = session
+        });
+    }
+
+    /// <summary>
+    /// Staff điều phối gán ô cụ thể cho booking đã qua cổng và cập nhật trạng thái xe đang đỗ.
+    /// </summary>
+    [HttpPost("{sessionId:long}/assign-booking-slot")]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager},{Roles.Staff}")]
+    [ProducesResponseType(typeof(ParkingSessionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> AssignBookingSlot(
+        long sessionId,
+        [FromBody] AssignBookingSlotRequestDto request,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var actorId = GetCurrentUserId();
+        var actorRole = User.FindFirst(ClaimTypes.Role)?.Value ?? Roles.Admin;
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var (success, message, session) = await _sessionService.AssignBookingSlotAsync(
+            sessionId, request, actorId, actorRole, clientIp, ct);
+        if (!success)
+        {
+            if (message.Contains("không có quyền") || message.Contains("ngoài tầng hoặc khu vực"))
+                return StatusCode(StatusCodes.Status403Forbidden, new { message });
+            if (message.Contains("Không tìm thấy"))
+                return NotFound(new { message });
+            if (message.Contains("không còn chờ") || message.Contains("vừa được"))
+                return Conflict(new { message });
+            return BadRequest(new { message });
+        }
+
+        return Ok(new { message, data = session });
     }
 
     /// <summary>
@@ -180,13 +266,24 @@ public class ParkingSessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Thống kê lưu lượng xe theo ngày trong tháng (chỉ ADMIN).
+    /// Báo cáo lưu lượng và doanh thu tháng. Manager chỉ được xem đúng bãi được phân công.
     /// </summary>
     [HttpGet("monthly-stats")]
-    [Authorize(Roles = Roles.Admin)]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
     [ProducesResponseType(typeof(MonthlyTrafficStatsDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMonthlyStats([FromQuery] int? year, [FromQuery] int? month, [FromQuery] int? lotId, CancellationToken ct)
     {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value;
+        if (role == Roles.Manager)
+        {
+            if (!lotId.HasValue)
+                return BadRequest(new { message = "Manager cần chỉ định bãi đang quản lý." });
+            var userId = GetCurrentUserId();
+            if (!userId.HasValue || !await HttpContext.RequestServices.GetRequiredService<IParkingAuthorizationService>()
+                    .HasLotAccessAsync(userId.Value, role, lotId.Value, ct))
+                return Forbid();
+        }
+
         var now = DateTime.UtcNow.AddHours(7);
         var y = year ?? now.Year;
         var m = month ?? now.Month;
@@ -494,6 +591,18 @@ public class ParkingSessionsController : ControllerBase
             message,
             data = session
         });
+    }
+
+    [HttpPost("{id:long}/counter-payment")]
+    [Authorize(Roles = $"{Roles.Manager},{Roles.Staff}")]
+    public async Task<IActionResult> RecordCounterPayment(long id, CancellationToken ct)
+    {
+        var actorId = GetCurrentUserId();
+        if (actorId == null) return Unauthorized(new { message = "Không xác định được người dùng." });
+        var actorRole = User.FindFirst(ClaimTypes.Role)?.Value ?? Roles.Staff;
+        var (success, message, receipt) = await _sessionService.RecordCounterPaymentAsync(id, actorId, actorRole, ct);
+        if (!success) return BadRequest(new { message });
+        return Ok(new { message, data = receipt });
     }
 
     private long? GetCurrentUserId()

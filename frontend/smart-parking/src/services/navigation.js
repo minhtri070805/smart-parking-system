@@ -12,7 +12,6 @@ export const roleNavigation = {
     ["/admin/people", "Tài khoản"],
     ["/parking", "3D"],
     ["/admin/parking-settings?view=tickets", "Xử lý vé"],
-    ["/admin/policies", "Chính sách"],
   ],
   MANAGER: [
     ["/manager", "Tổng quan"],
@@ -20,21 +19,19 @@ export const roleNavigation = {
     ["/parking/slots", "Quản lý ô đỗ"],
     ["/manager?view=sessions", "Xe đang gửi"],
     ["/manager/shifts", "Quản lý ca"],
-    ["/manager/reconciliation", "Đối soát ca"],
-    ["/handovers", "Bàn giao ca"],
   ],
   STAFF: [
     ["/parking", "3D"],
     ["/staff?view=entry", "Xe vào vãng lai"],
     ["/staff?view=bookings", "Xe đặt qua web"],
     ["/staff?view=exit", "Xe ra"],
-    ["/handovers", "Bàn giao ca"],
   ],
   USER: [
     ["/parking", "3D"],
     ["/customer", "Bãi đỗ"],
     ["/customer/sessions", "Phiên gửi xe"],
-    ["/customer/profile", "Hồ sơ & xe"],
+    ["/customer/my-tickets", "Vé của tôi"],
+    ["/customer/profile", "Xe của tôi"],
   ],
 };
 export function staffLocation(view, step) {

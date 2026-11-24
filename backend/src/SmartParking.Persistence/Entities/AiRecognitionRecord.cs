@@ -4,6 +4,14 @@ public sealed class AiRecognitionRecord
 {
     public long Id { get; set; }
     public long StaffUserId { get; set; }
+    public string? CaptureId { get; set; }
+    public string? ImageId { get; set; }
+    public string? EventId { get; set; }
+    public string? TicketId { get; set; }
+    public string? IdempotencyKey { get; set; }
+    public string? ConfirmationIdempotencyKey { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? ModelVersion { get; set; }
     public string? ContentSha256 { get; set; }
     public string? PlateNumber { get; set; }
     public string? RawPlateNumber { get; set; }

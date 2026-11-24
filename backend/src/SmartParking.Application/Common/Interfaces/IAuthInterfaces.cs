@@ -44,6 +44,8 @@ public interface IRecaptchaService
 public interface IEmailService
 {
     Task<bool> SendVerificationOtpAsync(string toEmail, string otpCode, CancellationToken cancellationToken = default);
+    Task<bool> SendBookingPaymentReceiptAsync(string toEmail, long bookingId, string plateNumber, string lotName,
+        decimal amount, string transactionRef, DateTime paidAtUtc, CancellationToken cancellationToken = default);
 }
 
 

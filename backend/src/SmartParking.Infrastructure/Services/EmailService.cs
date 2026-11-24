@@ -149,4 +149,56 @@ Trân trọng,
             return false;
         }
     }
+
+    public async Task<bool> SendBookingPaymentReceiptAsync(string toEmail, long bookingId, string plateNumber,
+        string lotName, decimal amount, string transactionRef, DateTime paidAtUtc, CancellationToken cancellationToken = default)
+    {
+        if (_environment != null && _environment.IsProduction() && string.Equals(_options.Provider, "Mock", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogError("Booking receipt email rejected because Mock provider is configured in Production.");
+            return false;
+        }
+        if (string.Equals(_options.Provider, "Mock", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("[DEV EMAIL SIMULATION] Booking #{BookingId} deposit receipt for {Recipient}; amount {Amount} VND, transaction {TransactionRef}.",
+                bookingId, toEmail, amount, transactionRef);
+            return true;
+        }
+        if (string.IsNullOrWhiteSpace(_options.Host) || string.IsNullOrWhiteSpace(_options.UserName) ||
+            string.IsNullOrWhiteSpace(_options.Password) || string.IsNullOrWhiteSpace(_options.SenderEmail))
+        {
+            _logger.LogWarning("Booking receipt email skipped because SMTP settings are incomplete.");
+            return false;
+        }
+
+        try
+        {
+            using var client = new SmtpClient(_options.Host, _options.Port)
+            {
+                EnableSsl = _options.EnableSsl,
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false,
+                Credentials = new NetworkCredential(_options.UserName.Trim(), _options.Password.Replace(" ", "").Trim()),
+                Timeout = Math.Max(1, _options.TimeoutSeconds) * 1000
+            };
+            var paidAt = paidAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss");
+            var amountText = amount.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("vi-VN"));
+            using var message = new MailMessage
+            {
+                From = new MailAddress(_options.SenderEmail, _options.SenderName),
+                Subject = $"Hóa đơn đặt cọc Smart Parking · Vé #{bookingId}",
+                Body = $"Thanh toán đặt cọc thành công.\nVé: #{bookingId}\nBãi: {lotName}\nBiển số: {plateNumber}\nTiền cọc: {amountText} VND\nMã giao dịch: {transactionRef}\nThời gian thanh toán: {paidAt}",
+                IsBodyHtml = false
+            };
+            message.To.Add(toEmail);
+            await client.SendMailAsync(message, cancellationToken);
+            _logger.LogInformation("Booking payment receipt sent to {Recipient} for booking {BookingId}.", toEmail, bookingId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send booking receipt email for booking {BookingId}.", bookingId);
+            return false;
+        }
+    }
 }

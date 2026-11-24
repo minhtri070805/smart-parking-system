@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { operationsApi } from "../../services/operationsApi.js";
 import { apiRequest } from "../../services/api.js";
 import { validatePhoto } from "../../services/staffApi.js";
+import { formatVietnameseCarPlateInput, validateVietnameseCarPlate } from "../../services/plateNumber.js";
 import { Notice, StaffError, useStaffAction, useStaffQuery, SafePhoto } from "./StaffUI.jsx";
 import StaffVerification from "./StaffVerification.jsx";
 
@@ -32,7 +33,14 @@ export function TicketEntry({ lot, onChanged, onBusyChange }) {
         request.current = { eventId: crypto.randomUUID(), zoneId: Number(zoneId), ticketCode: ticket,
           imageId: savedId, manualReason: reason || null };
       }
-      const result = await operationsApi(lot.lotId, "entries", request.current);
+      let result;
+      try { result = await operationsApi(lot.lotId, "entries", request.current); }
+      catch (error) {
+        // Server từ chối rõ ràng (4xx): chưa có lượt nào được tạo, mở khóa để sửa mã vé/khu mà không mất ảnh.
+        // Lỗi mạng/5xx là kết quả chưa rõ: giữ nguyên eventId để gửi lại an toàn.
+        if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) request.current = null;
+        throw error;
+      }
       setCreated(result); onChanged();
     });
   };
@@ -94,9 +102,10 @@ export function TicketVerification({ lot, revision, onChanged, onBusyChange, ini
   const move = session?.verificationStatus === "VERIFIED";
   const submit = e => { e.preventDefault(); action.run(async () => {
     if (!session) throw new Error("Lượt đã thay đổi. Chọn lại trong danh sách.");
+    const confirmedPlate = move ? undefined : validateVietnameseCarPlate(plate);
     await operationsApi(lot.lotId, `sessions/${session.id}/${move ? "move" : "verify"}`, move
       ? { actualSlotId: Number(slotId), expectedRevision: session.revision, reason, oldSlotObservedEmpty: oldEmpty, vehicleObservedAtDestination: observed }
-      : { actualSlotId: Number(slotId), expectedRevision: session.revision, plateNumber: plate, fuelType: fuel, reason, vehicleObserved: observed });
+      : { actualSlotId: Number(slotId), expectedRevision: session.revision, plateNumber: confirmedPlate, fuelType: fuel, reason, vehicleObserved: observed });
     select(null); setEvidence(null); onChanged(); query.reload();
   }); };
   return <><div className="staff-work-grid">
@@ -117,7 +126,7 @@ export function TicketVerification({ lot, revision, onChanged, onBusyChange, ini
           <p>Vé {session.ticketCode} · Lượt #{session.id} · Khu #{session.zoneId}</p>
           {session.imageId ? <><button className="staff-button" type="button" onClick={() => action.run(async () => setEvidence(await operationsApi(lot.lotId, `sessions/${session.id}/evidence`)))}>Xem ảnh lúc vào</button>
             {evidence && <SafePhoto url={evidence.url} alt="Xe lúc vào bãi" />}</> : <Notice kind="warning">Lượt này chưa có ảnh. Đối chiếu trực tiếp xe và vé trước khi xác nhận.</Notice>}
-          {!move && <><Field label="Biển số đã đối chiếu"><input required maxLength={20} value={plate} onChange={e => setPlate(e.target.value)} /></Field>
+          {!move && <><Field label="Biển số đã đối chiếu"><input required maxLength={12} placeholder="Ví dụ: 51F-123.45" pattern="[0-9]{2}[A-Za-z][ -]?[0-9]{3}[.]?[0-9]{2}" title="Nhập theo dạng biển số ô tô Việt Nam, ví dụ 51F-123.45" value={plate} onChange={e => setPlate(formatVietnameseCarPlateInput(e.target.value))} /></Field>
             <Field label="Nhiên liệu đã xác nhận"><select required value={fuel} onChange={e => setFuel(e.target.value)}><option value="">Chọn nhiên liệu</option><option value="PETROL">Xăng/dầu</option><option value="ELECTRIC">Điện</option><option value="HYBRID">Hybrid</option></select></Field></>}
           <Field label="Ô thực tế"><select required value={slotId} onChange={e => setSlot(e.target.value)}><option value="">Chọn ô đã đối chiếu</option>{query.data?.layout.slots.filter(s => s.physicalStatus === "EMPTY" && s.isActive && s.floorActive && s.zoneId === session.zoneId && (s.allowedFuelType === "ANY" || s.allowedFuelType === (move ? session.fuelType : fuel))).map(s => <option key={s.id} value={s.id}>{s.floorName} · {s.slotCode}</option>)}</select></Field>
           <Field label="Lý do nhập tay, sửa biển số hoặc chuyển ô"><textarea required={move || !session.temporaryPlateNumber} value={reason} maxLength={500} onChange={e => setReason(e.target.value)} /></Field>

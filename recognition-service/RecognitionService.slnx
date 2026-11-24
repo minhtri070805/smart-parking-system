@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/recognition.Api/recognition.Api.csproj" />
+    <Project Path="src/recognition.Application/recognition.Application.csproj" />
+    <Project Path="src/recognition.Domain/recognition.Domain.csproj" />
+    <Project Path="src/recognition.Infrastructure/recognition.Infrastructure.csproj" />
+    <Project Path="src/recognition.Persistence/recognition.Persistence.csproj" />
+  </Folder>
+</Solution>

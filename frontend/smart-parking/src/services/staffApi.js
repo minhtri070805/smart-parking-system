@@ -1,5 +1,6 @@
 import { apiRequest } from "./api.js";
 import { operationsApi } from "./operationsApi.js";
+import { validateVietnameseCarPlate } from "./plateNumber.js";
 
 export const normalizePlate = (value = "") =>
   value.trim().toUpperCase().replace(/\s+/g, " ");
@@ -11,18 +12,7 @@ export const isOpenSession = (session) =>
   ["ACTIVE", "PAID"].includes(session?.status);
 
 export function validatePlate(value) {
-  const plate = normalizePlate(value);
-  if (
-    plate.length < 3 ||
-    plateKey(plate).length < 3 ||
-    plate.length > 20 ||
-    !/^[A-Z0-9 .-]+$/.test(plate)
-  ) {
-    throw new Error(
-      "Nhập biển số từ 3 đến 20 ký tự, chỉ gồm chữ, số, dấu cách, chấm hoặc gạch nối.",
-    );
-  }
-  return plate;
+  return validateVietnameseCarPlate(value);
 }
 
 export function validatePhoto(file) {
@@ -143,6 +133,21 @@ export const staffApi = {
       items.push(...readPage(await loadPage(pageNumber)).items);
     }
 
+    return {
+      ...firstPage,
+      items: [...new Map(items.map((booking) => [String(booking.id), booking])).values()],
+    };
+  },
+  checkedInBookings: async (lotId, signal) => {
+    const loadPage = (pageNumber) =>
+      data(
+        `/v1/bookings?${query({ lotId, status: "CHECKED_IN", pageNumber, pageSize: 100 })}`,
+        { signal },
+      );
+    const firstPage = readPage(await loadPage(1));
+    const items = [...firstPage.items];
+    for (let pageNumber = 2; pageNumber <= firstPage.totalPages; pageNumber += 1)
+      items.push(...readPage(await loadPage(pageNumber)).items);
     return {
       ...firstPage,
       items: [...new Map(items.map((booking) => [String(booking.id), booking])).values()],
@@ -271,6 +276,18 @@ export const staffApi = {
       plateNumber: validatePlate(plateNumber),
       slotId: Number(slotId),
       checkInImageUrl: imageUrl,
+    }),
+  checkInBookingAtGate: (bookingId, plateNumber, imageUrl) =>
+    post(`/v1/parking-sessions/bookings/${bookingId}/check-in-at-gate`, {
+      plateNumber: validatePlate(plateNumber),
+      checkInImageUrl: imageUrl,
+    }),
+  recordCounterPayment: (sessionId) =>
+    post(`/v1/parking-sessions/${Number(sessionId)}/counter-payment`, {}),
+  assignBookingSlot: (sessionId, slotId, notes) =>
+    post(`/v1/parking-sessions/${sessionId}/assign-booking-slot`, {
+      slotId: Number(slotId),
+      ...(notes ? { notes } : {}),
     }),
   async checkOut(sessionId, lotId, plateNumber, imageUrl, ticketCode, exitRecognitionId, note) {
     const fresh = await staffApi.session(sessionId);

@@ -4,6 +4,7 @@ import RequireCustomer from "../components/RequireCustomer.jsx";
 import ParkingSlotManagement from "./ParkingSlotManagement.jsx";
 import { getAuthSession, subscribeAuthSession } from "../services/authSession.js";
 import { apiRequest } from "../services/api.js";
+import { formatVietnameseCarPlateInput, validateVietnameseCarPlate } from "../services/plateNumber.js";
 import { collectPages } from "../services/staffApi.js";
 import "../workspace.css";
 
@@ -23,16 +24,17 @@ function localDateTimeValue(date = new Date()) {
 }
 
 const slotLabels = {
-  EMPTY: "Còn trống",
+  EMPTY: "Có thể đặt",
   OCCUPIED: "Đang sử dụng",
   MAINTENANCE: "Đang bảo trì",
   UNAVAILABLE: "Không khả dụng",
-  RESERVED: "Đang giữ chỗ",
+  RESERVED: "Đã đặt / đang giữ chỗ",
 };
 
 const bookingStatusLabels = {
   PENDING: "Chờ xe đến",
-  CHECKED_IN: "Đã nhận xe",
+  CHECKED_IN: "Đã qua cổng · chờ điều phối",
+  PARKED: "Đang đỗ",
   CANCELLED: "Đã hủy",
   EXPIRED: "Đã hết hạn",
 };
@@ -67,6 +69,7 @@ function DashboardContent({ publicView = false }) {
   const [bookingProfile, setBookingProfile] = useState(null);
   const [bookingVehicles, setBookingVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
+  const [bookingUseCustomPlate, setBookingUseCustomPlate] = useState(false);
   const [bookingDetailsLoading, setBookingDetailsLoading] = useState(false);
   const [bookingDetailsError, setBookingDetailsError] = useState("");
   const [bookingDetailsRevision, setBookingDetailsRevision] = useState(0);
@@ -77,6 +80,23 @@ function DashboardContent({ publicView = false }) {
   const [bookingSaving, setBookingSaving] = useState(false);
   const [bookingError, setBookingError] = useState("");
   const [bookingMessage, setBookingMessage] = useState("");
+  const [bookingPaymentResult, setBookingPaymentResult] = useState("");
+
+  useEffect(() => {
+    const result = params.get("bookingPayment");
+    if (!result) return;
+    const bookingId = params.get("bookingId");
+    setBookingPaymentResult(result);
+    setRevision((current) => current + 1);
+    window.history.replaceState({}, "", window.location.pathname);
+    if (result === "success") {
+      setBookingMessage(`Thanh toán cọc cho vé #${bookingId || ""} thành công. Hóa đơn đã được thêm vào mục Vé của tôi.`);
+    } else if (result === "processing") {
+      setBookingMessage(`VNPay đã nhận thanh toán cho vé #${bookingId || ""}; hệ thống đang đồng bộ trạng thái hóa đơn.`);
+    } else {
+      setBookingMessage(`Thanh toán cho vé #${bookingId || ""} chưa hoàn tất. Vé chưa được xác nhận thanh toán.`);
+    }
+  }, [params]);
 
   const loadLots = useCallback(async () => {
     setLotsLoading(true);
@@ -341,7 +361,7 @@ function DashboardContent({ publicView = false }) {
     (floor) => String(floor.id) === selectedFloorId,
   );
   const selectedVehicle = bookingVehicles.find(
-    (vehicle) => String(vehicle.id) === selectedVehicleId,
+    (vehicle) => !bookingUseCustomPlate && String(vehicle.id) === selectedVehicleId,
   );
   const currentCapacity =
     capacity?.lotId === Number(selectedLotId) ? capacity : null;
@@ -352,14 +372,22 @@ function DashboardContent({ publicView = false }) {
   const openBookingForm = () => {
     setBookingError("");
     setBookingMessage("");
+    setBookingPaymentResult("");
     setBookingProfile(null);
     setBookingVehicles([]);
     setSelectedVehicleId("");
+    setBookingUseCustomPlate(false);
     setBookingDetailsError("");
     setVehiclePickerOpen(false);
     const startTime = new Date();
     setBookingStartTime(localDateTimeValue(startTime));
     setBookingOpen(true);
+    window.setTimeout(() => {
+      document.getElementById("customer-booking-form")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
   };
 
   const submitBooking = async (event) => {
@@ -370,24 +398,31 @@ function DashboardContent({ publicView = false }) {
 
     try {
       const startTime = new Date(bookingStartTime);
-      if (bookingVehicles.length > 0 && !selectedVehicle) {
+      if (bookingVehicles.length > 0 && !selectedVehicle && !bookingUseCustomPlate) {
         throw new Error("Vui lòng chọn xe bạn sẽ sử dụng.");
       }
-
+      const plateNumber = bookingUseCustomPlate || !selectedVehicle
+        ? validateVietnameseCarPlate(bookingPlateNumber)
+        : undefined;
       const response = await apiRequest("/v1/bookings", {
         method: "POST",
         body: JSON.stringify({
           lotId: Number(selectedLotId),
-          ...(selectedVehicle
+          ...(!bookingUseCustomPlate && selectedVehicle
             ? { vehicleId: selectedVehicle.id }
-            : { plateNumber: bookingPlateNumber.trim() }),
+            : { plateNumber }),
           startTime: startTime.toISOString(),
+          paymentMode: "PREPAY",
           notes: bookingNotes.trim() || null,
         }),
       });
+      if (response?.data?.paymentUrl) {
+        window.location.assign(response.data.paymentUrl);
+        return;
+      }
       setBookingMessage(
         response?.data?.id
-          ? `Đặt chỗ tại ${selectedLot?.name || "bãi đỗ"} thành công. Mã đặt chỗ #${response.data.id}.`
+          ? `Đặt chỗ tại ${selectedLot?.name || "bãi đỗ"} thành công. Bạn thanh toán tại quầy khi checkout. Khi đến nơi, hãy đỗ tại một ô còn trống theo hướng dẫn của nhân viên. Mã đặt chỗ #${response.data.id}.`
           : response?.message ||
               `Đặt chỗ tại ${selectedLot?.name || "bãi đỗ"} thành công.`,
       );
@@ -552,19 +587,29 @@ function DashboardContent({ publicView = false }) {
                 type="button"
                 className="btn btn--primary"
                 onClick={bookingOpen ? () => setBookingOpen(false) : openBookingForm}
-                disabled={bookingSaving}
+                disabled={
+                  bookingSaving ||
+                  (!bookingOpen &&
+                    currentCapacity &&
+                    currentCapacity.availableForBooking <= 0)
+                }
                 aria-expanded={bookingOpen}
                 aria-controls="customer-booking-form"
               >
-                {bookingOpen ? "Đóng form đặt chỗ" : "Đặt chỗ tại bãi này"}
+                {bookingOpen
+                  ? "Đóng form đặt chỗ"
+                  : currentCapacity && currentCapacity.availableForBooking <= 0
+                    ? "Hết chỗ đặt trước"
+                    : "Đặt chỗ tại bãi này"}
               </button>
             )}
           </div>
 
           {bookingMessage && (
-            <p className="customer-message customer-message--success" role="status">
-              {bookingMessage}
-            </p>
+            <div className={`customer-message ${bookingPaymentResult === "failed" ? "customer-message--error" : "customer-message--success"}`} role="status">
+              <span>{bookingMessage}</span>
+              {bookingPaymentResult && <Link className="text-button" to="/customer/my-tickets">Xem hóa đơn trong Vé của tôi</Link>}
+            </div>
           )}
 
           {bookingOpen && !publicView && (
@@ -576,8 +621,7 @@ function DashboardContent({ publicView = false }) {
               <div className="customer-booking-form__heading">
                 <h3>Thông tin đặt chỗ</h3>
                 <p className="muted">
-                  Thông tin liên hệ và xe đã đăng ký sẽ được điền tự động. Chọn
-                  thời gian dự kiến để hoàn tất đặt chỗ.
+                  Đặt chỗ giữ suất tại bãi, chưa gán ô cụ thể. Khi đến nơi, bạn đỗ tại một ô còn trống theo hướng dẫn của nhân viên. Thông tin liên hệ và xe đã đăng ký sẽ được điền tự động.
                 </p>
               </div>
               {bookingDetailsLoading ? (
@@ -632,7 +676,29 @@ function DashboardContent({ publicView = false }) {
                     </div>
                   </div>
 
-                  {bookingVehicles.length === 1 && (
+                  {bookingVehicles.length > 0 && (
+                    <div className="customer-booking-vehicle-mode" aria-label="Chọn cách nhập biển số xe">
+                      <button
+                        type="button"
+                        aria-pressed={!bookingUseCustomPlate}
+                        onClick={() => setBookingUseCustomPlate(false)}
+                      >
+                        Dùng xe đã đăng ký
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={bookingUseCustomPlate}
+                        onClick={() => {
+                          setBookingUseCustomPlate(true);
+                          setSelectedVehicleId("");
+                        }}
+                      >
+                        Nhập biển số xe khác
+                      </button>
+                    </div>
+                  )}
+
+                  {bookingVehicles.length === 1 && !bookingUseCustomPlate && (
                     <div className="customer-booking-vehicle">
                       <span>Xe sử dụng</span>
                       <strong>{vehicleName(bookingVehicles[0])}</strong>
@@ -649,7 +715,7 @@ function DashboardContent({ publicView = false }) {
                     </div>
                   )}
 
-                  {bookingVehicles.length > 1 && (
+                  {bookingVehicles.length > 1 && !bookingUseCustomPlate && (
                     <div className="customer-booking-vehicle-picker">
                       <span className="customer-booking-vehicle-picker__label">
                         Chọn xe bạn sẽ sử dụng
@@ -703,18 +769,20 @@ function DashboardContent({ publicView = false }) {
                     </div>
                   )}
 
-                  {bookingVehicles.length === 0 && (
+                  {(bookingVehicles.length === 0 || bookingUseCustomPlate) && (
                     <label className="customer-booking-form__plate">
-                      Biển số xe
+                      {bookingUseCustomPlate ? "Biển số xe khác" : "Biển số xe"}
                       <input
                         type="text"
                         name="plateNumber"
                         value={bookingPlateNumber}
                         onChange={(event) =>
-                          setBookingPlateNumber(event.target.value)
+                          setBookingPlateNumber(formatVietnameseCarPlateInput(event.target.value))
                         }
                         placeholder="Ví dụ: 51F-123.45"
-                        maxLength={20}
+                        pattern="[0-9]{2}[A-Za-z][ -]?[0-9]{3}[.]?[0-9]{2}"
+                        title="Nhập theo dạng biển số ô tô Việt Nam, ví dụ 51F-123.45"
+                        maxLength={12}
                         required
                       />
                     </label>
@@ -773,7 +841,7 @@ function DashboardContent({ publicView = false }) {
                     Boolean(bookingDetailsError)
                   }
                 >
-                  {bookingSaving ? "Đang đặt chỗ..." : "Xác nhận đặt chỗ"}
+                  {bookingSaving ? "Đang chuyển đến VNPay..." : "Đặt chỗ & thanh toán cọc"}
                 </button>
                 <button
                   type="button"
@@ -815,6 +883,19 @@ function DashboardContent({ publicView = false }) {
               </span>
             )}
           </div>
+          {currentCapacity?.availableForBooking <= 0 &&
+            slots.some(
+              (slot) =>
+                slot.physicalStatus === "EMPTY" &&
+                slot.isAvailable &&
+                slot.isBookingEligible === false,
+            ) && (
+              <p className="customer-message" role="note">
+                Tầng này có ô trống vật lý trong khu không nhận đặt chỗ vãng lai
+                (ví dụ khu cố định / vé tháng). Đặt trước chỉ nhận ở khu vãng lai
+                (TRANSIENT).
+              </p>
+            )}
 
           {selectedFloor && (
             <>
@@ -838,7 +919,7 @@ function DashboardContent({ publicView = false }) {
                   >
                     <div>
                       <strong>{availableCount}</strong>
-                      <span>Ô trống vật lý</span>
+                      <span>Có thể đặt</span>
                     </div>
                     <div>
                       <strong>{occupiedCount}</strong>
@@ -866,17 +947,24 @@ function DashboardContent({ publicView = false }) {
                       {slots.map((slot) => {
                         const effectiveStatus =
                           slot.physicalStatus === "EMPTY" && !slot.isAvailable
-                            ? "UNAVAILABLE"
+                            ? slot.isActive ? "RESERVED" : "UNAVAILABLE"
                             : slot.physicalStatus;
                         const status =
-                          slotLabels[effectiveStatus] || effectiveStatus;
+                          slot.physicalStatus === "EMPTY" &&
+                          slot.isBookingEligible === false
+                            ? `${slot.zoneName || "Khu này"} · không nhận đặt trước`
+                            : slotLabels[effectiveStatus] || effectiveStatus;
+                        const selectable =
+                          !publicView &&
+                          slot.physicalStatus === "EMPTY" &&
+                          slot.isAvailable &&
+                          slot.isActive;
                         return (
-                          <li
-                            key={slot.id}
-                            className={`customer-slot customer-slot--${String(effectiveStatus).toLowerCase()}`}
-                          >
-                            <strong>{slot.slotCode}</strong>
-                            <span>{status}</span>
+                          <li key={slot.id}>
+                            <div className={`customer-slot customer-slot--${String(effectiveStatus).toLowerCase()}`} aria-label={`${slot.slotCode}: ${selectable ? "Còn trống" : status}`}>
+                              <strong>{slot.slotCode}</strong>
+                              <span>{selectable ? "Còn trống" : status}</span>
+                            </div>
                           </li>
                         );
                       })}

@@ -6,6 +6,7 @@ using Npgsql;
 using SmartParking.Application.Common.Exceptions;
 using SmartParking.Application.Common.Interfaces;
 using SmartParking.Persistence;
+using SmartParking.Persistence.Data;
 using SmartParking.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -51,8 +52,23 @@ recognition.AddEndpointFilter(async (context, next) =>
     { return Results.Json(new { message = "Recognition database is unavailable." }, statusCode: 503); }
 });
 
+// Chỉ đọc: Core tra cứu kết quả nhận diện lúc xe ra qua API này thay vì đọc thẳng DB của Recognition Service.
+recognition.MapGet("/{id:long}", async (long id, AiRecognitionDbContext db, CancellationToken ct) =>
+{
+    var record = await db.RecognitionRecords.AsNoTracking()
+        .Where(x => x.Id == id)
+        .Select(x => new
+        {
+            x.Id, x.Purpose, x.ParkingLotId, x.StaffUserId,
+            x.MatchedParkingSessionId, x.ConfirmedPlateNumber, x.ConfirmedAt
+        })
+        .FirstOrDefaultAsync(ct);
+    return record is null ? Results.NotFound() : Results.Ok(record);
+});
+
 recognition.MapPost("/detect", async (
     HttpRequest request, long staffUserId, int lotId, string purpose,
+    string? captureId, string? imageId, string? eventId,
     IStaffDetectionService service, CancellationToken ct) =>
 {
     if (staffUserId <= 0 || lotId <= 0 || purpose is not ("ENTRY" or "EXIT") || !request.HasFormContentType)
@@ -62,33 +78,50 @@ recognition.MapPost("/detect", async (
         return Results.BadRequest(new { message = "An image file is required." });
 
     await using var stream = file.OpenReadStream();
+    var idempotencyKey = request.Headers.TryGetValue("Idempotency-Key", out var idempotency) ? idempotency.ToString() : null;
+    var correlationId = request.Headers.TryGetValue("X-Correlation-Id", out var correlation) ? correlation.ToString() : null;
     return Results.Ok(await service.DetectAsync(
-        stream, file.ContentType, file.Length, staffUserId, lotId, purpose, ct));
+        stream, file.ContentType, file.Length, staffUserId, lotId, purpose,
+        captureId, imageId, eventId, idempotencyKey, correlationId, ct));
 });
 
 recognition.MapPost("/{id:long}/confirm", async (
-    long id, RecognitionServiceClient.ConfirmRecognition request, IStaffDetectionService service, CancellationToken ct) =>
+    HttpRequest httpRequest, long id, RecognitionServiceClient.ConfirmRecognition request, IStaffDetectionService service, CancellationToken ct) =>
 {
     if (request.StaffUserId <= 0 || request.LotId <= 0 || string.IsNullOrWhiteSpace(request.PlateNumber) ||
         request.PlateNumber.Length > 32 || request.Note?.Length > 256)
         return Results.BadRequest(new { message = "Invalid recognition confirmation." });
 
+    var correlationId = httpRequest.Headers.TryGetValue("X-Correlation-Id", out var correlation) ? correlation.ToString() : null;
     var result = await service.ConfirmAsync(
-        id, request.PlateNumber, request.Note, request.StaffUserId, request.LotId, ct);
+        id, request.PlateNumber, request.Note, request.StaffUserId, request.LotId,
+        request.CaptureId, request.EventId, request.TicketId,
+        httpRequest.Headers.TryGetValue("Idempotency-Key", out var idempotency) ? idempotency.ToString() : null,
+        correlationId, ct);
     return result is null ? Results.NotFound() : Results.Ok(result);
 });
 
 recognition.MapPost("/{id:long}/confirm-exit", async (
-    long id, RecognitionServiceClient.ConfirmExitRecognition request,
+    HttpRequest httpRequest, long id, RecognitionServiceClient.ConfirmExitRecognition request,
     IStaffDetectionService service, CancellationToken ct) =>
 {
     if (request.StaffUserId <= 0 || request.LotId <= 0 || request.SessionId <= 0
         || string.IsNullOrWhiteSpace(request.PlateNumber))
         return Results.BadRequest(new { message = "Invalid exit recognition confirmation." });
 
+    var correlationId = httpRequest.Headers.TryGetValue("X-Correlation-Id", out var correlation) ? correlation.ToString() : null;
     var result = await service.ConfirmExitAsync(
         id, request.SessionId, request.PlateNumber, request.Note,
-        request.StaffUserId, request.LotId, ct);
+        request.StaffUserId, request.LotId, request.CaptureId, request.TicketId,
+        httpRequest.Headers.TryGetValue("Idempotency-Key", out var idempotency) ? idempotency.ToString() : null,
+        correlationId, ct);
+    return result is null ? Results.NotFound() : Results.Ok(result);
+});
+
+recognition.MapGet("/{id:long}", async (long id, IStaffDetectionService service, CancellationToken ct) =>
+{
+    if (id <= 0) return Results.BadRequest(new { message = "Invalid recognition ID." });
+    var result = await service.GetByIdAsync(id, ct);
     return result is null ? Results.NotFound() : Results.Ok(result);
 });
 

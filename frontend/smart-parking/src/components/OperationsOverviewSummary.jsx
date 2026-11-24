@@ -22,13 +22,6 @@ const SHIFT_STATUS_MAP = {
   CANCELLED: { label: "Đã hủy", color: "ops-badge--danger" },
 };
 
-const HANDOVER_STATUS_MAP = {
-  PENDING_INCOMING: { label: "Chờ xác nhận", color: "ops-badge--warning" },
-  COMPLETED: { label: "Hoàn tất", color: "ops-badge--success" },
-  DISPUTED: { label: "Có khiếu nại", color: "ops-badge--danger" },
-  REJECTED: { label: "Từ chối", color: "ops-badge--danger" },
-};
-
 const RECON_STATUS_MAP = {
   DRAFT: { label: "Bản nháp", color: "ops-badge--neutral" },
   PENDING_REVIEW: { label: "Chờ duyệt", color: "ops-badge--warning" },
@@ -40,7 +33,6 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [shifts, setShifts] = useState([]);
-  const [handovers, setHandovers] = useState([]);
   const [reconciliations, setReconciliations] = useState([]);
 
   useEffect(() => {
@@ -51,15 +43,11 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
 
     Promise.allSettled([
       operationsRequest(`/shifts/workspace?lotId=${lotId}`),
-      operationsRequest(`/handovers/workspace?lotId=${lotId}`),
       operationsRequest(`/reconciliations/workspace?lotId=${lotId}`),
-    ]).then(([shiftRes, handoverRes, reconRes]) => {
+    ]).then(([shiftRes, reconRes]) => {
       if (!active) return;
       if (shiftRes.status === "fulfilled") {
         setShifts(itemsOf(shiftRes.value?.data?.shifts));
-      }
-      if (handoverRes.status === "fulfilled") {
-        setHandovers(itemsOf(handoverRes.value?.data?.handovers));
       }
       if (reconRes.status === "fulfilled") {
         setReconciliations(itemsOf(reconRes.value?.data?.reconciliations));
@@ -85,9 +73,6 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
     (s) => s.businessDate === todayStr && (s.status === "IN_PROGRESS" || s.status === "ACTIVE")
   );
 
-  const pendingHandovers = handovers.filter((h) => h.status === "PENDING_INCOMING");
-  const latestHandover = handovers[0] || null;
-
   const pendingReconciliations = reconciliations.filter((r) => r.status === "PENDING_REVIEW");
   const latestRecon = reconciliations[0] || null;
 
@@ -99,7 +84,7 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
             📊 Tổng quan vận hành ca & tiền mặt
           </h2>
           <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
-            Tổng hợp dữ liệu thời gian thực của 3 chức năng: Quản lý ca trực, Bàn giao ca và Đối soát ca
+            Tổng hợp lịch ca và tình hình đối soát quỹ
           </p>
         </div>
         <span className="ops-badge ops-badge--neutral" style={{ fontSize: 12, padding: "5px 12px" }}>
@@ -167,73 +152,7 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
           </Link>
         </div>
 
-        {/* CARD 2: BÀN GIAO CA */}
-        <div className="ops-dashboard-card">
-          <div className="ops-dashboard-card__header">
-            <h3>🤝 Bàn giao ca trực</h3>
-            {pendingHandovers.length > 0 ? (
-              <span className="ops-badge ops-badge--warning">
-                {pendingHandovers.length} chờ nhận
-              </span>
-            ) : (
-              <span className="ops-badge ops-badge--success">Ổn định</span>
-            )}
-          </div>
-
-          <div className="ops-dashboard-card__stats">
-            <div className="ops-stat-item">
-              <span>Tổng lượt bàn giao</span>
-              <strong>{handovers.length}</strong>
-            </div>
-            <div className="ops-stat-item">
-              <span>Chờ xác nhận</span>
-              <strong style={{ color: pendingHandovers.length > 0 ? "#b45309" : "#166534" }}>
-                {pendingHandovers.length}
-              </strong>
-            </div>
-          </div>
-
-          <div className="ops-dashboard-card__content">
-            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>LƯỢT GẦN NHẤT:</span>
-            {latestHandover ? (
-              <div
-                style={{
-                  padding: "8px 10px",
-                  background: "#f8fafc",
-                  borderRadius: 6,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                  fontSize: 12,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>
-                    <strong>{latestHandover.fromShiftCode}</strong> &rarr; <strong>{latestHandover.toShiftCode}</strong>
-                  </span>
-                  <span className={`ops-badge ${HANDOVER_STATUS_MAP[latestHandover.status]?.color || "ops-badge--neutral"}`}>
-                    {HANDOVER_STATUS_MAP[latestHandover.status]?.label || latestHandover.status}
-                  </span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#64748b" }}>
-                  <span>Giao: Staff #{latestHandover.outgoingStaffId}</span>
-                  <span>Nhận: Staff #{latestHandover.incomingStaffId}</span>
-                </div>
-                <div style={{ fontWeight: 600, color: "#0f172a", marginTop: 2 }}>
-                  Số tiền: {formatMoney(latestHandover.outgoingCountedAmount || latestHandover.incomingCountedAmount || 0)}
-                </div>
-              </div>
-            ) : (
-              <p style={{ margin: 0, color: "#94a3b8", fontSize: 12 }}>Chưa có lượt bàn giao nào.</p>
-            )}
-          </div>
-
-          <Link to={`/handovers?lotId=${lotId}`} className="ops-dashboard-card__link">
-            Quản lý Bàn giao ca &rarr;
-          </Link>
-        </div>
-
-        {/* CARD 3: ĐỐI SOÁT QUỸ */}
+        {/* CARD 2: ĐỐI SOÁT QUỸ */}
         <div className="ops-dashboard-card">
           <div className="ops-dashboard-card__header">
             <h3>⚖️ Đối soát quỹ tiền</h3>

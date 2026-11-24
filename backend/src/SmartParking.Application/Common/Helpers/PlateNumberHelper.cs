@@ -5,6 +5,7 @@ namespace SmartParking.Application.Common.Helpers;
 public static class PlateNumberHelper
 {
     private static readonly Regex MultipleSpacesRegex = new(@"\s+", RegexOptions.Compiled);
+    private static readonly Regex VietnameseCarPlateRegex = new(@"^\d{2}[A-Z]\d{5}$", RegexOptions.Compiled);
 
     /// <summary>
     /// Chuẩn hóa biển số xe: loại bỏ khoảng trắng dư thừa và chuyển sang chữ hoa (in hoa).
@@ -21,12 +22,12 @@ public static class PlateNumberHelper
     }
 
     /// <summary>
-    /// Kiểm tra định dạng cơ bản của biển số (độ dài 3-20 ký tự).
+    /// Kiểm tra biển số ô tô dân sự Việt Nam: mã tỉnh 2 số, series 1 chữ cái, số thứ tự 5 số.
+    /// Dấu cách, gạch nối và dấu chấm được bỏ qua khi kiểm tra (ví dụ 51F-123.45).
     /// </summary>
     public static bool IsValidPlateFormat(string? plateNumber)
     {
-        var normalized = Normalize(plateNumber);
-        return normalized.Length >= 3 && normalized.Length <= 20;
+        return VietnameseCarPlateRegex.IsMatch(NormalizeForComparison(plateNumber));
     }
 
     /// <summary>

@@ -11,6 +11,11 @@ public interface IStaffDetectionService
         long staffUserId,
         int lotId,
         string purpose,
+        string? captureId,
+        string? imageId,
+        string? eventId,
+        string? idempotencyKey,
+        string? correlationId,
         CancellationToken cancellationToken);
 
     Task<StaffDetectionDto?> ConfirmAsync(
@@ -19,6 +24,11 @@ public interface IStaffDetectionService
         string? note,
         long staffUserId,
         int lotId,
+        string? captureId,
+        string? eventId,
+        string? ticketId,
+        string? idempotencyKey,
+        string? correlationId,
         CancellationToken cancellationToken);
 
     Task<StaffDetectionDto?> ConfirmExitAsync(
@@ -28,5 +38,13 @@ public interface IStaffDetectionService
         string? note,
         long staffUserId,
         int lotId,
+        string? captureId,
+        string? ticketId,
+        string? idempotencyKey,
+        string? correlationId,
+        CancellationToken cancellationToken);
+
+    Task<StaffDetectionDto?> GetByIdAsync(
+        long recognitionId,
         CancellationToken cancellationToken);
 }

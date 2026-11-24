@@ -1,4 +1,4 @@
-import { Link, Routes, Route, useLocation } from "react-router-dom";
+import { Link, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { useEffect, useSyncExternalStore } from "react";
 import ParkingScene from "./pages/ParkingScene.jsx";
 import ParkingSlotManagement from "./pages/ParkingSlotManagement.jsx";
@@ -15,20 +15,18 @@ import CustomerProfile from "./pages/CustomerProfile.jsx";
 import ManagerWorkspace from "./pages/ManagerWorkspace.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import AdminParkingSettings from "./pages/AdminParkingSettings.jsx";
-import AdminPolicies from "./pages/AdminPolicies.jsx";
 import StaffWorkspace from "./pages/StaffWorkspace.jsx";
 import AdminPeople from "./pages/AdminPeople.jsx";
 import CustomerSessions from "./pages/CustomerSessions.jsx";
+import MyTickets from "./pages/MyTickets.jsx";
 import ProjectInformation from "./pages/ProjectInformation.jsx";
-import CashHandovers from "./pages/CashHandovers.jsx";
-import ShiftManagement from "./pages/ShiftManagement.jsx";
-import CashReconciliation from "./pages/CashReconciliation.jsx";
+import ManagerOperations from "./pages/ManagerOperations.jsx";
 import BookingWorkflowDemo from "./pages/BookingWorkflowDemo.jsx";
 
 export default function App() {
   const { pathname, hash } = useLocation();
   const session = useSyncExternalStore(subscribeAuthSession, getAuthSession, getAuthSession);
-  const workspace = ["/admin", "/manager", "/staff", "/customer", "/parking", "/handovers", "/booking-demo"].some(p => pathname.startsWith(p));
+  const workspace = ["/admin", "/manager", "/staff", "/customer", "/parking", "/booking-demo"].some(p => pathname.startsWith(p));
   const authPage = pathname === "/login" || pathname === "/register";
   useEffect(() => {
     if (hash)
@@ -48,21 +46,19 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/thong-tin/:topic" element={<ProjectInformation />} />
           <Route path="/booking-demo" element={<BookingWorkflowDemo />} />
-          <Route path="/booking-demo" element={<BookingWorkflowDemo />} />
           <Route path="/customer" element={<CustomerDashboard />} />
           <Route path="/parking" element={<ParkingScene />} />
           <Route path="/parking/3d" element={<ParkingScene />} />
-          <Route path="/parking/slots" element={<RequireRole role={["ADMIN", "MANAGER"]}>{session?.userProfile.role === "ADMIN" ? <AdminPolicies /> : <ParkingSlotManagement role={session?.userProfile.role} />}</RequireRole>} />
+          <Route path="/parking/slots" element={<RequireRole role={["ADMIN", "MANAGER"]}><ParkingSlotManagement role={session?.userProfile.role} /></RequireRole>} />
           <Route path="/customer/sessions" element={<CustomerSessions />} />
+          <Route path="/customer/my-tickets" element={<MyTickets />} />
           <Route path="/customer/profile" element={<CustomerProfile />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/parking-settings" element={<AdminParkingSettings />} />
-          <Route path="/admin/policies" element={<AdminPolicies />} />
           <Route path="/admin/people" element={<AdminPeople />} />
           <Route path="/manager" element={<ManagerWorkspace />} />
-          <Route path="/handovers" element={<RequireRole role={["MANAGER", "STAFF"]}><CashHandovers /></RequireRole>} />
-          <Route path="/manager/shifts" element={<RequireRole role="MANAGER"><ShiftManagement /></RequireRole>} />
-          <Route path="/manager/reconciliation" element={<RequireRole role="MANAGER"><CashReconciliation /></RequireRole>} />
+          <Route path="/manager/shifts" element={<RequireRole role="MANAGER"><ManagerOperations /></RequireRole>} />
+          <Route path="/manager/reconciliation" element={<RequireRole role="MANAGER"><Navigate to="/manager/shifts?view=reconciliation" replace /></RequireRole>} />
           <Route path="/staff" element={<StaffWorkspace />} />
           <Route
             path="*"

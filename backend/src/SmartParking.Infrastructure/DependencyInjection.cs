@@ -10,6 +10,65 @@ namespace SmartParking.Infrastructure;
 
 public static class DependencyInjection
 {
+    public const string StaffDutySourceKey = "StaffDuty:Source";
+    public const string StaffDutyFromCoreAssignments = "CoreAssignments";
+    public const string StaffDutyFromOperationsShifts = "OperationsShifts";
+
+    /// <summary>
+    /// Client gọi các service khác (microservice): Recognition (tra cứu nhận diện lúc xe ra) và Operations (ca trực).
+    /// Cấu hình sai thì dừng khởi động thay vì âm thầm cho phép.
+    /// </summary>
+    private static void AddInternalServiceClients(IServiceCollection services, IConfiguration configuration)
+    {
+        var recognitionUrl = configuration["RecognitionService:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(recognitionUrl))
+        {
+            // Tạm thời khi chưa triển khai Recognition Service: đọc DB nhận diện (xem SharedDatabaseExitRecognitionLookup).
+            services.AddScoped<IExitRecognitionLookup, SharedDatabaseExitRecognitionLookup>();
+        }
+        else
+        {
+            var recognitionKey = configuration["RecognitionService:InternalKey"];
+            if (!SmartParking.Application.Common.Security.InternalRequestSignature.IsSecretUsable(recognitionKey))
+                throw new InvalidOperationException("RecognitionService:InternalKey requires at least 32 bytes when RecognitionService:BaseUrl is set.");
+            services.AddHttpClient<IExitRecognitionLookup, HttpExitRecognitionLookup>(client =>
+            {
+                client.BaseAddress = RequireHttpUri(recognitionUrl, "RecognitionService:BaseUrl");
+                client.Timeout = TimeSpan.FromSeconds(5);
+                client.DefaultRequestHeaders.Add(RecognitionServiceClient.KeyHeader, recognitionKey);
+            });
+        }
+
+        var dutySource = configuration[StaffDutySourceKey] ?? StaffDutyFromCoreAssignments;
+        if (string.Equals(dutySource, StaffDutyFromOperationsShifts, StringComparison.OrdinalIgnoreCase))
+        {
+            var secret = configuration["OperationsApi:SharedSecret"];
+            if (!SmartParking.Application.Common.Security.InternalRequestSignature.IsSecretUsable(secret))
+                throw new InvalidOperationException("OperationsApi:SharedSecret requires at least 32 bytes when StaffDuty:Source = OperationsShifts.");
+            var operationsUri = RequireHttpUri(configuration["OperationsApi:BaseUrl"] ?? "http://localhost:5174/", "OperationsApi:BaseUrl");
+            services.AddHttpClient(nameof(OperationsShiftDutyClient), client =>
+            {
+                client.BaseAddress = operationsUri;
+                client.Timeout = TimeSpan.FromSeconds(3);
+            });
+            services.AddScoped<IStaffShiftDutyClient>(sp => new OperationsShiftDutyClient(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(OperationsShiftDutyClient)),
+                secret!,
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<OperationsShiftDutyClient>>()));
+        }
+        else if (!string.Equals(dutySource, StaffDutyFromCoreAssignments, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"{StaffDutySourceKey} must be '{StaffDutyFromCoreAssignments}' or '{StaffDutyFromOperationsShifts}'.");
+        }
+    }
+
+    private static Uri RequireHttpUri(string value, string key)
+    {
+        if (!Uri.TryCreate(value.TrimEnd('/') + "/", UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+            throw new InvalidOperationException($"{key} must be an HTTP or HTTPS URL.");
+        return uri;
+    }
+
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
         // 2. Strongly Typed Options
@@ -45,8 +104,10 @@ public static class DependencyInjection
         services.AddScoped<IStaffLotAssignmentService, StaffLotAssignmentService>();
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IBookingService, BookingService>();
+        services.AddScoped<IBookingPaymentGateway, BookingPaymentGateway>();
         services.AddScoped<IImageService, ImageService>();
         services.AddRecognitionPersistence(configuration);
+        AddInternalServiceClients(services, configuration);
         var aiServiceUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8000/";
         if (!Uri.TryCreate(aiServiceUrl.TrimEnd('/') + "/", UriKind.Absolute, out var aiServiceUri) || aiServiceUri.Scheme is not ("http" or "https"))
             throw new InvalidOperationException("AiService:BaseUrl must be an HTTP or HTTPS URL.");

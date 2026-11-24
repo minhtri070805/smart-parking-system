@@ -111,7 +111,6 @@ export default function ParkingScene() {
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
           {role === "ADMIN" && <>
             <Link className="btn btn--outline" to={`/admin/parking-settings?view=slots&${context}`}>Quản lý bãi xe</Link>
-            <Link className="btn btn--outline" to={`/admin/policies?${context}`}>Chính sách</Link>
             <Link className="btn btn--outline" to="/admin/people?view=assignments">Phân công ca trực</Link>
           </>}
           {role === "MANAGER" && <>
@@ -125,7 +124,7 @@ export default function ParkingScene() {
           </>}
           {role === "STAFF" && canArea && <>
             <Link className="btn btn--primary" to={`/staff?view=verify&${context}`}>Xác minh ô thực tế</Link>
-            <Link className="btn btn--outline" to={`/staff?view=bookings&${context}`}>Xe đặt qua web</Link>
+            <Link className="btn btn--outline" to={`/staff?view=booking-dispatch&${context}`}>Phân ô xe đặt web</Link>
             <Link className="btn btn--outline" to={`/staff?view=dispatches&${context}`}>Điều phối bãi</Link>
           </>}
           {role === "USER" && <>
