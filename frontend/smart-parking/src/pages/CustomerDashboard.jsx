@@ -54,6 +54,9 @@ function DashboardContent({ publicView = false }) {
   const [floorsLoading, setFloorsLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [lotsError, setLotsError] = useState("");
+  const [customerLocation, setCustomerLocation] = useState(null);
+  const [locationError, setLocationError] = useState("");
+  const [locationLoading, setLocationLoading] = useState(false);
   const [floorsError, setFloorsError] = useState("");
   const [slotsError, setSlotsError] = useState("");
   const [capacity, setCapacity] = useState(null);
@@ -368,6 +371,39 @@ function DashboardContent({ publicView = false }) {
   const vehicleName = (vehicle) =>
     [vehicle.brand, vehicle.model].filter(Boolean).join(" ") ||
     `Xe cá nhân`;
+  const selectedLotAddress = selectedLot
+    ? [selectedLot.name, selectedLot.address].filter(Boolean).join(", ")
+    : "";
+  const mapEmbedUrl = selectedLotAddress
+    ? `https://maps.google.com/maps?q=${encodeURIComponent(selectedLotAddress)}&output=embed`
+    : "";
+  const directionsUrl = selectedLotAddress
+    ? `https://www.google.com/maps/dir/?api=1${customerLocation ? `&origin=${customerLocation.latitude},${customerLocation.longitude}` : ""}&destination=${encodeURIComponent(selectedLotAddress)}&travelmode=driving`
+    : "";
+
+  const useCurrentLocation = () => {
+    setLocationError("");
+    if (!navigator.geolocation) {
+      setLocationError("Trình duyệt này không hỗ trợ xác định vị trí.");
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setCustomerLocation({ latitude: coords.latitude, longitude: coords.longitude });
+        setLocationLoading(false);
+      },
+      (error) => {
+        setLocationError(
+          error.code === error.PERMISSION_DENIED
+            ? "Bạn chưa cho phép truy cập vị trí. Bạn vẫn có thể xem đường đi từ Google Maps."
+            : "Không lấy được vị trí hiện tại. Hãy thử lại hoặc mở chỉ đường trực tiếp.",
+        );
+        setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    );
+  };
 
   const openBookingForm = () => {
     setBookingError("");
@@ -550,6 +586,53 @@ function DashboardContent({ publicView = false }) {
               </select>
             </label>
           </div>
+        )}
+
+        {selectedLot && (
+          <section className="customer-map" aria-labelledby="customer-map-title">
+            <div className="customer-map__heading">
+              <div>
+                <h3 id="customer-map-title">Vị trí bãi đỗ</h3>
+                <p className="muted">
+                  {selectedLot.address || "Bãi chưa có địa chỉ để hiển thị trên bản đồ."}
+                </p>
+              </div>
+              <div className="customer-map__actions">
+                <button
+                  type="button"
+                  className="btn btn--outline"
+                  onClick={useCurrentLocation}
+                  disabled={locationLoading}
+                >
+                  {locationLoading ? "Đang xác định vị trí..." : customerLocation ? "Cập nhật vị trí của tôi" : "Dùng vị trí của tôi"}
+                </button>
+                {directionsUrl && (
+                  <a className="btn btn--primary" href={directionsUrl} target="_blank" rel="noreferrer">
+                    Chỉ đường đến bãi
+                  </a>
+                )}
+              </div>
+            </div>
+            {locationError && (
+              <p className="customer-message customer-message--error" role="status">
+                {locationError}
+              </p>
+            )}
+            {selectedLot.address ? (
+              <iframe
+                className="customer-map__frame"
+                title={`Bản đồ vị trí ${selectedLot.name}`}
+                src={mapEmbedUrl}
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                allowFullScreen
+              />
+            ) : (
+              <p className="customer-message">
+                Bãi này chưa được cấu hình địa chỉ. Vui lòng chọn bãi khác hoặc liên hệ quản lý bãi.
+              </p>
+            )}
+          </section>
         )}
 
         {floorsLoading && (
