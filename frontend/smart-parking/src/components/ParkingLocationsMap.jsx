@@ -29,7 +29,11 @@ export default function ParkingLocationsMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return undefined;
 
-    const map = L.map(containerRef.current, { scrollWheelZoom: true }).setView(
+    const map = L.map(containerRef.current, {
+      scrollWheelZoom: true,
+      wheelDebounceTime: 80,
+      zoomAnimation: true,
+    }).setView(
       HO_CHI_MINH_CITY,
       12,
     );
@@ -37,17 +41,32 @@ export default function ParkingLocationsMap({
     const primaryTiles = L.tileLayer(
       import.meta.env.VITE_MAP_TILE_URL ||
         "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
-      { maxZoom: 19, attribution, crossOrigin: true },
+      {
+        maxZoom: 19,
+        attribution,
+        crossOrigin: true,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        keepBuffer: 3,
+      },
     );
     const fallbackTiles = L.tileLayer(
       "https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
-      { maxZoom: 19, attribution, crossOrigin: true },
+      {
+        maxZoom: 19,
+        attribution,
+        crossOrigin: true,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        keepBuffer: 3,
+      },
     );
     primaryTiles.on("tileerror", () => {
       if (!map.hasLayer(fallbackTiles)) fallbackTiles.addTo(map);
     });
     primaryTiles.addTo(map);
     map.attributionControl?.setPrefix(false);
+    map.attributionControl?.setPosition("topright");
 
     mapRef.current = map;
     parkingMarkersRef.current = L.layerGroup().addTo(map);
