@@ -33,15 +33,21 @@ export default function ParkingLocationsMap({
       HO_CHI_MINH_CITY,
       12,
     );
-    L.tileLayer(
+    const attribution =
+      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>';
+    const primaryTiles = L.tileLayer(
       import.meta.env.VITE_MAP_TILE_URL ||
-        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      {
-        maxZoom: 19,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
-      },
-    ).addTo(map);
+        "https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+      { maxZoom: 19, attribution, crossOrigin: true },
+    );
+    const fallbackTiles = L.tileLayer(
+      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      { maxZoom: 19, attribution, crossOrigin: true },
+    );
+    primaryTiles.on("tileerror", () => {
+      if (!map.hasLayer(fallbackTiles)) fallbackTiles.addTo(map);
+    });
+    primaryTiles.addTo(map);
 
     mapRef.current = map;
     parkingMarkersRef.current = L.layerGroup().addTo(map);
