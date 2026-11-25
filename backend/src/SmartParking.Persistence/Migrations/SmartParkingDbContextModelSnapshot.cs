@@ -413,6 +413,14 @@ namespace SmartParking.Persistence.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("latitude");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("longitude");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -441,6 +449,8 @@ namespace SmartParking.Persistence.Migrations
                     b.ToTable("parking_lots", null, t =>
                         {
                             t.HasCheckConstraint("chk_parking_lots_capacity", "total_capacity >= 0");
+
+                            t.HasCheckConstraint("chk_parking_lots_coordinates", "(latitude IS NULL AND longitude IS NULL) OR (latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180)");
                         });
                 });
 

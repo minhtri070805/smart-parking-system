@@ -61,6 +61,8 @@ public class ParkingManagementService : IParkingManagementService
                 Id = l.Id,
                 Name = l.Name,
                 Address = l.Address,
+                Latitude = l.Latitude,
+                Longitude = l.Longitude,
                 TotalCapacity = l.Floors.Where(f => f.IsActive).SelectMany(f => f.Slots)
                     .Count(s => s.IsActive && s.PhysicalStatus != SlotPhysicalStatuses.Maintenance &&
                         s.PhysicalStatus != SlotPhysicalStatuses.Unavailable),
@@ -91,6 +93,8 @@ public class ParkingManagementService : IParkingManagementService
                 Id = l.Id,
                 Name = l.Name,
                 Address = l.Address,
+                Latitude = l.Latitude,
+                Longitude = l.Longitude,
                 TotalCapacity = l.Floors.Where(f => f.IsActive).SelectMany(f => f.Slots)
                     .Count(s => s.IsActive && s.PhysicalStatus != SlotPhysicalStatuses.Maintenance &&
                         s.PhysicalStatus != SlotPhysicalStatuses.Unavailable),
@@ -121,6 +125,11 @@ public class ParkingManagementService : IParkingManagementService
 
     public async Task<(bool Success, string Message, ParkingLotDto? Lot)> CreateLotAsync(CreateParkingLotRequestDto request, long? actorId, CancellationToken ct = default)
     {
+        if (request.Latitude.HasValue != request.Longitude.HasValue)
+        {
+            return (false, "Vui lòng nhập cả vĩ độ và kinh độ, hoặc để trống cả hai.", null);
+        }
+
         var trimmedName = request.Name.Trim();
         var exists = await _context.ParkingLots
             .AnyAsync(l => l.Name.ToLower() == trimmedName.ToLower(), ct);
@@ -134,6 +143,8 @@ public class ParkingManagementService : IParkingManagementService
         {
             Name = trimmedName,
             Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim(),
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
             TotalCapacity = request.TotalCapacity,
             IsActive = request.IsActive,
             CreatedAt = DateTime.UtcNow,
@@ -144,13 +155,15 @@ public class ParkingManagementService : IParkingManagementService
         await _context.SaveChangesAsync(ct);
 
         await LogAuditAsync(actorId, "CREATE_PARKING_LOT", "parking_lots", lot.Id.ToString(), null,
-            JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.TotalCapacity, lot.IsActive }), null, ct);
+            JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.Latitude, lot.Longitude, lot.TotalCapacity, lot.IsActive }), null, ct);
 
         var dto = new ParkingLotDto
         {
             Id = lot.Id,
             Name = lot.Name,
             Address = lot.Address,
+            Latitude = lot.Latitude,
+            Longitude = lot.Longitude,
             TotalCapacity = 0,
             TotalFloors = 0,
             AvailableSlotsCount = 0,
@@ -168,6 +181,11 @@ public class ParkingManagementService : IParkingManagementService
 
     public async Task<(bool Success, string Message, ParkingLotDto? Lot)> UpdateLotAsync(int id, UpdateParkingLotRequestDto request, long? actorId, CancellationToken ct = default)
     {
+        if (request.Latitude.HasValue != request.Longitude.HasValue)
+        {
+            return (false, "Vui lòng nhập cả vĩ độ và kinh độ, hoặc để trống cả hai.", null);
+        }
+
         var lot = await _context.ParkingLots
             .Include(l => l.Floors)
                 .ThenInclude(f => f.Slots)
@@ -188,17 +206,19 @@ public class ParkingManagementService : IParkingManagementService
             return (false, "Tên bãi đỗ xe đã trùng với một bãi đỗ khác.", null);
         }
 
-        var oldValues = JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.TotalCapacity, lot.IsActive });
+        var oldValues = JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.Latitude, lot.Longitude, lot.TotalCapacity, lot.IsActive });
 
         lot.Name = trimmedName;
         lot.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
+        lot.Latitude = request.Latitude;
+        lot.Longitude = request.Longitude;
         lot.TotalCapacity = request.TotalCapacity;
         lot.IsActive = request.IsActive;
         lot.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync(ct);
 
-        var newValues = JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.TotalCapacity, lot.IsActive });
+        var newValues = JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.Latitude, lot.Longitude, lot.TotalCapacity, lot.IsActive });
         await LogAuditAsync(actorId, "UPDATE_PARKING_LOT", "parking_lots", lot.Id.ToString(), oldValues, newValues, null, ct);
 
         var allSlots = lot.Floors.SelectMany(f => f.Slots).ToList();
@@ -216,6 +236,8 @@ public class ParkingManagementService : IParkingManagementService
             Id = lot.Id,
             Name = lot.Name,
             Address = lot.Address,
+            Latitude = lot.Latitude,
+            Longitude = lot.Longitude,
             TotalCapacity = totalCapacity,
             TotalFloors = lot.Floors.Count,
             AvailableSlotsCount = availableSlotsCount,
