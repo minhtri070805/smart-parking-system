@@ -51,6 +51,7 @@ export default function Header({ workspace = false }) {
     getAuthSession,
     getAuthSession,
   );
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
@@ -74,7 +75,22 @@ export default function Header({ workspace = false }) {
 
   useEffect(() => {
     setProfileOpen(false);
+    setMobileMenuOpen(false);
   }, [pathname, search]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     if (!profileOpen) return undefined;
@@ -206,6 +222,18 @@ export default function Header({ workspace = false }) {
   return (
     <header className={`header ${workspace ? "header--workspace" : ""}`} ref={headerRef}>
       <div className="container header__inner">
+        <button
+          type="button"
+          className="header__menu-toggle"
+          aria-label={mobileMenuOpen ? "Đóng menu điều hướng" : "Mở menu điều hướng"}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="primary-navigation"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
         <Link
           className="header__brand"
           to="/"
@@ -274,10 +302,10 @@ export default function Header({ workspace = false }) {
             </>
           ) : (
             <>
-              <Link className="btn btn--outline" to="/register">
+              <Link className="btn btn--outline header__auth-link" to="/register">
                 Đăng ký
               </Link>
-              <Link className="btn btn--primary" to="/login">
+              <Link className="btn btn--primary header__auth-link" to="/login">
                 Đăng nhập
               </Link>
             </>
@@ -288,7 +316,20 @@ export default function Header({ workspace = false }) {
             </p>
           )}
         </div>
-        <nav className="header__nav" aria-label="Điều hướng chính">
+        {mobileMenuOpen && (
+          <button
+            type="button"
+            className="header__mobile-backdrop"
+            aria-label="Đóng menu điều hướng"
+            tabIndex={-1}
+            onClick={() => setMobileMenuOpen(false)}
+          />
+        )}
+        <nav
+          id="primary-navigation"
+          className={`header__nav ${mobileMenuOpen ? "is-mobile-open" : ""}`}
+          aria-label="Điều hướng chính"
+        >
           {session ? (
             navItems.map(([target, label]) => (
               <Link
@@ -316,6 +357,25 @@ export default function Header({ workspace = false }) {
               <AnchorLink id="cach-hoat-dong">Cách thức hoạt động</AnchorLink>
               <AnchorLink id="he-thong">Hệ thống</AnchorLink>
             </>
+          )}
+          {session && !workspace && (
+            <Link
+              className="header__mobile-action"
+              to={dashboardPath(role)}
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Khu vực của tôi
+            </Link>
+          )}
+          {!session && (
+            <div className="header__mobile-auth">
+              <Link className="btn btn--outline" to="/register" onClick={() => setMobileMenuOpen(false)}>
+                Đăng ký
+              </Link>
+              <Link className="btn btn--primary" to="/login" onClick={() => setMobileMenuOpen(false)}>
+                Đăng nhập
+              </Link>
+            </div>
           )}
         </nav>
       </div>
