@@ -55,7 +55,14 @@ public sealed class ParkingSlotAdministrationService(IApplicationDbContext db, I
         return await writer.ExecuteAsync(slot.Floor.LotId, async () => {
             slot = await Load(id, actorId, ct);
             await Access(slot.Floor.LotId, actorId, ct);
-            await Guard(slot, !request.IsActive, ct);
+            // Chỉ kiểm tra Guard nếu thay đổi mã ô (thay đổi định danh/cấu trúc vật lý).
+            // Việc bật/tắt IsActive (ngừng hoạt động ô) luôn được phép kể cả khi đang có xe;
+            // xe đang đỗ vẫn checkout bình thường, hệ thống sẽ ngăn xe mới check-in vào ô.
+            var modifiesStructure = slot.SlotCode != request.SlotCode.Trim();
+            if (modifiesStructure)
+            {
+                await Guard(slot, false, ct);
+            }
             return await parking.UpdateSlotAsync(id, request, actorId, ct);
         }, ct);
     }

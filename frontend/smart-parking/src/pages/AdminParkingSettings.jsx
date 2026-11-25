@@ -66,7 +66,13 @@ function LotSettings({ lot, view: selectedView, onBusyChange }) {
   const [editId, setEdit] = useState(null);
   const [ticket, setTicket] = useState({ code: "", action: "REPLACE", replacementCode: "", reason: "" });
   const [ticketResult, setTicketResult] = useState(null);
-  const [floorDraft, setFloorDraft] = useState({ name: "", floorNumber: "" });
+  const [floorDraft, setFloorDraft] = useState({
+    name: "Tầng G",
+    floorNumber: "0",
+    zoneType: "FIXED",
+    zoneCount: 2,
+    slotsPerZone: 50,
+  });
   const [editingFloor, setEditingFloor] = useState(null);
   const [createdFloor, setCreatedFloor] = useState(null);
   const [slotDraft, setSlotDraft] = useState(() => emptySlotDraft(""));
@@ -74,6 +80,45 @@ function LotSettings({ lot, view: selectedView, onBusyChange }) {
   const [slotFloorFilter, setSlotFloorFilter] = useState("");
   const [slotZoneFilter, setSlotZoneFilter] = useState("");
   const [zoneFloorFilter, setZoneFloorFilter] = useState("");
+
+
+  const allFloors = query.data?.layout?.floors || [];
+  const allSlots = query.data?.layout?.slots || [];
+
+  const getNextFloorInfo = useCallback(() => {
+    const hasGround = allFloors.some(f => f.floorNumber === 0 || f.name?.toLowerCase().includes("tầng g"));
+    if (!hasGround) {
+      return { name: "Tầng G", floorNumber: "0", defaultZoneType: "FIXED" };
+    }
+    const maxNum = allFloors.reduce((max, f) => Math.max(max, f.floorNumber ?? 0), 0);
+    const nextNum = maxNum + 1;
+    return { name: `Tầng ${nextNum}`, floorNumber: String(nextNum), defaultZoneType: "TRANSIENT" };
+  }, [allFloors]);
+
+  const handleNewFloor = useCallback(() => {
+    setEditingFloor(null);
+    const next = getNextFloorInfo();
+    setFloorDraft(prev => ({
+      ...prev,
+      name: next.name,
+      floorNumber: next.floorNumber,
+      zoneType: next.defaultZoneType,
+      zoneCount: prev.zoneCount || 2,
+      slotsPerZone: prev.slotsPerZone || 50,
+    }));
+  }, [getNextFloorInfo]);
+
+  useEffect(() => {
+    if (!editingFloor) {
+      const next = getNextFloorInfo();
+      setFloorDraft(prev => ({
+        ...prev,
+        name: next.name,
+        floorNumber: next.floorNumber,
+        zoneType: next.defaultZoneType,
+      }));
+    }
+  }, [allFloors.length, editingFloor, getNextFloorInfo]);
 
   useEffect(() => { setMessage(""); action.setError(null); }, [view.id, action.setError]);
   useEffect(() => {
@@ -88,8 +133,6 @@ function LotSettings({ lot, view: selectedView, onBusyChange }) {
   const busy = action.busy || query.loading || Boolean(query.error);
   const perform = work => action.run(async () => { setMessage(""); const result = await work(); setMessage(typeof result === "string" ? result : "Đã lưu vào máy chủ."); query.reload(); });
 
-  const allFloors = query.data?.layout?.floors || [];
-  const allSlots = query.data?.layout?.slots || [];
   const visibleZones = (query.data?.zones || []).filter(z => String(z.floorId ?? z.floorIds?.[0] ?? "") === String(zoneFloorFilter));
   const visibleSlots = slotFloorFilter && slotZoneFilter
     ? allSlots.filter(s => String(s.floorId) === String(slotFloorFilter) && String(s.zoneId) === String(slotZoneFilter))
@@ -149,69 +192,226 @@ function LotSettings({ lot, view: selectedView, onBusyChange }) {
         </div>
       </section>}
 
-      {view.id === "floors" && <section className="staff-panel"><div><h2>Quản lý tầng</h2><p className="operations-settings-hint">Thêm, sửa, xóa tầng và gắn tầng với khu vực. Tầng đang có xe hoặc lịch sử phiên không được xóa.</p></div>
+      {view.id === "floors" && <section className="staff-panel">
+        <div>
+          <h2>Quản lý tầng</h2>
+          <p className="operations-settings-hint">
+            Tầng G mặc định dành cho xe vé tháng, các tầng khác dành cho xe bình thường (vãng lai và booking).
+          </p>
+        </div>
         <div className="operations-settings-columns">
-        <div><h3>Danh sách tầng ({allFloors.length})</h3>
-        {!query.loading && !query.error && !allFloors.length && <Notice>Chưa có tầng trong bãi này.</Notice>}
-        {allFloors.map(f => {
-          const floorSlotCount = allSlots.filter(s => s.floorId === f.id).length;
-          return <div key={f.id} className="operations-floor" style={{ display: "grid", gap: "8px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
-              <strong>{f.name} · Tầng số {f.floorNumber ?? "—"} ({floorSlotCount} ô)</strong>
-              <span style={{ fontSize: "12px", color: f.isActive ? "#15803d" : "#64748b", fontWeight: 600 }}>
-                {f.isActive ? "Đang hoạt động" : "Ngừng dùng"}
-              </span>
-            </div>
-            <div className="operations-settings-actions" style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <button type="button" className="staff-button staff-button--secondary" disabled={busy} onClick={() => {
-                setEditingFloor(f);
-                setFloorDraft({ name: f.name, floorNumber: String(f.floorNumber ?? 1) });
-              }}>Sửa tầng</button>
-              <button type="button" className="staff-button" disabled={busy} onClick={() => perform(() => apiRequest(`/v1/parking-floors/${f.id}`, { method: "PUT", body: JSON.stringify({ floorNumber: f.floorNumber, name: f.name, totalSlots: floorSlotCount, isActive: !f.isActive }) }))}>{f.isActive ? "Ngừng dùng tầng" : "Mở lại tầng"}</button>
-              <button type="button" className="staff-button staff-button--secondary" disabled={busy || floorSlotCount > 0} title={floorSlotCount > 0 ? "Chỉ xóa được tầng chưa có ô đỗ" : "Xóa tầng"} onClick={() => perform(() => apiRequest(`/v1/parking-floors/${f.id}`, { method: "DELETE" }))}>Xóa tầng</button>
-            </div>
-          </div>;
-        })}</div>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>Danh sách tầng ({allFloors.length})</h3>
+            <button type="button" className="staff-button staff-button--secondary" onClick={handleNewFloor}>+ Thêm tầng mới</button>
+          </div>
+          {!query.loading && !query.error && !allFloors.length && <Notice>Chưa có tầng trong bãi này.</Notice>}
+          {allFloors.map(f => {
+            const floorSlotCount = allSlots.filter(s => s.floorId === f.id).length;
+            const floorZones = (query.data?.zones || []).filter(z => String(z.floorId ?? z.floorIds?.[0]) === String(f.id));
+            const isSelected = editingFloor?.id === f.id;
+            return <div key={f.id} className="operations-floor" style={{ display: "grid", gap: "8px", background: isSelected ? "#f0f9ff" : undefined, border: isSelected ? "1px solid #bae6fd" : undefined, borderRadius: "10px", padding: "12px", marginBottom: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                <strong>{f.name} · Tầng số {f.floorNumber ?? "—"} ({floorZones.length} khu, {floorSlotCount} ô)</strong>
+                <span style={{ fontSize: "12px", color: f.isActive ? "#15803d" : "#64748b", fontWeight: 600 }}>
+                  {f.isActive ? "Đang hoạt động" : "Ngừng dùng"}
+                </span>
+              </div>
+              <div style={{ fontSize: "11.5px", color: "#64748b" }}>
+                {floorZones.map(z => `${z.name} (${zoneTypes[z.type] || z.type})`).join(" · ") || "Chưa có khu vực"}
+              </div>
+              <div className="operations-settings-actions" style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
+                <button type="button" className="staff-button staff-button--secondary" disabled={busy} onClick={() => {
+                  setEditingFloor(f);
+                  const firstZone = floorZones[0];
+                  const zCount = floorZones.length || 2;
+                  const sCount = firstZone ? allSlots.filter(s => s.floorId === f.id && s.zoneId === firstZone.id).length || 50 : 50;
+                  setFloorDraft({
+                    name: f.name,
+                    floorNumber: String(f.floorNumber ?? 0),
+                    zoneType: firstZone?.type || (f.floorNumber === 0 ? "FIXED" : "TRANSIENT"),
+                    zoneCount: zCount,
+                    slotsPerZone: sCount,
+                  });
+                }}>Sửa tầng</button>
+                <button type="button" className="staff-button" disabled={busy} onClick={() => perform(() => apiRequest(`/v1/parking-floors/${f.id}`, { method: "PUT", body: JSON.stringify({ floorNumber: f.floorNumber, name: f.name, totalSlots: floorSlotCount, isActive: !f.isActive }) }))}>{f.isActive ? "Ngừng dùng tầng" : "Mở lại tầng"}</button>
+                <button type="button" className="staff-button staff-button--secondary" disabled={busy || floorSlotCount > 0} title={floorSlotCount > 0 ? "Chỉ xóa được tầng chưa có ô đỗ" : "Xóa tầng"} onClick={() => perform(() => apiRequest(`/v1/parking-floors/${f.id}`, { method: "DELETE" }))}>Xóa tầng</button>
+              </div>
+            </div>;
+          })}
+        </div>
+
         <form onSubmit={e => { e.preventDefault(); perform(async () => {
+          const zoneCount = Math.max(1, Number(floorDraft.zoneCount) || 1);
+          const slotsPerZone = Math.max(1, Number(floorDraft.slotsPerZone) || 1);
+          const totalSlots = zoneCount * slotsPerZone;
+          const isGround = Number(floorDraft.floorNumber) === 0;
+          const prefix = isGround ? "G" : String(floorDraft.floorNumber);
+
           if (editingFloor) {
-            const slotCount = allSlots.filter(s => s.floorId === editingFloor.id).length;
             await apiRequest(`/v1/parking-floors/${editingFloor.id}`, {
               method: "PUT",
               body: JSON.stringify({
                 name: floorDraft.name.trim(),
                 floorNumber: Number(floorDraft.floorNumber),
-                totalSlots: slotCount,
+                totalSlots,
                 isActive: editingFloor.isActive,
               }),
             });
+
+            // Đồng bộ hoặc tạo thêm khu vực / ô đỗ nếu cần
+            const existingFloorZones = (query.data?.zones || []).filter(z => String(z.floorId ?? z.floorIds?.[0]) === String(editingFloor.id));
+
+            for (let z = existingFloorZones.length + 1; z <= zoneCount; z++) {
+              const letter = String.fromCharCode(64 + z);
+              const code = `KHU-${prefix}-${letter}`;
+              const name = `Khu ${letter} - ${floorDraft.name.trim()}`;
+              try {
+                const newZone = await operationsApi(lot.id, "zones", {
+                  code,
+                  name,
+                  type: floorDraft.zoneType,
+                  layout: "INSIDE",
+                  isActive: true,
+                  floorId: editingFloor.id,
+                }, "POST");
+
+                for (let s = 1; s <= slotsPerZone; s++) {
+                  const slotCode = `${prefix}-${letter}${String(s).padStart(3, "0")}`;
+                  await apiRequest(`/v1/parking-floors/${editingFloor.id}/slots`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      zoneId: newZone.id,
+                      slotCode,
+                      physicalStatus: "EMPTY",
+                      isActive: true,
+                    }),
+                  });
+                }
+              } catch (err) {
+                console.error("Error creating additional zone/slots:", err);
+              }
+            }
+
+            // Bổ sung slot vào các khu hiện có nếu cần
+            for (let z = 0; z < existingFloorZones.length; z++) {
+              const ez = existingFloorZones[z];
+              const letter = String.fromCharCode(65 + z);
+              const currentSlotsInZone = allSlots.filter(s => s.floorId === editingFloor.id && s.zoneId === ez.id);
+              if (currentSlotsInZone.length < slotsPerZone) {
+                for (let s = currentSlotsInZone.length + 1; s <= slotsPerZone; s++) {
+                  const slotCode = `${prefix}-${letter}${String(s).padStart(3, "0")}`;
+                  try {
+                    await apiRequest(`/v1/parking-floors/${editingFloor.id}/slots`, {
+                      method: "POST",
+                      body: JSON.stringify({
+                        zoneId: ez.id,
+                        slotCode,
+                        physicalStatus: "EMPTY",
+                        isActive: true,
+                      }),
+                    });
+                  } catch {}
+                }
+              }
+            }
+
             setEditingFloor(null);
-            setFloorDraft({ name: "", floorNumber: "" });
-            return;
+            handleNewFloor();
+            return `Đã cập nhật tầng "${floorDraft.name.trim()}" (${zoneCount} khu vực, ${totalSlots} ô đỗ).`;
           }
-          let floor = createdFloor;
-          if (!floor) {
-            const result = await apiRequest(`/v1/parking-lots/${lot.id}/floors`, {
-              method: "POST",
-              body: JSON.stringify({
-                name: floorDraft.name.trim(),
-                floorNumber: Number(floorDraft.floorNumber),
-                totalSlots: 0,
-                isActive: true,
-              }),
-            });
-            floor = result.data;
-            setCreatedFloor(floor);
+
+          // Tạo tầng mới
+          const floorRes = await apiRequest(`/v1/parking-lots/${lot.id}/floors`, {
+            method: "POST",
+            body: JSON.stringify({
+              name: floorDraft.name.trim(),
+              floorNumber: Number(floorDraft.floorNumber),
+              totalSlots,
+              isActive: true,
+            }),
+          });
+          const createdF = floorRes.data;
+
+          for (let z = 1; z <= zoneCount; z++) {
+            const letter = String.fromCharCode(64 + z);
+            const code = `KHU-${prefix}-${letter}`;
+            const name = `Khu ${letter} - ${floorDraft.name.trim()}`;
+            const zone = await operationsApi(lot.id, "zones", {
+              code,
+              name,
+              type: floorDraft.zoneType,
+              layout: "INSIDE",
+              isActive: true,
+              floorId: createdF.id,
+            }, "POST");
+
+            for (let s = 1; s <= slotsPerZone; s++) {
+              const slotCode = `${prefix}-${letter}${String(s).padStart(3, "0")}`;
+              await apiRequest(`/v1/parking-floors/${createdF.id}/slots`, {
+                method: "POST",
+                body: JSON.stringify({
+                  zoneId: zone.id,
+                  slotCode,
+                  physicalStatus: "EMPTY",
+                  isActive: true,
+                }),
+              });
+            }
           }
-          setCreatedFloor(null);
-          setFloorDraft({ name: "", floorNumber: "" });
-        }); }}><fieldset disabled={busy} className="operations-fields"><h3>{editingFloor ? `Sửa tầng ${editingFloor.name}` : "Thêm tầng"}</h3>
-          <Field label="Tên tầng"><input required disabled={Boolean(createdFloor)} value={floorDraft.name} onChange={e => setFloorDraft({ ...floorDraft, name: e.target.value })} /></Field>
-          <Field label="Số tầng"><input type="number" min={-10} max={100} required disabled={Boolean(createdFloor)} value={floorDraft.floorNumber} onChange={e => setFloorDraft({ ...floorDraft, floorNumber: e.target.value })} /></Field>
-          <div className="operations-settings-actions">
-            <button className="staff-button staff-button--primary">{editingFloor ? "Lưu cập nhật tầng" : "Tạo tầng"}</button>
-            {editingFloor && <button type="button" className="staff-button staff-button--secondary" onClick={() => { setEditingFloor(null); setFloorDraft({ name: "", floorNumber: "" }); }}>Hủy sửa</button>}
-          </div>
-        </fieldset></form></div>
+
+          handleNewFloor();
+          return `Đã tạo tầng "${floorDraft.name.trim()}" cùng ${zoneCount} khu vực và ${totalSlots} ô đỗ.`;
+        }); }}>
+          <fieldset disabled={busy} className="operations-fields">
+            <h3>{editingFloor ? `Sửa tầng: ${editingFloor.name}` : `Thêm ${floorDraft.name}`}</h3>
+
+            <Field label="Loại tầng / Loại khu vực">
+              <select
+                value={floorDraft.zoneType}
+                onChange={e => setFloorDraft({ ...floorDraft, zoneType: e.target.value })}
+              >
+                <option value="FIXED">Khu cho xe có vé tháng (mặc định là Tầng G)</option>
+                <option value="TRANSIENT">Khu bình thường (vãng lai, booking)</option>
+              </select>
+            </Field>
+
+            <div className="operations-form-grid">
+              <Field label="Số khu vực trong tầng">
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  required
+                  value={floorDraft.zoneCount}
+                  onChange={e => setFloorDraft({ ...floorDraft, zoneCount: Math.max(1, parseInt(e.target.value) || 1) })}
+                />
+              </Field>
+              <Field label="Số slot trong 1 khu vực">
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  required
+                  value={floorDraft.slotsPerZone}
+                  onChange={e => setFloorDraft({ ...floorDraft, slotsPerZone: Math.max(1, parseInt(e.target.value) || 1) })}
+                />
+              </Field>
+            </div>
+
+            <div className="operations-settings-actions">
+              <button className="staff-button staff-button--primary">
+                {editingFloor ? "Lưu cập nhật tầng" : `Thêm ${floorDraft.name}`}
+              </button>
+              {editingFloor && (
+                <button type="button" className="staff-button staff-button--secondary" onClick={handleNewFloor}>
+                  Hủy sửa
+                </button>
+              )}
+            </div>
+          </fieldset>
+        </form>
+        </div>
       </section>}
 
       {view.id === "slots" && <section className="staff-panel"><div><h2>Quản lý ô đỗ</h2><p className="operations-settings-hint">Thêm, sửa, xóa ô đỗ (slot), cập nhật trạng thái vật lý và cấu hình loại nhiên liệu phù hợp.</p></div>
@@ -410,7 +610,7 @@ function Content() {
       address: "",
       latitude: null,
       longitude: null,
-      managerId: managers[0]?.id ? String(managers[0].id) : "",
+      managerId: "",
       floorCount: 1,
       zoneCount: 2,
       slotCount: 50,
@@ -425,11 +625,15 @@ function Content() {
     if (!lot) return;
     setEditingLot(lot);
     let currentManagerId = "";
+    let currentManagerAssignmentId = null;
     try {
       const assignmentsRes = await apiRequest(`/v1/staff-assignments?lotId=${lot.id}&page=1&pageSize=100`);
       const items = assignmentsRes?.data?.items || [];
       const managerAssignment = items.find(a => a.userRole === "MANAGER" || a.role === "MANAGER");
-      if (managerAssignment) currentManagerId = String(managerAssignment.userId);
+      if (managerAssignment) {
+        currentManagerId = String(managerAssignment.userId);
+        currentManagerAssignmentId = managerAssignment.id;
+      }
     } catch {}
     setLotForm({
       name: lot.name || "",
@@ -438,6 +642,7 @@ function Content() {
       longitude: lot.longitude ?? null,
       managerId: currentManagerId,
       _originalManagerId: currentManagerId,
+      _originalManagerAssignmentId: currentManagerAssignmentId,
       floorCount: 1,
       zoneCount: 2,
       slotCount: 50,
@@ -492,12 +697,18 @@ function Content() {
           body: JSON.stringify({
             name: lotForm.name.trim(),
             address: lotForm.address.trim() || null,
-            totalCapacity: Number(lotForm.totalCapacity) || 0,
+            totalCapacity: editingLot.totalCapacity || 100,
             isActive: Boolean(lotForm.isActive),
           }),
         });
 
         if (lotForm.managerId && String(lotForm.managerId) !== String(lotForm._originalManagerId)) {
+          if (lotForm._originalManagerAssignmentId) {
+            await apiRequest(`/v1/staff-assignments/${lotForm._originalManagerAssignmentId}/revoke`, {
+              method: "POST",
+              body: JSON.stringify({ reason: "Thay Manager phụ trách bãi" }),
+            });
+          }
           try {
             await apiRequest("/v1/staff-assignments", {
               method: "POST",
@@ -517,9 +728,6 @@ function Content() {
         await lots.reload();
         setLotActionMessage(`Đã cập nhật bãi đỗ "${lotForm.name.trim()}".`);
       } else {
-        if (!lotForm.managerId) {
-          throw new Error("Vui lòng phân công 1 Manager vận hành bãi đỗ xe.");
-        }
         if (lotForm.latitude == null || lotForm.longitude == null || !Number.isFinite(Number(lotForm.latitude)) || !Number.isFinite(Number(lotForm.longitude))) {
           throw new Error("Hãy chọn vị trí bãi trên bản đồ trước khi tạo.");
         }
@@ -540,25 +748,11 @@ function Content() {
             isActive: Boolean(lotForm.isActive),
           }),
         });
+
         if (res?.data?.id) {
           const newLotId = res.data.id;
 
-          // 1. Phân công 1 Manager vận hành bãi
-          try {
-            await apiRequest("/v1/staff-assignments", {
-              method: "POST",
-              body: JSON.stringify({
-                userId: Number(lotForm.managerId),
-                lotId: newLotId,
-                duty: "GATE",
-                notes: "Manager phụ trách bãi",
-              }),
-            });
-          } catch (assignErr) {
-            console.error("Assign manager error:", assignErr);
-          }
-
-          // 2. Tự động tạo cấu trúc: Số tầng, Số khu vực, Số slot
+          // Tự động tạo cấu trúc: Số tầng, Số khu vực, Số slot
           try {
             for (let f = 0; f < floorCount; f++) {
               const isGround = f === 0;
@@ -613,7 +807,8 @@ function Content() {
           setShowLotModal(false);
           await lots.reload();
           select(String(newLotId));
-          setLotActionMessage(`Đã tạo thành công bãi đỗ "${lotForm.name.trim()}" cùng ${floorCount} tầng, ${floorCount * zoneCount} khu vực và ${totalCapacity} slot.`);
+          const managerInfo = res.data.managerAccount;
+          setLotActionMessage(`Đã tạo bãi "${lotForm.name.trim()}" và Manager phụ trách. Tài khoản: ${managerInfo?.username || "đã tạo"} · Email: ${managerInfo?.email || "—"} · Mật khẩu: ${managerInfo?.initialPassword || "Test123@"}. Cấu hình: ${floorCount} tầng, ${floorCount * zoneCount} khu vực, ${totalCapacity} slot.`);
         }
       }
     } catch (err) {
@@ -707,12 +902,12 @@ function Content() {
                   <Field label="Tên bãi đỗ xe *">
                     <input required minLength={2} maxLength={100} placeholder="Ví dụ: Bãi xe FPT University HCMC" value={lotForm.name} onChange={e => setLotForm({ ...lotForm, name: e.target.value })} />
                   </Field>
-                  <Field label="Manager phụ trách *">
+                  {editingLot ? <Field label="Manager phụ trách">
                     <select required value={lotForm.managerId} onChange={e => setLotForm({ ...lotForm, managerId: e.target.value })}>
                       <option value="">Chọn manager</option>
                       {managers.map(m => <option key={m.id} value={m.id}>{m.fullName || m.username} ({m.username})</option>)}
                     </select>
-                  </Field>
+                  </Field> : <div style={{ alignSelf: "end", padding: "12px 14px", borderRadius: 10, background: "#f2f6fc", color: "#203d5d" }}>Hệ thống sẽ tự tạo tài khoản Manager riêng cho bãi với mật khẩu ban đầu <strong>Test123@</strong>.</div>}
                 </div>
               </section>
 
@@ -768,7 +963,6 @@ function Content() {
                       />
                     </Field>
                   </div>
-                  <p style={{ margin: 0, padding: "10px 12px", borderRadius: 8, background: "#f2f6fc", color: "#203d5d" }}>Dự kiến tạo <strong>{Number(lotForm.floorCount) * Number(lotForm.zoneCount)}</strong> khu vực và <strong>{Number(lotForm.floorCount) * Number(lotForm.zoneCount) * Number(lotForm.slotCount)}</strong> ô đỗ.</p>
                   </section>
                 </>
               )}
@@ -780,7 +974,7 @@ function Content() {
 
               <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "14px" }}>
                 <button type="button" className="btn btn--outline" disabled={lotModalBusy} onClick={() => { setShowLotModal(false); setLotModalError(""); }}>Hủy</button>
-                <button type="submit" className="btn btn--primary" disabled={lotModalBusy || addressLookupBusy || !lotForm.name.trim() || (!editingLot && (!lotForm.managerId || lotForm.latitude == null || lotForm.longitude == null || !lotForm.address.trim()))}>
+                <button type="submit" className="btn btn--primary" disabled={lotModalBusy || addressLookupBusy || !lotForm.name.trim() || (!editingLot && (lotForm.latitude == null || lotForm.longitude == null || !lotForm.address.trim()))}>
                   {lotModalBusy ? "Đang tạo bãi…" : editingLot ? "Lưu cập nhật" : "Tạo bãi và sơ đồ chỗ đỗ"}
                 </button>
               </div>

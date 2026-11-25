@@ -6,7 +6,7 @@ import { Feedback, itemsOf, useResource, useMutation, write } from "../component
 const statuses = { EMPTY: "Trống", OCCUPIED: "Có xe", RESERVED: "Đang giữ chỗ", MAINTENANCE: "Bảo trì" };
 const emptyDraft = () => ({ slotCode: "", positionX: "", positionY: "", positionZ: "", isActive: true, physicalStatus: "EMPTY" });
 
-function FloorSlots({ floor, revision, action, refresh }) {
+function FloorSlots({ floor, revision, action, refresh, canCreate }) {
   const slots = useResource(`/v1/parking-floors/${floor.id}/slots?pageNumber=1&pageSize=100`, revision, { allPages: "pageNumber" });
   const [draft, setDraft] = useState(emptyDraft);
   const [editing, setEditing] = useState(null);
@@ -17,7 +17,7 @@ function FloorSlots({ floor, revision, action, refresh }) {
   const reset = () => { setEditing(null); setDraft(emptyDraft()); };
   const patch = (key, value) => setDraft(d => ({ ...d, [key]: value }));
   return <>
-    <section className="workspace-panel">
+    {(canCreate || editing) && <section className="workspace-panel">
       <div><h2>{editing ? `Sửa ô ${editing.slotCode}` : "Thêm ô đỗ"}</h2><p className="workspace-note">Chỉ sửa, xóa hoặc đổi trạng thái ô chưa có xe thực tế và chưa được giữ chỗ/điều phối.</p></div>
       <form className="workspace-form" onSubmit={event => {
         event.preventDefault();
@@ -32,7 +32,7 @@ function FloorSlots({ floor, revision, action, refresh }) {
         <label className="staff-check"><input type="checkbox" checked={draft.isActive} onChange={e => patch("isActive", e.target.checked)} />Đang sử dụng</label>
         <div className="workspace-actions"><button className="btn btn--primary">{editing ? "Lưu ô đỗ" : "Thêm ô đỗ"}</button>{editing && <button type="button" className="btn btn--outline" onClick={reset}>Hủy sửa</button>}</div>
       </fieldset></form>
-    </section>
+    </section>}
     {pending && <section className="workspace-panel workspace-confirm"><h2>{pending.kind === "delete" ? "Xác nhận xóa ô" : "Xác nhận đổi trạng thái"} {pending.slot.slotCode}</h2>
       <p>{pending.kind === "delete" ? "Ô đã có lịch sử phiên hoặc điều phối sẽ không được xóa." : `Chuyển sang: ${statuses[pending.status]}.`}</p>
       <form className="workspace-form" onSubmit={event => {
@@ -131,6 +131,6 @@ export default function ParkingSlotManagement({ role }) {
         </form>
       </section>
     )}
-    {lot && floor && !floors.loading && !floors.error && <FloorSlots key={`${lot.id}-${floor.id}`} floor={floor} revision={revision} action={action} refresh={refresh} />}
+    {lot && floor && !floors.loading && !floors.error && <FloorSlots key={`${lot.id}-${floor.id}`} floor={floor} revision={revision} action={action} refresh={refresh} canCreate={role === "ADMIN"} />}
   </section>;
 }

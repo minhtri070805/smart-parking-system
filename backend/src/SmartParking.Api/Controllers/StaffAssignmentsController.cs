@@ -30,6 +30,65 @@ public class StaffAssignmentsController : ControllerBase
         _detectionService = detectionService;
     }
 
+    [HttpGet]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
+    public async Task<IActionResult> GetLotAssignments([FromQuery] StaffAssignmentFilterDto filter, CancellationToken ct)
+    {
+        var actorId = GetCurrentUserId();
+        if (!actorId.HasValue) return Unauthorized(new { message = "Không xác định được tài khoản." });
+        var actorRole = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        var result = await _assignmentService.GetAssignmentsAsync(filter, actorId.Value, actorRole, ct);
+        return Ok(new { message = "Lấy danh sách phân công thành công.", data = result });
+    }
+
+    [HttpGet("candidates")]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
+    public async Task<IActionResult> GetAssignmentCandidates([FromQuery] StaffCandidateFilterDto filter, CancellationToken ct)
+    {
+        var actorId = GetCurrentUserId();
+        if (!actorId.HasValue) return Unauthorized(new { message = "Không xác định được tài khoản." });
+        var result = await _assignmentService.GetCandidatesAsync(filter, actorId.Value, ct);
+        return Ok(new { message = "Lấy danh sách nhân sự thành công.", data = result });
+    }
+
+    [HttpGet("locations/{lotId:int}")]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
+    public async Task<IActionResult> GetAssignmentLocations(int lotId, CancellationToken ct)
+    {
+        var actorId = GetCurrentUserId();
+        if (!actorId.HasValue) return Unauthorized(new { message = "Không xác định được tài khoản." });
+        var result = await _assignmentService.GetLocationsAsync(lotId, actorId.Value, ct);
+        return result is null
+            ? NotFound(new { message = "Không tìm thấy bãi hoặc bạn không có quyền truy cập." })
+            : Ok(new { message = "Lấy tầng và khu vực thành công.", data = result });
+    }
+
+    [HttpPost]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
+    public async Task<IActionResult> CreateLotAssignment([FromBody] CreateStaffAssignmentRequestDto request, CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var actorId = GetCurrentUserId();
+        if (!actorId.HasValue) return Unauthorized(new { message = "Không xác định được tài khoản." });
+        var result = await _assignmentService.CreateAssignmentAsync(request, actorId.Value,
+            HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
+        return result.Success
+            ? CreatedAtAction(nameof(GetLotAssignments), new { lotId = request.LotId }, new { message = result.Message, data = result.Data })
+            : Conflict(new { message = result.Message });
+    }
+
+    [HttpPost("{id:long}/revoke")]
+    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
+    public async Task<IActionResult> RevokeLotAssignment(long id, [FromBody] RevokeStaffAssignmentRequestDto request, CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var actorId = GetCurrentUserId();
+        if (!actorId.HasValue) return Unauthorized(new { message = "Không xác định được tài khoản." });
+        var result = await _assignmentService.RevokeAssignmentAsync(id, request, actorId.Value,
+            HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
+        return result.Success ? Ok(new { message = result.Message }) : Conflict(new { message = result.Message });
+    }
+
     [HttpPost("/api/v1/staff/detect")]
     [Authorize(Roles = $"{Roles.Staff},{Roles.Admin}")]
     [Consumes("multipart/form-data")]
