@@ -1,4 +1,4 @@
-using SmartParking.Persistence.Data; // ParkingLotLockHelper
+﻿using SmartParking.Persistence.Data; // ParkingLotLockHelper
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
