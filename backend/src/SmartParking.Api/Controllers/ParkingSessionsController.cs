@@ -273,10 +273,9 @@ public class ParkingSessionsController : ControllerBase
     /// <summary>
     /// Báo cáo lưu lượng và doanh thu tháng.
     /// Manager chỉ được xem các bãi được phân công quản lý.
-    /// Admin được xem tất cả các bãi có trong hệ thống hoặc từng bãi cụ thể.
     /// </summary>
     [HttpGet("monthly-stats")]
-    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
+    [Authorize(Roles = Roles.Manager)]
     [ProducesResponseType(typeof(MonthlyTrafficStatsDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMonthlyStats([FromQuery] int? year, [FromQuery] int? month, [FromQuery] int? lotId, CancellationToken ct)
     {

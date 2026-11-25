@@ -1,10 +1,8 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import RequireRole from "../components/RequireRole.jsx";
-import { getAuthSession, subscribeAuthSession } from "../services/authSession.js";
 import {
   Feedback,
   dateLabel,
-  itemsOf,
   useResource,
 } from "../components/WorkspaceUI.jsx";
 import "../workspace.css";
@@ -15,44 +13,33 @@ const money = (value) =>
     currency: "VND",
   }).format(value || 0);
 
-function RevenueDashboard({ role }) {
+function RevenueDashboard() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [selectedLotId, setSelectedLotId] = useState("");
   const [revision, setRevision] = useState(0);
 
-  const isAdmin = role === "ADMIN";
-
-  // For Admin: load all lots in the system
-  const allLots = useResource(
-    isAdmin ? "/v1/parking-lots?pageSize=100&isActive=true" : null,
-    revision,
-  );
-
-  // For Manager: load only assigned lots
+  // Load only assigned lots for Manager
   const myAssignedLots = useResource(
-    !isAdmin ? "/v1/staff-assignments/my-lots" : null,
+    "/v1/staff-assignments/my-lots",
     revision,
   );
 
-  const lotsList = isAdmin
-    ? itemsOf(allLots.data)
-    : Array.isArray(myAssignedLots.data)
-      ? myAssignedLots.data
-      : myAssignedLots.data?.items || [];
+  const lotsList = Array.isArray(myAssignedLots.data)
+    ? myAssignedLots.data
+    : myAssignedLots.data?.items || [];
 
   // When lots load for manager, if manager only has 1 lot, auto-select it
   useEffect(() => {
-    if (!isAdmin && lotsList.length === 1 && !selectedLotId) {
+    if (lotsList.length === 1 && !selectedLotId) {
       setSelectedLotId(String(lotsList[0].lotId || lotsList[0].id));
     }
-  }, [isAdmin, lotsList, selectedLotId]);
+  }, [lotsList, selectedLotId]);
 
   // Load monthly revenue & traffic stats
-  const statsPath = `/v1/parking-sessions/monthly-stats?year=${year}&month=${month}${
-    selectedLotId ? `&lotId=${selectedLotId}` : ""
-  }`;
+  const statsPath = `/v1/parking-sessions/monthly-stats?year=${year}&month=${month}${selectedLotId ? `&lotId=${selectedLotId}` : ""
+    }`;
 
   const statsResource = useResource(statsPath, revision);
   const stats = statsResource.data?.data || statsResource.data;
@@ -70,7 +57,7 @@ function RevenueDashboard({ role }) {
 
   const selectedLotName = () => {
     if (!selectedLotId) {
-      return isAdmin ? "Toàn bộ hệ thống" : "Tất cả các bãi đang quản lý";
+      return "Tất cả các bãi đang quản lý";
     }
     const found = lotsList.find(
       (l) => String(l.id || l.lotId) === String(selectedLotId),
@@ -85,9 +72,7 @@ function RevenueDashboard({ role }) {
         <div>
           <h2>Báo cáo Doanh thu</h2>
           <p>
-            {isAdmin
-              ? "Theo dõi tổng thể doanh thu và lưu lượng toàn hệ thống hoặc theo từng bãi đỗ."
-              : "Theo dõi doanh thu và lưu lượng tại các bãi xe bạn được phân công quản lý."}
+            Theo dõi doanh thu và lưu lượng tại các bãi xe bạn được phân công quản lý.
           </p>
         </div>
         <div className="workspace-actions">
@@ -110,29 +95,16 @@ function RevenueDashboard({ role }) {
             <select
               value={selectedLotId}
               onChange={(e) => setSelectedLotId(e.target.value)}
-              disabled={!isAdmin && lotsList.length <= 1}
+              disabled={lotsList.length <= 1}
             >
-              {isAdmin ? (
-                <>
-                  <option value="">Tất cả các bãi (Toàn hệ thống)</option>
-                  {lotsList.map((lot) => (
-                    <option key={lot.id} value={lot.id}>
-                      {lot.name} {lot.address ? `· ${lot.address}` : ""}
-                    </option>
-                  ))}
-                </>
-              ) : (
-                <>
-                  {lotsList.length > 1 && (
-                    <option value="">Tất cả các bãi đang quản lý</option>
-                  )}
-                  {lotsList.map((lot) => (
-                    <option key={lot.lotId || lot.id} value={lot.lotId || lot.id}>
-                      {lot.lotName || lot.name}
-                    </option>
-                  ))}
-                </>
+              {lotsList.length > 1 && (
+                <option value="">Tất cả các bãi đang quản lý</option>
               )}
+              {lotsList.map((lot) => (
+                <option key={lot.lotId || lot.id} value={lot.lotId || lot.id}>
+                  {lot.lotName || lot.name}
+                </option>
+              ))}
             </select>
           </label>
 
@@ -165,7 +137,7 @@ function RevenueDashboard({ role }) {
           </label>
         </div>
 
-        {!isAdmin && !myAssignedLots.loading && lotsList.length === 0 && (
+        {!myAssignedLots.loading && lotsList.length === 0 && (
           <p className="customer-message customer-message--error" style={{ marginTop: 16 }}>
             Bạn chưa được phân công quản lý bãi đỗ nào. Vui lòng liên hệ Quản trị viên để được cấp quyền trước khi xem doanh thu.
           </p>
@@ -429,17 +401,10 @@ function RevenueDashboard({ role }) {
   );
 }
 
-export default function RevenuePage({ role }) {
-  const session = useSyncExternalStore(
-    subscribeAuthSession,
-    getAuthSession,
-    getAuthSession,
-  );
-  const effectiveRole = role || session?.userProfile?.role;
-
+export default function RevenuePage() {
   return (
-    <RequireRole role={["ADMIN", "MANAGER"]}>
-      <RevenueDashboard role={effectiveRole} />
+    <RequireRole role="MANAGER">
+      <RevenueDashboard />
     </RequireRole>
   );
 }

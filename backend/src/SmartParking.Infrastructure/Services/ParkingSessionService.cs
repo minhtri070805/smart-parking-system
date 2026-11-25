@@ -86,7 +86,7 @@ public class ParkingSessionService : IParkingSessionService
     {
         // Dữ liệu lưu UTC, thống kê theo ngày giờ Việt Nam (UTC+7).
         var offset = TimeSpan.FromHours(7);
-        var startLocal = new DateTime(year, month, 1);
+        var startLocal = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
         var endLocal = startLocal.AddMonths(1);
         var startUtc = startLocal - offset;
         var endUtc = endLocal - offset;
