@@ -206,7 +206,7 @@ public class StaffAssignmentsController : ControllerBase
     /// <summary>
     /// Trả về toàn bộ danh sách nhân viên vai trò STAFF để phân công ca trực tự do tại bãi xe.
     /// </summary>
-    [HttpGet]
+    [HttpGet("staff")]
     [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
     public async Task<IActionResult> GetAssignments([FromQuery] int? lotId, [FromQuery] long? userId, CancellationToken ct)
     {
