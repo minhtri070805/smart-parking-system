@@ -50,7 +50,11 @@ public class AdminUserService : IAdminUserService
 
         if (filter.LotId.HasValue)
         {
-            query = query.Where(u => u.StaffLotAssignments.Any(a => a.IsActive && a.LotId == filter.LotId.Value));
+            var assignedUserIds = _context.StaffLotAssignments
+                .AsNoTracking()
+                .Where(a => a.IsActive && a.LotId == filter.LotId.Value)
+                .Select(a => a.UserId);
+            query = query.Where(u => assignedUserIds.Contains(u.Id));
         }
 
         // 1. Search by username, email or full name

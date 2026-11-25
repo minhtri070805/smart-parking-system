@@ -44,10 +44,12 @@ export function People({ assignmentsOnly = false }) {
   const [role, setRole] = useState("");
   const [active, setActive] = useState("");
   const [userLotFilter, setUserLotFilter] = useState("");
+  const [appliedUserFilters, setAppliedUserFilters] = useState({ search: "", role: "", active: "", lotId: "" });
   const [user, setUser] = useState(emptyUser);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [assignmentLotFilter, setAssignmentLotFilter] = useState("");
   const [assignmentRoleFilter, setAssignmentRoleFilter] = useState("");
+  const [appliedAssignmentFilters, setAppliedAssignmentFilters] = useState({ lotId: "", role: "", active: "" });
   const [selected, setSelected] = useState(null);
   const [change, setChange] = useState(null);
   const [roleDrafts, setRoleDrafts] = useState({});
@@ -69,13 +71,13 @@ export function People({ assignmentsOnly = false }) {
   const [candidateRole, setCandidateRole] = useState("STAFF");
   const users = useResource(
     view === "users"
-      ? `/v1/admin/users?${query({ page, pageSize: 20, search, role, isActive: active, lotId: userLotFilter, internalOnly: true })}`
+      ? `/v1/admin/users?${query({ page, pageSize: 20, search: appliedUserFilters.search, role: appliedUserFilters.role, isActive: appliedUserFilters.active, lotId: appliedUserFilters.lotId, internalOnly: true })}`
       : null,
     revision,
   );
   const assignments = useResource(
     view === "assignments"
-      ? `/v1/staff-assignments?${query({ page, pageSize: 20, isActive: active, lotId: assignmentLotFilter, role: assignmentRoleFilter })}`
+      ? `/v1/staff-assignments?${query({ page, pageSize: 20, isActive: appliedAssignmentFilters.active, lotId: appliedAssignmentFilters.lotId, role: appliedAssignmentFilters.role })}`
       : null,
     revision,
   );
@@ -114,6 +116,22 @@ export function People({ assignmentsOnly = false }) {
   const chosen = chosenStaff;
   const updated = () => refresh((n) => n + 1);
   const list = view === "users" ? users : assignments;
+  const resetUserFilters = () => {
+    setSearch(""); setRole(""); setActive(""); setUserLotFilter(""); setPage(1);
+    setAppliedUserFilters({ search: "", role: "", active: "", lotId: "" });
+  };
+  const applyUserFilters = () => {
+    setPage(1);
+    setAppliedUserFilters({ search, role, active, lotId: userLotFilter });
+  };
+  const resetAssignmentFilters = () => {
+    setActive(""); setAssignmentLotFilter(""); setAssignmentRoleFilter(""); setPage(1);
+    setAppliedAssignmentFilters({ lotId: "", role: "", active: "" });
+  };
+  const applyAssignmentFilters = () => {
+    setPage(1);
+    setAppliedAssignmentFilters({ lotId: assignmentLotFilter, role: assignmentRoleFilter, active });
+  };
   useEffect(() => {
     setPage(1);
     setActive("");
@@ -498,7 +516,6 @@ export function People({ assignmentsOnly = false }) {
                   disabled={action.busy}
                   onChange={(e) => {
                     setSearch(e.target.value);
-                    setPage(1);
                   }}
                 />
               </label>
@@ -509,7 +526,6 @@ export function People({ assignmentsOnly = false }) {
                   disabled={action.busy}
                   onChange={(e) => {
                     setRole(e.target.value);
-                    setPage(1);
                   }}
                 >
                   <option value="">Tất cả vai trò</option>
@@ -520,7 +536,7 @@ export function People({ assignmentsOnly = false }) {
               </label>
               <label>
                 Lọc bãi phụ trách
-                <select value={userLotFilter} disabled={action.busy} onChange={e => { setUserLotFilter(e.target.value); setPage(1); }}>
+                <select value={userLotFilter} disabled={action.busy} onChange={e => setUserLotFilter(e.target.value)}>
                   <option value="">Tất cả bãi</option>
                   {availableLots.map(lot => <option key={lot.id} value={lot.id}>{lot.name}</option>)}
                 </select>
@@ -529,14 +545,14 @@ export function People({ assignmentsOnly = false }) {
           )}
           {view === "assignments" && <label>
             Lọc theo bãi
-            <select value={assignmentLotFilter} disabled={action.busy} onChange={e => { setAssignmentLotFilter(e.target.value); setPage(1); }}>
+            <select value={assignmentLotFilter} disabled={action.busy} onChange={e => setAssignmentLotFilter(e.target.value)}>
               <option value="">Tất cả bãi</option>
               {availableLots.map(lot => <option key={lot.id} value={lot.id}>{lot.name}</option>)}
             </select>
           </label>}
           {view === "assignments" && !assignmentsOnly && <label>
             Lọc vai trò
-            <select value={assignmentRoleFilter} disabled={action.busy} onChange={e => { setAssignmentRoleFilter(e.target.value); setPage(1); }}>
+            <select value={assignmentRoleFilter} disabled={action.busy} onChange={e => setAssignmentRoleFilter(e.target.value)}>
               <option value="">Manager và Staff</option>
               <option value="MANAGER">Manager</option>
               <option value="STAFF">Staff</option>
@@ -549,7 +565,6 @@ export function People({ assignmentsOnly = false }) {
               disabled={action.busy}
               onChange={(e) => {
                 setActive(e.target.value);
-                setPage(1);
               }}
             >
               <option value="">Tất cả</option>
@@ -557,6 +572,14 @@ export function People({ assignmentsOnly = false }) {
               <option value="false">Ngừng hoạt động</option>
             </select>
           </label>
+          <div className="workspace-filter-actions">
+            <button type="button" className="btn btn--outline workspace-filter-action" title="Đặt lại bộ lọc" aria-label="Đặt lại bộ lọc" disabled={action.busy} onClick={view === "users" ? resetUserFilters : resetAssignmentFilters}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8.25M3 3v5.25h5.25" /></svg>
+            </button>
+            <button type="button" className="btn btn--primary workspace-filter-action" title="Áp dụng bộ lọc" aria-label="Áp dụng bộ lọc" disabled={action.busy} onClick={view === "users" ? applyUserFilters : applyAssignmentFilters}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z" /></svg>
+            </button>
+          </div>
         </div>
         <Feedback loading={list.loading} error={list.error} />
         {!list.loading && !list.error && !itemsOf(list.data).length && (
