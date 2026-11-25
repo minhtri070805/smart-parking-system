@@ -590,7 +590,7 @@ export function People({ assignmentsOnly = false }) {
             <thead>
               <tr>
                 {(view === "users"
-                  ? ["Tài khoản", "Vai trò", "Trạng thái", "Thao tác"]
+                  ? ["Tài khoản", "Vai trò", "Bãi phụ trách", "Trạng thái", "Thao tác"]
                   : ["Nhân sự", "Bãi / Phân công", "Thời gian", "Thao tác"]
                 ).map((h) => (
                   <th key={h}>{h}</th>
@@ -612,7 +612,6 @@ export function People({ assignmentsOnly = false }) {
                         <small>
                           {row.username} · {row.email}
                         </small>
-                        {row.assignedLotName && <small>Bãi: {row.assignedLotName}</small>}
                       </td>
                       <td>
                         {roles.includes(row.role) ? <div className="account-role-editor"><select
@@ -629,6 +628,9 @@ export function People({ assignmentsOnly = false }) {
                         </select><button type="button" className="btn btn--outline" aria-label={`Lưu vai trò ${row.username}`} disabled={action.busy || !roleDrafts[row.id] || roleDrafts[row.id] === row.role} onClick={() => {
                           setReason(""); setChange({ kind: "role", id: row.id, label: row.username, value: roleDrafts[row.id] });
                         }}>Lưu vai trò</button></div> : <strong>{row.role}</strong>}
+                      </td>
+                      <td>
+                        {(row.assignedLotNames?.length ? row.assignedLotNames : row.assignedLotName ? [row.assignedLotName] : []).join(", ") || "Chưa được phân công"}
                       </td>
                       <td>
                         {row.isActive ? "Hoạt động" : "Đã khóa"}

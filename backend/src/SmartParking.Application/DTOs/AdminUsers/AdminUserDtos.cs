@@ -29,6 +29,7 @@ public class AdminUserSummaryDto
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public string? AssignedLotName { get; set; }
+    public List<string> AssignedLotNames { get; set; } = [];
 }
 
 public class AdminUserDetailDto : AdminUserSummaryDto

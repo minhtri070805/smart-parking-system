@@ -50,11 +50,9 @@ public class AdminUserService : IAdminUserService
 
         if (filter.LotId.HasValue)
         {
-            var assignedUserIds = _context.StaffLotAssignments
-                .AsNoTracking()
-                .Where(a => a.IsActive && a.LotId == filter.LotId.Value)
-                .Select(a => a.UserId);
-            query = query.Where(u => assignedUserIds.Contains(u.Id));
+            var selectedLotId = filter.LotId.Value;
+            query = query.Where(u => u.StaffLotAssignments.Any(a =>
+                a.IsActive && a.LotId == selectedLotId));
         }
 
         // 1. Search by username, email or full name
@@ -114,6 +112,29 @@ public class AdminUserService : IAdminUserService
                     .OrderBy(a => a.Lot.Name).Select(a => a.Lot.Name).FirstOrDefault()
             })
             .ToListAsync(ct);
+
+        var userIds = items.Select(u => u.Id).ToList();
+        if (userIds.Count > 0)
+        {
+            var assignedLots = await _context.StaffLotAssignments
+                .AsNoTracking()
+                .Where(a => a.IsActive && userIds.Contains(a.UserId))
+                .Select(a => new { a.UserId, a.Lot.Name })
+                .ToListAsync(ct);
+
+            var lotNamesByUser = assignedLots
+                .GroupBy(a => a.UserId)
+                .ToDictionary(g => g.Key, g => g.Select(a => a.Name).Distinct().OrderBy(name => name).ToList());
+
+            foreach (var item in items)
+            {
+                if (lotNamesByUser.TryGetValue(item.Id, out var names))
+                {
+                    item.AssignedLotNames = names;
+                    item.AssignedLotName ??= names.FirstOrDefault();
+                }
+            }
+        }
 
         return PagedResult<AdminUserSummaryDto>.Create(items, totalCount, page, pageSize);
     }
