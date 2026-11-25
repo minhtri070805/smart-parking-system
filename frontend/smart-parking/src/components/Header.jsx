@@ -206,6 +206,9 @@ export default function Header({ workspace = false }) {
   return (
     <header className={`header ${workspace ? "header--workspace" : ""}`} ref={headerRef}>
       <div className="container header__inner">
+        <a className="skip-link" href="#main-content">
+          Bỏ qua điều hướng
+        </a>
         <Link
           className="header__brand"
           to="/"

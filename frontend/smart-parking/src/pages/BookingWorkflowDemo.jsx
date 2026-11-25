@@ -60,7 +60,7 @@ function CustomerBooking({ bookings, now }) {
     <div className="booking-demo__layout">
       <section className="booking-demo__panel">
         <div className="booking-demo__section-heading">
-          <span className="booking-demo__eyebrow">ĐẶT CHỖ TRỰC TUYẾN</span>
+          <span className="booking-demo__eyebrow">Đặt chỗ trực tuyến</span>
           <h2>Thông tin chuyến xe</h2>
           <p>Điền thông tin để tạo lượt đặt chỗ và chuyển tiếp qua các bước vận hành.</p>
         </div>
@@ -101,14 +101,14 @@ function CustomerBooking({ bookings, now }) {
 
       <section className="booking-demo__panel booking-demo__reservation" aria-live="polite">
         <div className="booking-demo__section-heading">
-          <span className="booking-demo__eyebrow">THEO DÕI GIỮ CHỖ</span>
+          <span className="booking-demo__eyebrow">Theo dõi giữ chỗ</span>
           <h2>Lượt đặt gần nhất</h2>
           <p>Đồng hồ bắt đầu tính ngay khi xác nhận thành công.</p>
         </div>
         {createdBooking ? (
           <div className="booking-demo__created">
             <span className="booking-demo__success-mark" aria-hidden="true">✓</span>
-            <span className="booking-demo__eyebrow">ĐẶT CHỖ THÀNH CÔNG</span>
+            <span className="booking-demo__eyebrow">Đặt chỗ thành công</span>
             <strong className="booking-demo__booking-id">{createdBooking.id}</strong>
             <span className={`booking-demo__status booking-demo__status--${createdBooking.status.toLowerCase()}`}>
               {createdBooking.status === "CANCELLED" ? "Đã hết hạn" : "Chờ xe đến"}
@@ -157,7 +157,7 @@ function GateStaffDashboard({ bookings, now }) {
     <section className="booking-demo__panel">
       <div className="booking-demo__dashboard-heading">
         <div className="booking-demo__section-heading">
-          <span className="booking-demo__eyebrow">ĐIỂM TIẾP NHẬN</span>
+          <span className="booking-demo__eyebrow">Điểm tiếp nhận</span>
           <h2>Xe chờ xác nhận tại cổng</h2>
           <p>Đối chiếu biển số và mã đặt chỗ trước khi chuyển cho Staff Điều phối.</p>
         </div>
@@ -316,7 +316,7 @@ function CoordinatorDashboard({ bookings }) {
     <section className="booking-demo__panel">
       <div className="booking-demo__dashboard-heading">
         <div className="booking-demo__section-heading">
-          <span className="booking-demo__eyebrow">KHU VỰC ĐIỀU PHỐI</span>
+          <span className="booking-demo__eyebrow">Khu vực điều phối</span>
           <h2>Tiếp nhận xe vào bãi</h2>
           <p>Chụp ảnh biển số, xác nhận thông tin thực tế và ghi nhận vị trí đỗ xe.</p>
         </div>
@@ -392,7 +392,7 @@ export default function BookingWorkflowDemo() {
       <div className="booking-demo__container">
         <header className="booking-demo__hero">
           <div>
-            <span className="booking-demo__eyebrow">SMART PARKING · QUY TRÌNH VẬN HÀNH</span>
+            <span className="booking-demo__eyebrow">Smart-Parking · Quy trình vận hành</span>
             <h1 id="booking-demo-title">Đặt chỗ &amp; Vận hành xe vào bãi</h1>
             <p>Một luồng xuyên suốt từ khách đặt chỗ đến khi xe được ghi nhận tại ô đỗ.</p>
           </div>

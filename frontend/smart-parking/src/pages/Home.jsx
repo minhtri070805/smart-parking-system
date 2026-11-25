@@ -111,12 +111,12 @@ function SectionHead({ tag, title, text }) {
 function ParkingIllustration() {
   const cols = [30, 130, 230, 330, 430];
   const cars = [
-    { x: 42, y: 40, fill: "#1B5FD6", glass: "#0F3E96" },
-    { x: 242, y: 40, fill: "#C2410C", glass: "#7C2A07" },
-    { x: 342, y: 40, fill: "#0E1A2B", glass: "#33445C" },
-    { x: 442, y: 40, fill: "#F5B700", glass: "#9A7200" },
-    { x: 142, y: 280, fill: "#5B6B80", glass: "#2F3C4D" },
-    { x: 342, y: 280, fill: "#C2410C", glass: "#7C2A07" },
+    { x: 42, y: 40, fill: "#27272A", glass: "#52525B" },
+    { x: 242, y: 40, fill: "#E11D48", glass: "#881337" },
+    { x: 342, y: 40, fill: "#52525B", glass: "#27272A" },
+    { x: 442, y: 40, fill: "#D97706", glass: "#78350F" },
+    { x: 142, y: 280, fill: "#A1A1AA", glass: "#52525B" },
+    { x: 342, y: 280, fill: "#3F3F46", glass: "#18181B" },
   ];
   const free = [
     { x: 130, y: 24 },
@@ -131,8 +131,8 @@ function ParkingIllustration() {
       aria-label="Minh họa bãi đỗ xe nhìn từ trên xuống, hai hàng chỗ đậu, một số chỗ đã có xe và bốn chỗ còn trống"
       className="lot"
     >
-      <rect width="560" height="420" fill="#DDE5EF" />
-      <rect y="172" width="560" height="76" fill="#B8C4D4" />
+      <rect width="560" height="420" fill="#F4F4F5" />
+      <rect y="172" width="560" height="76" fill="#D4D4D8" />
       <line
         x1="20"
         y1="210"
@@ -179,7 +179,7 @@ function ParkingIllustration() {
             rx="4"
             fill="#fff"
             fillOpacity="0.55"
-            stroke="#1B5FD6"
+            stroke="#059669"
             strokeWidth="3"
             strokeDasharray="8 6"
           />
@@ -189,8 +189,8 @@ function ParkingIllustration() {
             textAnchor="middle"
             fontFamily="Be Vietnam Pro, sans-serif"
             fontSize="44"
-            fontWeight="800"
-            fill="#1B5FD6"
+            fontWeight="600"
+            fill="#047857"
           >
             P
           </text>
@@ -260,15 +260,13 @@ export default function Home() {
   return (
     <div className="home" ref={revealRef}>
 {/* ---------- Giới thiệu ---------- */}
-      <section id="gioi-thieu" className="container hero">
+      <section id="gioi-thieu" className="container hero" data-enter>
         <div className="hero__text" data-scroll-reveal>
-          <span className="tag">Giới thiệu</span>
-          <h1>Smart-Parking là gì?</h1>
+          <span className="tag">Một hệ thống cho 4 vai trò</span>
+          <h1>Hệ thống quản lý bãi đỗ xe</h1>
           <p className="lead">
-            Smart-Parking hỗ trợ quản lý một bãi đỗ thông minh: tiếp nhận
-            xe, đối chiếu biển số, xác minh ô đỗ và theo dõi phiên gửi xe. Trải
-            nghiệm các vai trò trên cùng một hệ thống, từ khách hàng đến nhân
-            viên vận hành.
+            Smart-Parking kết nối đặt chỗ, tiếp nhận xe, đối chiếu biển số và
+            theo dõi phiên gửi xe cho khách hàng cùng đội vận hành.
           </p>
           <ul className="bullets">
             {highlights.map((h) => (
@@ -280,7 +278,7 @@ export default function Home() {
               id="cach-hoat-dong"
               className="btn btn--primary btn--lg"
             >
-              Xem cách thức hoạt động
+              Xem cách vận hành
             </AnchorLink>
             {session?.userProfile.role === "USER" ? (
               <Link to="/customer" className="btn btn--dark-outline btn--lg">
@@ -295,9 +293,6 @@ export default function Home() {
         </div>
         <div className="hero__art" data-scroll-reveal>
           <ParkingIllustration />
-          <p className="home-illustration-caption">
-            Minh họa 2D · Không phải dữ liệu camera trực tiếp
-          </p>
         </div>
       </section>
 
@@ -306,8 +301,8 @@ export default function Home() {
         <div className="container section" data-scroll-reveal>
           <SectionHead
             tag="Cách thức hoạt động"
-            title="Một quy trình, nhiều vai trò"
-            text="Khám phá hai góc nhìn trong hệ thống: người vận hành tại bãi và khách hàng trên website."
+            title="Quy trình cho từng vai trò"
+            text="Hai luồng công việc chính dành cho đội vận hành tại bãi và khách hàng đặt chỗ trên website."
           />
           <div className="grid-2">
             {methods.map((m) => (
@@ -340,7 +335,7 @@ export default function Home() {
 
       {/* ---------- Hệ thống ---------- */}
       <section id="he-thong" className="container section" data-scroll-reveal>
-        <SectionHead tag="Hệ thống" title="Các thành phần của Smart-Parking" />
+        <SectionHead tag="Hệ thống" title="Công cụ vận hành bãi đỗ" />
         <div className="grid-2">
           <article className="card card--dark home-interactive-card">
             <span className="icon-box icon-box--yellow">
@@ -442,7 +437,7 @@ export default function Home() {
         <section className="container cta-wrap" data-scroll-reveal>
           <div className="cta">
             <div>
-              <h2>Cùng khám phá cách hệ thống vận hành</h2>
+              <h2>Bắt đầu sử dụng Smart-Parking</h2>
               <p>
                 Đăng ký hoặc đăng nhập để xem phương tiện và theo dõi phiên gửi xe của bạn.
               </p>

@@ -5,9 +5,9 @@ import { Feedback, itemsOf } from "../components/WorkspaceUI.jsx";
 import "../operations.css";
 
 const SHIFT_CONFIGS = [
-  { code: "MORNING", label: "Ca sáng", time: "05:00 – 13:00", icon: "🌅" },
-  { code: "AFTERNOON", label: "Ca chiều", time: "13:00 – 21:00", icon: "☀️" },
-  { code: "NIGHT", label: "Ca đêm", time: "21:00 – 05:00", icon: "🌙" },
+  { code: "MORNING", label: "Ca sáng", time: "05:00 – 13:00", icon: "S" },
+  { code: "AFTERNOON", label: "Ca chiều", time: "13:00 – 21:00", icon: "C" },
+  { code: "NIGHT", label: "Ca đêm", time: "21:00 – 05:00", icon: "Đ" },
 ];
 
 const DUTY_LABELS = {

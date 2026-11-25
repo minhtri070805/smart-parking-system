@@ -78,27 +78,27 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
 
   return (
     <div className="ops-dashboard">
-      <div className="workspace-heading" style={{ marginBottom: 4 }}>
+      <header className="ops-overview-heading">
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 4px" }}>
-            📊 Tổng quan vận hành ca & tiền mặt
-          </h2>
-          <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>
-            Tổng hợp lịch ca và tình hình đối soát quỹ
-          </p>
+          <span className="ops-overview-heading__label">Vận hành hôm nay</span>
+          <h2>Ca trực và đối soát tiền mặt</h2>
+          <p>Lịch nhân sự và trạng thái quỹ tại bãi đang chọn.</p>
         </div>
-        <span className="ops-badge ops-badge--neutral" style={{ fontSize: 12, padding: "5px 12px" }}>
-          Hệ thống: {todayStr}
+        <span className="ops-badge ops-badge--neutral">
+          Dữ liệu ngày {todayStr}
         </span>
-      </div>
+      </header>
 
-      {loading && <p style={{ color: "#64748b", fontSize: 13, fontStyle: "italic" }}>Đang tải dữ liệu tổng quan...</p>}
+      {loading && <p className="ops-overview-loading">Đang tải dữ liệu tổng quan…</p>}
+      {error && <p className="workspace-error" role="alert">{error}</p>}
 
       <div className="ops-dashboard-grid">
-        {/* CARD 1: CA TRỰC */}
-        <div className="ops-dashboard-card">
+        <article className="ops-dashboard-card">
           <div className="ops-dashboard-card__header">
-            <h3>🗓️ Ca trực hôm nay</h3>
+            <div>
+              <span className="ops-dashboard-card__label">Lịch nhân sự</span>
+              <h3>Ca trực hôm nay</h3>
+            </div>
             <span className="ops-badge ops-badge--neutral">
               {todayShifts.length} ca trong ngày
             </span>
@@ -117,29 +117,17 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
 
           <div className="ops-dashboard-card__content">
             {todayShifts.length === 0 ? (
-              <p style={{ margin: 0, color: "#94a3b8", fontSize: 12 }}>Chưa có ca trực nào được tạo cho hôm nay.</p>
+              <p className="ops-dashboard-card__empty">Chưa có ca trực nào được tạo cho hôm nay.</p>
             ) : (
               todayShifts.map((s) => {
                 const badge = SHIFT_STATUS_MAP[s.status] || { label: s.status, color: "ops-badge--neutral" };
                 const count = s.assignments ? s.assignments.length : 0;
                 return (
-                  <div
-                    key={s.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "6px 8px",
-                      background: "#f8fafc",
-                      borderRadius: 6,
-                      fontSize: 12,
-                    }}
-                  >
-                    <span>
-                      <strong>{s.code === "MORNING" ? "Sáng" : s.code === "AFTERNOON" ? "Chiều" : "Đêm"}</strong>
-                      {" · "}
-                      <span style={{ color: "#64748b" }}>{count > 0 ? `${count} nhân viên` : "Chưa xếp"}</span>
-                    </span>
+                  <div className="ops-overview-row" key={s.id}>
+                    <div className="ops-overview-row__copy">
+                      <strong>{SHIFT_NAMES[s.code] || s.code}</strong>
+                      <span>{count > 0 ? `${count} nhân viên` : "Chưa xếp nhân viên"}</span>
+                    </div>
                     <span className={`ops-badge ${badge.color}`}>{badge.label}</span>
                   </div>
                 );
@@ -148,14 +136,16 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
           </div>
 
           <Link to={`/manager/shifts?lotId=${lotId}`} className="ops-dashboard-card__link">
-            Xem Timetable lịch tuần &rarr;
+            Xem lịch tuần <span aria-hidden="true">→</span>
           </Link>
-        </div>
+        </article>
 
-        {/* CARD 2: ĐỐI SOÁT QUỸ */}
-        <div className="ops-dashboard-card">
+        <article className="ops-dashboard-card">
           <div className="ops-dashboard-card__header">
-            <h3>⚖️ Đối soát quỹ tiền</h3>
+            <div>
+              <span className="ops-dashboard-card__label">Quỹ tiền mặt</span>
+              <h3>Đối soát cuối ca</h3>
+            </div>
             {pendingReconciliations.length > 0 ? (
               <span className="ops-badge ops-badge--warning">
                 {pendingReconciliations.length} chờ duyệt
@@ -172,27 +162,17 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
             </div>
             <div className="ops-stat-item">
               <span>Chờ duyệt</span>
-              <strong style={{ color: pendingReconciliations.length > 0 ? "#b45309" : "#166534" }}>
+              <strong className={pendingReconciliations.length > 0 ? "is-warning" : "is-success"}>
                 {pendingReconciliations.length}
               </strong>
             </div>
           </div>
 
           <div className="ops-dashboard-card__content">
-            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>PHIẾU GẦN NHẤT:</span>
+            <span className="ops-dashboard-card__label">Phiếu gần nhất</span>
             {latestRecon ? (
-              <div
-                style={{
-                  padding: "8px 10px",
-                  background: "#f8fafc",
-                  borderRadius: 6,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                  fontSize: 12,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div className="ops-reconciliation-summary">
+                <div className="ops-reconciliation-summary__head">
                   <span>
                     <strong>{latestRecon.shiftCode}</strong> · {latestRecon.businessDate}
                   </span>
@@ -200,26 +180,26 @@ export default function OperationsOverviewSummary({ lotId, revision }) {
                     {RECON_STATUS_MAP[latestRecon.status]?.label || latestRecon.status}
                   </span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#64748b" }}>
+                <div className="ops-reconciliation-summary__amounts">
                   <span>Thực đếm: {formatMoney(latestRecon.countedClosingCash)}</span>
                   <span>Dự kiến: {formatMoney(latestRecon.expectedClosingCash)}</span>
                 </div>
-                <div style={{ fontSize: 11, fontWeight: 600 }}>
+                <div className="ops-reconciliation-summary__variance">
                   Chênh lệch:{" "}
-                  <span style={{ color: Number(latestRecon.variance) === 0 ? "#166534" : "#dc2626" }}>
+                  <span className={Number(latestRecon.variance) === 0 ? "is-success" : "is-danger"}>
                     {formatMoney(latestRecon.variance)}
                   </span>
                 </div>
               </div>
             ) : (
-              <p style={{ margin: 0, color: "#94a3b8", fontSize: 12 }}>Chưa có phiếu đối soát nào.</p>
+              <p className="ops-dashboard-card__empty">Chưa có phiếu đối soát nào.</p>
             )}
           </div>
 
           <Link to={`/manager/reconciliation?lotId=${lotId}`} className="ops-dashboard-card__link">
-            Xem Sổ đối soát quỹ &rarr;
+            Xem sổ đối soát <span aria-hidden="true">→</span>
           </Link>
-        </div>
+        </article>
       </div>
     </div>
   );

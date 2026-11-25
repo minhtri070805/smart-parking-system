@@ -39,7 +39,7 @@ export default function App() {
   return (
     <div className={`app-frame ${workspace ? "app-frame--workspace" : authPage ? "app-frame--auth" : ""}`}>
       <Header workspace={workspace} />
-      <main>
+      <main id="main-content">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />

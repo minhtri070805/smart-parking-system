@@ -523,9 +523,9 @@ function Content() {
       <section className="staff-context-bar" aria-label="Bãi đang cấu hình"><div className="staff-context-select" style={{ flexWrap: "wrap", gap: "10px" }}><StaffIcon name="pin" size={23} />
         <label htmlFor="settings-lot">Bãi cần cấu hình<select id="settings-lot" disabled={busy || lotModalBusy} value={lot.id} onChange={e => select(e.target.value)}>{lots.data.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginLeft: "8px" }}>
-          <button type="button" className="btn btn--primary" style={{ whiteSpace: "nowrap" }} disabled={busy || lotModalBusy} onClick={openCreateLotModal}>+ Thêm bãi đỗ</button>
-          <button type="button" className="btn btn--outline" style={{ whiteSpace: "nowrap", background: "#fff" }} disabled={busy || lotModalBusy} onClick={openEditLotModal}>✎ Sửa bãi đỗ</button>
-          <button type="button" className="btn btn--outline" style={{ whiteSpace: "nowrap", background: "#fff", color: "#b91c1c" }} disabled={busy || lotModalBusy} onClick={handleDeleteLot}>🗑 Xóa bãi</button>
+          <button type="button" className="btn btn--primary" style={{ whiteSpace: "nowrap" }} disabled={busy || lotModalBusy} onClick={openCreateLotModal}>Thêm bãi đỗ</button>
+          <button type="button" className="btn btn--outline" style={{ whiteSpace: "nowrap", background: "#fff" }} disabled={busy || lotModalBusy} onClick={openEditLotModal}>Sửa bãi đỗ</button>
+          <button type="button" className="btn btn--outline" style={{ whiteSpace: "nowrap", background: "#fff", color: "#b91c1c" }} disabled={busy || lotModalBusy} onClick={handleDeleteLot}>Xóa bãi</button>
         </div>
       </div></section>
       <div className="staff-tabs" role="tablist" aria-label="Quản lý bãi xe">

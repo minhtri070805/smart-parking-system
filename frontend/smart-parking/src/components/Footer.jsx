@@ -8,14 +8,14 @@ export default function Footer() {
     <footer className="footer">
       <div className="container footer__inner">
         <Logo small />
-        <span>Dự án mô phỏng phục vụ học tập & trình diễn · OJT</span>
+        <span>Dự án mô phỏng phục vụ học tập và trình diễn OJT</span>
       </div>
       <div className="footer-resources">
         <div className="container">
           <div className="footer-resources__grid">
             <div className="footer-transparency">
-              <span className="footer-eyebrow">Trải nghiệm có thông tin</span>
-              <h2>Hiểu rõ trước khi bắt đầu.</h2>
+              <span className="footer-eyebrow">Thông tin dự án</span>
+              <h2>Điều kiện sử dụng Smart-Parking</h2>
               <p>Tìm hiểu điều kiện sử dụng, thông tin dữ liệu và cách liên hệ trước khi bắt đầu trải nghiệm.</p>
               <Link to="/thong-tin/chong-gia-mao">
                 Nhận biết yêu cầu giả mạo ↗
