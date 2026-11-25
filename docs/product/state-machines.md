@@ -177,7 +177,7 @@ Khoản thu thành công giữ nguyên lịch sử; hoàn tiền là bản ghi r
 
 ## SM-09 Quyền gửi cố định và thẻ đích
 
-**YÊU CẦU/ĐỀ XUẤT**, chưa có bảng/API gói/thẻ core. Quyền dịch vụ và thẻ vật lý có hai vòng đời.
+**MỘT PHẦN**, Core đã có `subscription_plans` và `parking_passes` với các trạng thái `PENDING`/`ACTIVE`/`SUSPENDED`; API mua hiện chỉ tạo `PENDING`. Chưa có kích hoạt qua Payment, tác vụ hiệu lực/hết hạn, thẻ hoặc kiểm tra barrier. Quyền dịch vụ và thẻ vật lý có hai vòng đời.
 
 ```mermaid
 stateDiagram-v2

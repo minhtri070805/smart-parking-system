@@ -71,3 +71,7 @@ ai-service/tracking/deep_sort/deep/checkpoint/*.pb
 
 # Local sprint requirement notes
 /ai-service/ReqInSprint.md
+
+# Local-only subscription flow runbook
+/docs/product/subscription-flow-runbook.md
+/docs/product/subscription-implementation-plan.md

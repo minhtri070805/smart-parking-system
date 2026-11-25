@@ -45,10 +45,10 @@ Bộ này có **42 use case SP-UC-001…SP-UC-042**; đây là mã bổ sung c�
 | SP-UC-030 | Tạo đặt trước khả năng tiếp nhận | Customer | Sprint 4; API có sớm | MỘT PHẦN: API booking có, UI/giữ thời gian/tiền chưa đủ |
 | SP-UC-031 | Hủy hoặc hết hạn đặt chỗ | Customer; nội bộ trong quyền; hệ thống hết hạn | Sprint 4 | MỘT PHẦN: cancel PENDING có; tự hết hạn/tiền chưa có |
 | SP-UC-032 | Nhận xe đã đặt trước | Staff cổng và Customer | Sprint 4 | MỘT PHẦN: check-in nhận PENDING theo bãi/biển số, thiếu khung giờ/tiền/mã vé đầy đủ |
-| SP-UC-033 | Đăng ký quyền gửi cố định | Customer | Sprint 5 | YÊU CẦU; chưa có schema/API |
+| SP-UC-033 | Đăng ký quyền gửi cố định | Customer | Sprint 5 | MỘT PHẦN: plan/pass Core và API đã có; bán tắt mặc định, chưa tích hợp Payment |
 | SP-UC-034 | Phát thẻ khu cố định lần đầu | Staff và Customer đã đăng ký | Sprint 5 | YÊU CẦU; chưa có dữ liệu cấp thẻ |
 | SP-UC-035 | Vào ra khu cố định bằng thẻ | Customer và Staff cổng/khu | Sprint 5 | YÊU CẦU; chưa có bridge thẻ/barrier/gói |
-| SP-UC-036 | Gia hạn hoặc thay đổi xe của quyền cố định | Customer và người duyệt theo quyền | Sprint 5 | YÊU CẦU; chưa có API/schema |
+| SP-UC-036 | Gia hạn hoặc thay đổi xe của quyền cố định | Customer và người duyệt theo quyền | Sprint 5 | MỘT PHẦN: chưa có API gia hạn/đổi xe hoặc lịch sử yêu cầu |
 | SP-UC-037 | Báo ô cố định bị chiếm | Customer có quyền ô | Phần khu cố định, chi tiết SP-DEC-18 | YÊU CẦU; chưa có API/schema |
 | SP-UC-038 | Xác minh và xử lý report chiếm ô | Staff/Manager trong quyền; người duyệt phạt theo chính sách | Phần khu cố định | YÊU CẦU; chưa có API/schema |
 | SP-UC-039 | Yêu cầu và xác nhận hoàn tiền | Customer yêu cầu; người có quyền duyệt | SRS dài hạn, cần chốt | YÊU CẦU; chưa có API/schema |
@@ -760,8 +760,8 @@ Bộ này có **42 use case SP-UC-001…SP-UC-042**; đây là mã bổ sung c�
 
 - **Tác nhân:** Customer.
 - **Phân kỳ:** Sprint 5.
-- **Hiện trạng:** YÊU CẦU; chưa có schema/API.
-- **API:** ĐỀ XUẤT: parking-passes; plan và quyền ô. Tra quyền/DTO ở [04 Endpoints](../api/endpoints.md).
+- **Hiện trạng:** MỘT PHẦN; schema plan/pass và Core API đã có. `Subscriptions:Enabled` mặc định false, được bật trong `appsettings.Development.json` để thử; pass mới luôn PENDING.
+- **API:** `GET /api/v1/subscription-plans`; Admin `POST /api/v1/subscription-plans` và `POST /api/v1/subscription-plans/{id}/approve`; Customer `POST /api/v1/parking-passes`, `GET /api/v1/parking-passes/my`, `GET /api/v1/parking-passes/{id}`. Tra hợp đồng ở [04 Endpoints](../api/endpoints.md).
 - **Dữ liệu:** Khu/ô, xe, gói/quyền kỳ, tiền/duyệt đề xuất.
 - **Tiền điều kiện:** Tài khoản/xe xác minh, có khu/ô và kỳ/chính sách được chốt.
 - **Nguồn yêu cầu:** FR-PASS-01/02/03; nghiệp vụ khu cố định.
@@ -772,11 +772,11 @@ Bộ này có **42 use case SP-UC-001…SP-UC-042**; đây là mã bổ sung c�
 1. Chọn bãi/khu/ô cố định và kỳ được bán.
 2. Kiểm tra xung đột quyền, xe và giá.
 3. Thanh toán online hoặc gửi chứng từ trực tiếp theo quy trình.
-4. Kích hoạt/chờ hiệu lực sau đủ điều kiện.
+4. Hiện tại pass được lưu PENDING; chưa có luồng thanh toán/clearance để kích hoạt.
 
 **Ngoại lệ:** Staff ghi chứng từ tiền gói không tự thành người duyệt khi chưa được cấp; không tự coi mọi gói năm/tuần đã duyệt.
 
-**Hậu điều kiện và điểm nghiệm thu:** Có quyền ô/xe/kỳ truy vết; chưa có xe vật lý chỉ vì đăng ký thành công.
+**Hậu điều kiện và điểm nghiệm thu:** Có pass PENDING với snapshot giá/version; không cấp quyền truy cập chỉ vì đăng ký thành công.
 
 ## SP-UC-034 Phát thẻ khu cố định lần đầu
 

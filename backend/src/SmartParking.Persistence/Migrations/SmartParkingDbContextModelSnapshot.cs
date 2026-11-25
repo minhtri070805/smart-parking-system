@@ -444,6 +444,120 @@ namespace SmartParking.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SmartParking.Domain.Entities.ParkingPass", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<DateTime>("EndsAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at_utc");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<int>("LotId")
+                        .HasColumnType("integer")
+                        .HasColumnName("lot_id");
+
+                    b.Property<long>("OwnerUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<Guid?>("PaymentInvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_invoice_id");
+
+                    b.Property<long>("PlanId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("plan_id");
+
+                    b.Property<int>("PlanVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("plan_version");
+
+                    b.Property<decimal>("PriceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("price_amount");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("revision");
+
+                    b.Property<long?>("SlotId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("slot_id");
+
+                    b.Property<DateTime>("StartsAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at_utc");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<long>("VehicleId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("vehicle_id");
+
+                    b.Property<int>("ZoneId")
+                        .HasColumnType("integer")
+                        .HasColumnName("zone_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlanId");
+
+                    b.HasIndex("SlotId")
+                        .IsUnique()
+                        .HasFilter("slot_id IS NOT NULL AND status IN ('PENDING','SCHEDULED','ACTIVE')");
+
+                    b.HasIndex("OwnerUserId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("VehicleId", "ZoneId")
+                        .IsUnique()
+                        .HasFilter("status IN ('PENDING','SCHEDULED','ACTIVE')");
+
+                    b.ToTable("parking_passes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_parking_passes_dates", "ends_at_utc > starts_at_utc");
+
+                            t.HasCheckConstraint("ck_parking_passes_price", "price_amount >= 0");
+
+                            t.HasCheckConstraint("ck_parking_passes_status", "status IN ('PENDING','SCHEDULED','ACTIVE','EXPIRED','SUSPENDED','CANCELLED')");
+                        });
+                });
+
             modelBuilder.Entity("SmartParking.Domain.Entities.ParkingPolicy", b =>
                 {
                     b.Property<long>("Id")
@@ -1266,6 +1380,113 @@ namespace SmartParking.Persistence.Migrations
                     b.ToTable("stored_images", (string)null);
                 });
 
+            modelBuilder.Entity("SmartParking.Domain.Entities.SubscriptionPlan", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("ApprovedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at_utc");
+
+                    b.Property<long?>("ApprovedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<long>("CreatedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<DateTime>("EffectiveFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from_utc");
+
+                    b.Property<DateTime?>("EffectiveToUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_to_utc");
+
+                    b.Property<int>("LotId")
+                        .HasColumnType("integer")
+                        .HasColumnName("lot_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("PriceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("price_amount");
+
+                    b.Property<long?>("SlotId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("slot_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<int>("TermMonths")
+                        .HasColumnType("integer")
+                        .HasColumnName("term_months");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.Property<int>("ZoneId")
+                        .HasColumnType("integer")
+                        .HasColumnName("zone_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LotId");
+
+                    b.HasIndex("SlotId");
+
+                    b.HasIndex("ZoneId");
+
+                    b.HasIndex("Code", "Version")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "LotId", "ZoneId", "EffectiveFromUtc");
+
+                    b.ToTable("subscription_plans", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_subscription_plans_price", "price_amount >= 0");
+
+                            t.HasCheckConstraint("ck_subscription_plans_status", "status IN ('DRAFT','APPROVED','RETIRED')");
+
+                            t.HasCheckConstraint("ck_subscription_plans_term", "term_months > 0");
+                        });
+                });
+
             modelBuilder.Entity("SmartParking.Domain.Entities.User", b =>
                 {
                     b.Property<long>("Id")
@@ -1661,6 +1882,33 @@ namespace SmartParking.Persistence.Migrations
                     b.Navigation("Zone");
                 });
 
+            modelBuilder.Entity("SmartParking.Domain.Entities.ParkingPass", b =>
+                {
+                    b.HasOne("SmartParking.Domain.Entities.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmartParking.Domain.Entities.SubscriptionPlan", "Plan")
+                        .WithMany()
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmartParking.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("Plan");
+
+                    b.Navigation("Vehicle");
+                });
+
             modelBuilder.Entity("SmartParking.Domain.Entities.ParkingPolicy", b =>
                 {
                     b.HasOne("SmartParking.Domain.Entities.ParkingLot", null)
@@ -1876,6 +2124,32 @@ namespace SmartParking.Persistence.Migrations
                         .HasConstraintName("fk_stored_images_user");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SmartParking.Domain.Entities.SubscriptionPlan", b =>
+                {
+                    b.HasOne("SmartParking.Domain.Entities.ParkingLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmartParking.Domain.Entities.ParkingSlot", "Slot")
+                        .WithMany()
+                        .HasForeignKey("SlotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SmartParking.Domain.Entities.ParkingZone", "Zone")
+                        .WithMany()
+                        .HasForeignKey("ZoneId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Lot");
+
+                    b.Navigation("Slot");
+
+                    b.Navigation("Zone");
                 });
 
             modelBuilder.Entity("SmartParking.Domain.Entities.User", b =>
