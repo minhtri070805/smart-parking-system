@@ -56,6 +56,8 @@ export default function Header({ workspace = false }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountDetails, setAccountDetails] = useState(null);
+  const [accountAssignedLots, setAccountAssignedLots] = useState([]);
+  const [accountLotsLoading, setAccountLotsLoading] = useState(false);
   const [accountLoading, setAccountLoading] = useState(false);
   const [accountSaving, setAccountSaving] = useState(false);
   const [accountError, setAccountError] = useState("");
@@ -131,6 +133,27 @@ export default function Header({ workspace = false }) {
     };
   }, [accountModalOpen, session]);
 
+  useEffect(() => {
+    if (!accountModalOpen || !["MANAGER", "STAFF"].includes(role)) {
+      setAccountAssignedLots([]);
+      setAccountLotsLoading(false);
+      return undefined;
+    }
+    const controller = new AbortController();
+    setAccountLotsLoading(true);
+    staffApi.assignedLots(controller.signal)
+      .then((lots) => {
+        if (!controller.signal.aborted) setAccountAssignedLots(Array.isArray(lots) ? lots : []);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setAccountAssignedLots([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAccountLotsLoading(false);
+      });
+    return () => controller.abort();
+  }, [accountModalOpen, role, userId]);
+
   async function saveAccountProfile(event) {
     event.preventDefault();
     if (!canEditProfile) return;
@@ -186,6 +209,10 @@ export default function Header({ workspace = false }) {
     ? [["/parking", "3D"], ...(staffDuties === null ? [] : staffNavigationFor(staffDuties))]
     : roleNavigation[role] || [];
   const roleLabel = { ADMIN: "Quản trị viên", MANAGER: "Quản lý bãi", STAFF: "Nhân viên", USER: "Khách hàng" }[role] || "Khách tham quan";
+  const assignedLotNames = [...new Set(accountAssignedLots.map((lot) => lot.lotName || lot.name).filter(Boolean))];
+  const assignedLotLabel = accountLotsLoading
+    ? "Đang tải…"
+    : assignedLotNames.length ? assignedLotNames.join(", ") : "Chưa được phân công";
   const activePage = pathname === "/parking" ? "Bãi đỗ 3D" : navItems.find(([target]) => navIsActive(target, pathname, search))?.[1] || (pathname.startsWith("/parking") ? "Bãi đỗ 3D" : "Khu vực làm việc");
   async function logout() {
     setBusy(true);
@@ -360,6 +387,10 @@ export default function Header({ workspace = false }) {
                     <dt>Chức vụ</dt>
                     <dd>{roleLabel}</dd>
                   </div>
+                  {role === "MANAGER" && <div>
+                    <dt>Bãi phụ trách</dt>
+                    <dd>{assignedLotLabel}</dd>
+                  </div>}
                 </dl>
                 <div className="header__account-fields">
                   <label className="header__account-field">
@@ -442,6 +473,10 @@ export default function Header({ workspace = false }) {
                     <dt>Chức vụ</dt>
                     <dd>{roleLabel}</dd>
                   </div>
+                  {role === "STAFF" && <div>
+                    <dt>Bãi làm việc</dt>
+                    <dd>{assignedLotLabel}</dd>
+                  </div>}
                   <div>
                     <dt>Email</dt>
                     <dd>{accountDetails?.email || session.userProfile.email || "Chưa cập nhật"}</dd>

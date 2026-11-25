@@ -18,6 +18,15 @@ public class ParkingLotDto
     public DateTime UpdatedAt { get; set; }
     public int PhysicalSlotsCount { get; set; }
     public int ConfiguredCapacity { get; set; }
+    public CreatedManagerAccountDto? ManagerAccount { get; set; }
+}
+
+public class CreatedManagerAccountDto
+{
+    public string Username { get; set; } = null!;
+    public string Email { get; set; } = null!;
+    public string InitialPassword { get; set; } = null!;
+    public string FullName { get; set; } = null!;
 }
 
 public class ParkingLotDetailDto : ParkingLotDto
