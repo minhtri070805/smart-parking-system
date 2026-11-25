@@ -12,6 +12,7 @@ public class AdminUserFilterDto
     public bool InternalOnly { get; set; }
     public bool? IsActive { get; set; }
     public string? ApprovalStatus { get; set; }
+    public int? LotId { get; set; }
 }
 
 public class AdminUserSummaryDto
@@ -27,6 +28,7 @@ public class AdminUserSummaryDto
     public string ApprovalStatus { get; set; } = null!;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public string? AssignedLotName { get; set; }
 }
 
 public class AdminUserDetailDto : AdminUserSummaryDto
@@ -68,6 +70,8 @@ public class AdminCreateUserRequestDto
 
     [Required(ErrorMessage = "Vai trò không được để trống")]
     public string Role { get; set; } = null!;
+
+    public int? LotId { get; set; }
 
     public bool IsActive { get; set; } = true;
 }

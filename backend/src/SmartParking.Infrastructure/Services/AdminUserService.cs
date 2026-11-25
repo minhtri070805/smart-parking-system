@@ -48,6 +48,11 @@ public class AdminUserService : IAdminUserService
             query = query.Where(u => u.Role.Code == Roles.Staff || u.Role.Code == Roles.Manager || u.Role.Code == Roles.Admin);
         }
 
+        if (filter.LotId.HasValue)
+        {
+            query = query.Where(u => u.StaffLotAssignments.Any(a => a.IsActive && a.LotId == filter.LotId.Value));
+        }
+
         // 1. Search by username, email or full name
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
@@ -100,7 +105,9 @@ public class AdminUserService : IAdminUserService
                 IsEmailVerified = u.IsEmailVerified,
                 ApprovalStatus = u.ApprovalStatus,
                 CreatedAt = u.CreatedAt,
-                UpdatedAt = u.UpdatedAt
+                UpdatedAt = u.UpdatedAt,
+                AssignedLotName = u.StaffLotAssignments.Where(a => a.IsActive)
+                    .OrderBy(a => a.Lot.Name).Select(a => a.Lot.Name).FirstOrDefault()
             })
             .ToListAsync(ct);
 
@@ -162,6 +169,29 @@ public class AdminUserService : IAdminUserService
             return (false, 400, $"Không tìm thấy vai trò '{targetRoleCode}' trong cơ sở dữ liệu.", null);
         }
 
+        ParkingLot? assignedLot = null;
+        ParkingFloor? defaultStaffFloor = null;
+        if (request.LotId.HasValue)
+        {
+            assignedLot = await _context.ParkingLots.FirstOrDefaultAsync(l => l.Id == request.LotId.Value && l.IsActive, ct);
+            if (assignedLot == null)
+                return (false, 400, "Bãi được chọn không tồn tại hoặc đang ngừng hoạt động.", null);
+
+            if (targetRoleCode == Roles.Manager && await _context.StaffLotAssignments.AnyAsync(a =>
+                    a.LotId == assignedLot.Id && a.IsActive && a.User.Role.Code == Roles.Manager, ct))
+                return (false, 409, "Bãi này đã có Manager phụ trách.", null);
+
+            if (targetRoleCode == Roles.Staff)
+            {
+                defaultStaffFloor = await _context.ParkingFloors
+                    .Where(f => f.LotId == assignedLot.Id && f.IsActive)
+                    .OrderBy(f => f.FloorNumber).ThenBy(f => f.Id)
+                    .FirstOrDefaultAsync(ct);
+                if (defaultStaffFloor == null)
+                    return (false, 400, "Bãi này chưa có tầng hoạt động để phân công Staff.", null);
+            }
+        }
+
         var normalizedUsername = request.Username.Trim().ToLowerInvariant();
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
 
@@ -204,8 +234,40 @@ public class AdminUserService : IAdminUserService
         await using var transaction = await _context.BeginTransactionAsync(ct);
         try
         {
+            if (assignedLot != null && targetRoleCode == Roles.Manager)
+            {
+                if (_context.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+                    await _context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(990099);", ct);
+
+                if (await _context.StaffLotAssignments.AnyAsync(a => a.LotId == assignedLot.Id && a.IsActive &&
+                        a.User.Role.Code == Roles.Manager, ct))
+                {
+                    await transaction.RollbackAsync(ct);
+                    return (false, 409, "Bãi này đã có Manager phụ trách.", null);
+                }
+            }
+
             _context.Users.Add(user);
             await _context.SaveChangesAsync(ct);
+
+            if (assignedLot != null)
+            {
+                var assignment = new StaffLotAssignment
+                {
+                    UserId = user.Id,
+                    LotId = assignedLot.Id,
+                    FloorId = defaultStaffFloor?.Id,
+                    AssignedBy = actorId,
+                    Duty = targetRoleCode == Roles.Manager ? StaffDuties.Gate : StaffDuties.GateIn,
+                    Notes = targetRoleCode == Roles.Manager ? "Manager phụ trách bãi" : "Staff thuộc bãi; Manager phân công ca sau",
+                    AssignedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+                _context.StaffLotAssignments.Add(assignment);
+                await _context.SaveChangesAsync(ct);
+            }
 
             var audit = new AuditLog
             {
@@ -218,6 +280,8 @@ public class AdminUserService : IAdminUserService
                     user.Username,
                     user.Email,
                     Role = role.Code,
+                    AssignedParkingLotId = assignedLot?.Id,
+                    AssignedParkingLotName = assignedLot?.Name,
                     user.IsActive,
                     user.ApprovalStatus,
                     CreatedBy = actorUsername,
@@ -234,7 +298,7 @@ public class AdminUserService : IAdminUserService
 
             _logger.LogInformation("Admin ID {AdminId} created user {UserId} ({Username}) with role {Role}", actorId, user.Id, user.Username, role.Code);
 
-            var detail = MapToDetailDto(user, [], 0, actorUsername);
+            var detail = await GetUserByIdAsync(user.Id, ct) ?? MapToDetailDto(user, [], 0, actorUsername);
             return (true, 201, "Tạo tài khoản người dùng thành công.", detail);
         }
         catch (DbUpdateException ex)
@@ -623,6 +687,7 @@ public class AdminUserService : IAdminUserService
             FailedLoginAttempts = user.FailedLoginAttempts,
             LockoutEndAt = user.LockoutEndAt,
             ActiveAssignmentsCount = activeAssignments.Count,
+            AssignedLotName = activeAssignments.OrderBy(a => a.LotName).Select(a => a.LotName).FirstOrDefault(),
             VehiclesCount = vehiclesCount,
             ActiveAssignments = activeAssignments,
             CreatedAt = user.CreatedAt,
