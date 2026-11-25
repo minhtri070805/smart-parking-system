@@ -80,6 +80,8 @@ public class StaffAssignmentFilterDto
     public int? LotId { get; set; }
     public long? UserId { get; set; }
     public bool? IsActive { get; set; }
+    [RegularExpression("^(STAFF|MANAGER)$", ErrorMessage = "Vai trò lọc phải là STAFF hoặc MANAGER.")]
+    public string? Role { get; set; }
 
     [Range(1, int.MaxValue, ErrorMessage = "Số trang phải lớn hơn hoặc bằng 1.")]
     public int Page { get; set; } = 1;

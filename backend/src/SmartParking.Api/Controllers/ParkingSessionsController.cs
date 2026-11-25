@@ -14,11 +14,16 @@ namespace SmartParking.Api.Controllers;
 public class ParkingSessionsController : ControllerBase
 {
     private readonly IParkingSessionService _sessionService;
+    private readonly IStaffLotAssignmentService _assignmentService;
     private readonly ILogger<ParkingSessionsController> _logger;
 
-    public ParkingSessionsController(IParkingSessionService sessionService, ILogger<ParkingSessionsController> logger)
+    public ParkingSessionsController(
+        IParkingSessionService sessionService,
+        IStaffLotAssignmentService assignmentService,
+        ILogger<ParkingSessionsController> logger)
     {
         _sessionService = sessionService;
+        _assignmentService = assignmentService;
         _logger = logger;
     }
 
@@ -266,23 +271,17 @@ public class ParkingSessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Báo cáo lưu lượng và doanh thu tháng. Manager chỉ được xem đúng bãi được phân công.
+    /// Báo cáo lưu lượng và doanh thu tháng.
+    /// Manager chỉ được xem các bãi được phân công quản lý.
     /// </summary>
     [HttpGet("monthly-stats")]
-    [Authorize(Roles = $"{Roles.Admin},{Roles.Manager}")]
+    [Authorize(Roles = Roles.Manager)]
     [ProducesResponseType(typeof(MonthlyTrafficStatsDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMonthlyStats([FromQuery] int? year, [FromQuery] int? month, [FromQuery] int? lotId, CancellationToken ct)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value;
-        if (role == Roles.Manager)
-        {
-            if (!lotId.HasValue)
-                return BadRequest(new { message = "Manager cần chỉ định bãi đang quản lý." });
-            var userId = GetCurrentUserId();
-            if (!userId.HasValue || !await HttpContext.RequestServices.GetRequiredService<IParkingAuthorizationService>()
-                    .HasLotAccessAsync(userId.Value, role, lotId.Value, ct))
-                return Forbid();
-        }
+        var userId = GetCurrentUserId();
+        if (!userId.HasValue) return Unauthorized();
 
         var now = DateTime.UtcNow.AddHours(7);
         var y = year ?? now.Year;
@@ -292,7 +291,53 @@ public class ParkingSessionsController : ControllerBase
             return BadRequest(new { message = "Năm hoặc tháng không hợp lệ." });
         }
 
-        return Ok(await _sessionService.GetMonthlyTrafficStatsAsync(y, m, lotId, ct));
+        IReadOnlyList<int>? allowedLotIds = null;
+        if (role == Roles.Manager)
+        {
+            var myLots = await _assignmentService.GetMyAssignedLotsAsync(userId.Value, ct);
+            var myLotIds = myLots.Select(l => l.LotId).Distinct().ToList();
+
+            if (lotId.HasValue)
+            {
+                if (!myLotIds.Contains(lotId.Value))
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, new { message = "Bạn không có quyền quản lý bãi xe này." });
+                }
+            }
+            else
+            {
+                if (myLotIds.Count == 0)
+                {
+                    var daysInMonth = DateTime.DaysInMonth(y, m);
+                    return Ok(new
+                    {
+                        message = "Thống kê doanh thu và lưu lượng tháng thành công.",
+                        data = new MonthlyTrafficStatsDto
+                        {
+                            Year = y,
+                            Month = m,
+                            LotId = null,
+                            TotalCheckIns = 0,
+                            TotalCheckOuts = 0,
+                            TotalRevenue = 0,
+                            Days = Enumerable.Range(1, daysInMonth)
+                                .Select(d => new DailyTrafficDto { Date = new DateTime(y, m, d).ToString("yyyy-MM-dd") })
+                                .ToList(),
+                            CheckInsByHour = new int[24],
+                            RecentTransactions = []
+                        }
+                    });
+                }
+                allowedLotIds = myLotIds;
+            }
+        }
+
+        var data = await _sessionService.GetMonthlyTrafficStatsAsync(y, m, lotId, allowedLotIds, ct);
+        return Ok(new
+        {
+            message = "Thống kê doanh thu và lưu lượng tháng thành công.",
+            data
+        });
     }
 
     /// <summary>
