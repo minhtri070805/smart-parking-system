@@ -71,3 +71,6 @@ ai-service/tracking/deep_sort/deep/checkpoint/*.pb
 
 # Local sprint requirement notes
 /ai-service/ReqInSprint.md
+
+# Local macOS demo launcher
+/start-all.command
