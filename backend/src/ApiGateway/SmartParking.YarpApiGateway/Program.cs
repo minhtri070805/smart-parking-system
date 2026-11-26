@@ -10,6 +10,16 @@ builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/internal/subscription-payments"))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    await next();
+});
+
 app.MapHealthChecks("/gateway/health");
 app.MapReverseProxy();
 

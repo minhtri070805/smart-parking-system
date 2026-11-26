@@ -84,6 +84,15 @@ public static class RecognitionEndpoints
             return result is null ? Results.NotFound() : Results.Ok(result);
         });
 
+        group.MapPost("/{id:long}/link", async (long id, long sessionId, string? ticketId, IStaffDetectionService service, CancellationToken ct) =>
+        {
+            if (id <= 0 || sessionId <= 0)
+                return Results.BadRequest(new { message = "Valid recognition ID and session ID are required." });
+
+            var result = await service.LinkToSessionAsync(id, sessionId, ticketId, ct);
+            return result is null ? Results.NotFound() : Results.Ok(result);
+        });
+
         return group;
     }
 }

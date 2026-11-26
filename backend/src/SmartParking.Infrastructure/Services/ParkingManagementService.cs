@@ -22,11 +22,13 @@ public class ParkingManagementService : IParkingManagementService
 
     private readonly IApplicationDbContext _context;
     private readonly ILogger<ParkingManagementService> _logger;
+    private readonly IPasswordHasherService _passwordHasher;
 
-    public ParkingManagementService(IApplicationDbContext context, ILogger<ParkingManagementService> logger)
+    public ParkingManagementService(IApplicationDbContext context, ILogger<ParkingManagementService> logger, IPasswordHasherService? passwordHasher = null)
     {
         _context = context;
         _logger = logger;
+        _passwordHasher = passwordHasher ?? new PasswordHasherService();
     }
 
     #region Parking Lots
@@ -61,6 +63,8 @@ public class ParkingManagementService : IParkingManagementService
                 Id = l.Id,
                 Name = l.Name,
                 Address = l.Address,
+                Latitude = l.Latitude,
+                Longitude = l.Longitude,
                 TotalCapacity = l.Floors.Where(f => f.IsActive).SelectMany(f => f.Slots)
                     .Count(s => s.IsActive && s.PhysicalStatus != SlotPhysicalStatuses.Maintenance &&
                         s.PhysicalStatus != SlotPhysicalStatuses.Unavailable),
@@ -91,6 +95,8 @@ public class ParkingManagementService : IParkingManagementService
                 Id = l.Id,
                 Name = l.Name,
                 Address = l.Address,
+                Latitude = l.Latitude,
+                Longitude = l.Longitude,
                 TotalCapacity = l.Floors.Where(f => f.IsActive).SelectMany(f => f.Slots)
                     .Count(s => s.IsActive && s.PhysicalStatus != SlotPhysicalStatuses.Maintenance &&
                         s.PhysicalStatus != SlotPhysicalStatuses.Unavailable),
@@ -121,6 +127,11 @@ public class ParkingManagementService : IParkingManagementService
 
     public async Task<(bool Success, string Message, ParkingLotDto? Lot)> CreateLotAsync(CreateParkingLotRequestDto request, long? actorId, CancellationToken ct = default)
     {
+        if (request.Latitude.HasValue != request.Longitude.HasValue)
+        {
+            return (false, "Vui lòng nhập cả vĩ độ và kinh độ, hoặc để trống cả hai.", null);
+        }
+
         var trimmedName = request.Name.Trim();
         var exists = await _context.ParkingLots
             .AnyAsync(l => l.Name.ToLower() == trimmedName.ToLower(), ct);
@@ -130,10 +141,28 @@ public class ParkingManagementService : IParkingManagementService
             return (false, "Tên bãi đỗ xe đã tồn tại trên hệ thống.", null);
         }
 
+        if (actorId is null)
+        {
+            return (false, "Không xác định được quản trị viên tạo bãi.", null);
+        }
+
+        var managerRole = await _context.Roles.FirstOrDefaultAsync(r => r.Code == Roles.Manager, ct);
+        if (managerRole is null)
+        {
+            return (false, "Không tìm thấy vai trò Manager trong hệ thống.", null);
+        }
+
+        await using var transaction = _context.Database.IsRelational()
+            ? await _context.BeginTransactionAsync(ct)
+            : null;
+        try
+        {
         var lot = new ParkingLot
         {
             Name = trimmedName,
             Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim(),
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
             TotalCapacity = request.TotalCapacity,
             IsActive = request.IsActive,
             CreatedAt = DateTime.UtcNow,
@@ -143,14 +172,66 @@ public class ParkingManagementService : IParkingManagementService
         _context.ParkingLots.Add(lot);
         await _context.SaveChangesAsync(ct);
 
+        var managerUsername = $"manager_lot_{lot.Id}";
+        var managerEmail = $"manager.lot{lot.Id}@smartparking.test";
+        var shortLotName = trimmedName;
+        foreach (var prefix in new[] { "Bãi đỗ xe ", "Bãi xe ", "Bãi đỗ " })
+        {
+            if (shortLotName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                shortLotName = shortLotName[prefix.Length..].Trim();
+                break;
+            }
+        }
+        var managerName = $"QL {shortLotName}";
+        if (managerName.Length > 100) managerName = managerName[..100];
+        var manager = new User
+        {
+            Username = managerUsername,
+            Email = managerEmail,
+            RoleId = managerRole.Id,
+            Role = managerRole,
+            FullName = managerName,
+            IsActive = true,
+            IsEmailVerified = true,
+            ApprovalStatus = ApprovalStatuses.Approved,
+            ApprovedBy = actorId.Value,
+            ApprovedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        manager.PasswordHash = _passwordHasher.HashPassword(manager, "Test123@");
+        _context.Users.Add(manager);
+        await _context.SaveChangesAsync(ct);
+
+        _context.StaffLotAssignments.Add(new StaffLotAssignment
+        {
+            UserId = manager.Id,
+            LotId = lot.Id,
+            AssignedBy = actorId.Value,
+            Duty = StaffDuties.Gate,
+            Notes = "Manager tự tạo cùng bãi đỗ",
+            AssignedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+        await _context.SaveChangesAsync(ct);
+
         await LogAuditAsync(actorId, "CREATE_PARKING_LOT", "parking_lots", lot.Id.ToString(), null,
-            JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.TotalCapacity, lot.IsActive }), null, ct);
+            JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.Latitude, lot.Longitude, lot.TotalCapacity, lot.IsActive }), null, ct);
+        await LogAuditAsync(actorId, "CREATE_USER", "users", manager.Id.ToString(), null,
+            JsonSerializer.Serialize(new { manager.Username, manager.Email, Role = Roles.Manager, ParkingLotId = lot.Id }), null, ct);
+        await LogAuditAsync(actorId, "ASSIGN_STAFF_LOT", "staff_lot_assignments", manager.Id.ToString(), null,
+            JsonSerializer.Serialize(new { UserId = manager.Id, LotId = lot.Id, Duty = StaffDuties.Gate }), null, ct);
 
         var dto = new ParkingLotDto
         {
             Id = lot.Id,
             Name = lot.Name,
             Address = lot.Address,
+            Latitude = lot.Latitude,
+            Longitude = lot.Longitude,
             TotalCapacity = 0,
             TotalFloors = 0,
             AvailableSlotsCount = 0,
@@ -159,15 +240,34 @@ public class ParkingManagementService : IParkingManagementService
             CreatedAt = lot.CreatedAt,
             UpdatedAt = lot.UpdatedAt,
             PhysicalSlotsCount = 0,
-            ConfiguredCapacity = lot.TotalCapacity
+            ConfiguredCapacity = lot.TotalCapacity,
+            ManagerAccount = new CreatedManagerAccountDto
+            {
+                Username = manager.Username,
+                Email = manager.Email,
+                InitialPassword = "Test123@",
+                FullName = manager.FullName
+            }
         };
 
+        if (transaction is not null) await transaction.CommitAsync(ct);
         _logger.LogInformation("ParkingLot created successfully with ID {LotId} by Actor {ActorId}", lot.Id, actorId);
         return (true, "Tạo bãi đỗ xe thành công.", dto);
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(ct);
+            throw;
+        }
     }
 
     public async Task<(bool Success, string Message, ParkingLotDto? Lot)> UpdateLotAsync(int id, UpdateParkingLotRequestDto request, long? actorId, CancellationToken ct = default)
     {
+        if (request.Latitude.HasValue != request.Longitude.HasValue)
+        {
+            return (false, "Vui lòng nhập cả vĩ độ và kinh độ, hoặc để trống cả hai.", null);
+        }
+
         var lot = await _context.ParkingLots
             .Include(l => l.Floors)
                 .ThenInclude(f => f.Slots)
@@ -188,17 +288,19 @@ public class ParkingManagementService : IParkingManagementService
             return (false, "Tên bãi đỗ xe đã trùng với một bãi đỗ khác.", null);
         }
 
-        var oldValues = JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.TotalCapacity, lot.IsActive });
+        var oldValues = JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.Latitude, lot.Longitude, lot.TotalCapacity, lot.IsActive });
 
         lot.Name = trimmedName;
         lot.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
+        lot.Latitude = request.Latitude;
+        lot.Longitude = request.Longitude;
         lot.TotalCapacity = request.TotalCapacity;
         lot.IsActive = request.IsActive;
         lot.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync(ct);
 
-        var newValues = JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.TotalCapacity, lot.IsActive });
+        var newValues = JsonSerializer.Serialize(new { lot.Name, lot.Address, lot.Latitude, lot.Longitude, lot.TotalCapacity, lot.IsActive });
         await LogAuditAsync(actorId, "UPDATE_PARKING_LOT", "parking_lots", lot.Id.ToString(), oldValues, newValues, null, ct);
 
         var allSlots = lot.Floors.SelectMany(f => f.Slots).ToList();
@@ -216,6 +318,8 @@ public class ParkingManagementService : IParkingManagementService
             Id = lot.Id,
             Name = lot.Name,
             Address = lot.Address,
+            Latitude = lot.Latitude,
+            Longitude = lot.Longitude,
             TotalCapacity = totalCapacity,
             TotalFloors = lot.Floors.Count,
             AvailableSlotsCount = availableSlotsCount,
@@ -609,28 +713,9 @@ public class ParkingManagementService : IParkingManagementService
             return (false, $"Tên tầng '{trimmedName}' đã trùng với tầng khác trong cùng bãi.", null);
         }
 
-        // Safety Guard: Cannot deactivate floor when active sessions or dispatches exist on its slots
-        if (!request.IsActive && floor.IsActive)
-        {
-            var floorSlotIds = floor.Slots.Select(s => s.Id).ToList();
-            if (floorSlotIds.Any())
-            {
-                var hasActiveSession = await _context.ParkingSessions
-                    .AnyAsync(s => s.CurrentSlotId != null && floorSlotIds.Contains(s.CurrentSlotId.Value) &&
-                                   (s.Status == SessionStatuses.Active || s.Status == SessionStatuses.Paid), ct);
-                if (hasActiveSession)
-                {
-                    return (false, "Không thể vô hiệu hóa tầng khi đang có xe đỗ tại các ô thuộc tầng này.", null);
-                }
-
-                var hasActiveDispatch = await _context.ParkingDispatches
-                    .AnyAsync(d => floorSlotIds.Contains(d.AssignedSlotId) && d.Status == DispatchStatuses.Assigned, ct);
-                if (hasActiveDispatch)
-                {
-                    return (false, "Không thể vô hiệu hóa tầng khi đang có lệnh điều phối xe tới các ô thuộc tầng này.", null);
-                }
-            }
-        }
+        // Khi ngừng hoạt động tầng (!request.IsActive), cho phép thực hiện ngay cả khi đang có xe đỗ.
+        // Các xe đang ở trong tầng vẫn được vận hành và check-out bình thường cho đến khi trống,
+        // đồng thời hệ thống sẽ ngăn chặn xe mới check-in vào các ô thuộc tầng này (do floor.IsActive = false).
 
         var oldValues = JsonSerializer.Serialize(new { floor.FloorNumber, floor.Name, floor.TotalSlots, floor.IsActive });
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import RequireCustomer from "../components/RequireCustomer.jsx";
+import ParkingLocationsMap from "../components/ParkingLocationsMap.jsx";
 import ParkingSlotManagement from "./ParkingSlotManagement.jsx";
 import { getAuthSession, subscribeAuthSession } from "../services/authSession.js";
 import { apiRequest } from "../services/api.js";
@@ -49,11 +50,17 @@ function DashboardContent({ publicView = false }) {
   const [selectedFloorId, setSelectedFloorId] = useState(params.get("floorId") || "");
   const [slots, setSlots] = useState([]);
   const [slotsUpdatedAt, setSlotsUpdatedAt] = useState(null);
-  const [slotRevision, setSlotRevision] = useState(0);
   const [lotsLoading, setLotsLoading] = useState(true);
   const [floorsLoading, setFloorsLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [lotsError, setLotsError] = useState("");
+  const [customerLocation, setCustomerLocation] = useState(null);
+  const [locationError, setLocationError] = useState("");
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [routeGeometry, setRouteGeometry] = useState(null);
+  const [routeSummary, setRouteSummary] = useState("");
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState("");
   const [floorsError, setFloorsError] = useState("");
   const [slotsError, setSlotsError] = useState("");
   const [capacity, setCapacity] = useState(null);
@@ -174,14 +181,6 @@ function DashboardContent({ publicView = false }) {
   }, [selectedLotId, revision]);
 
   useEffect(() => {
-    const timerId = window.setInterval(
-      () => setSlotRevision((value) => value + 1),
-      15_000,
-    );
-    return () => window.clearInterval(timerId);
-  }, []);
-
-  useEffect(() => {
     if (!selectedLotId) {
       setCapacity(null);
       setCapacityError("");
@@ -190,7 +189,6 @@ function DashboardContent({ publicView = false }) {
     }
 
     let active = true;
-    let timeoutId;
     const controller = new AbortController();
     const loadCapacity = async () => {
       try {
@@ -209,10 +207,7 @@ function DashboardContent({ publicView = false }) {
         if (active && !controller.signal.aborted)
           setCapacityError(error.message);
       } finally {
-        if (active) {
-          setCapacityLoading(false);
-          timeoutId = window.setTimeout(loadCapacity, 15_000);
-        }
+        if (active) setCapacityLoading(false);
       }
     };
 
@@ -221,7 +216,6 @@ function DashboardContent({ publicView = false }) {
     return () => {
       active = false;
       controller.abort();
-      window.clearTimeout(timeoutId);
     };
   }, [selectedLotId, revision]);
 
@@ -229,7 +223,6 @@ function DashboardContent({ publicView = false }) {
     if (publicView) return undefined;
 
     let active = true;
-    let timeoutId;
     const controller = new AbortController();
     const loadMyBookings = async () => {
       try {
@@ -250,10 +243,7 @@ function DashboardContent({ publicView = false }) {
         if (active && !controller.signal.aborted)
           setMyBookingsError(error.message);
       } finally {
-        if (active) {
-          setMyBookingsLoading(false);
-          timeoutId = window.setTimeout(loadMyBookings, 30_000);
-        }
+        if (active) setMyBookingsLoading(false);
       }
     };
 
@@ -262,7 +252,6 @@ function DashboardContent({ publicView = false }) {
     return () => {
       active = false;
       controller.abort();
-      window.clearTimeout(timeoutId);
     };
   }, [publicView, revision]);
 
@@ -301,7 +290,7 @@ function DashboardContent({ publicView = false }) {
     return () => {
       active = false;
     };
-  }, [selectedFloorId, revision, slotRevision]);
+  }, [selectedFloorId, revision]);
 
   useEffect(() => {
     if (!bookingOpen || publicView) return undefined;
@@ -368,6 +357,60 @@ function DashboardContent({ publicView = false }) {
   const vehicleName = (vehicle) =>
     [vehicle.brand, vehicle.model].filter(Boolean).join(" ") ||
     `Xe cá nhân`;
+  const useCurrentLocation = () => {
+    setLocationError("");
+    if (!navigator.geolocation) {
+      setLocationError("Trình duyệt này không hỗ trợ xác định vị trí.");
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setCustomerLocation({ latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy });
+        setLocationLoading(false);
+      },
+      (error) => {
+        setLocationError(
+          error.code === error.PERMISSION_DENIED
+            ? "Bạn chưa cho phép truy cập vị trí. Hãy bật quyền Vị trí cho trang web trong cài đặt trình duyệt rồi thử lại."
+            : error.code === error.TIMEOUT
+              ? "Trình duyệt mất quá nhiều thời gian để xác định vị trí. Hãy bật GPS hoặc thử lại ngoài trời."
+              : "Không đọc được vị trí hiện tại. Kiểm tra GPS và quyền vị trí của trình duyệt rồi thử lại.",
+        );
+        setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    );
+  };
+
+  const showRouteToLot = async () => {
+    setRouteError("");
+    setRouteSummary("");
+    setRouteGeometry(null);
+    if (!customerLocation) {
+      setRouteError("Hãy xác định vị trí hiện tại trước để xem đường đi trên bản đồ.");
+      return;
+    }
+    if (!selectedLot?.latitude || !selectedLot?.longitude) {
+      setRouteError("Bãi này chưa có tọa độ bản đồ.");
+      return;
+    }
+    setRouteLoading(true);
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${customerLocation.longitude},${customerLocation.latitude};${selectedLot.longitude},${selectedLot.latitude}?overview=full&geometries=geojson`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Không kết nối được dịch vụ tìm đường.");
+      const result = await response.json();
+      const route = result.code === "Ok" ? result.routes?.[0] : null;
+      if (!route) throw new Error("Không tìm thấy đường đi giữa vị trí của bạn và bãi.");
+      setRouteGeometry(route.geometry);
+      setRouteSummary(`Khoảng ${(route.distance / 1000).toFixed(1)} km · ${Math.ceil(route.duration / 60)} phút lái xe`);
+    } catch (error) {
+      setRouteError(error.message || "Không thể tìm đường lúc này. Hãy thử lại.");
+    } finally {
+      setRouteLoading(false);
+    }
+  };
 
   const openBookingForm = () => {
     setBookingError("");
@@ -530,7 +573,6 @@ function DashboardContent({ publicView = false }) {
                 {lots.map((lot) => (
                   <option value={lot.id} key={lot.id}>
                     {lot.name}
-                    {lot.address ? ` · ${lot.address}` : ""}
                   </option>
                 ))}
               </select>
@@ -550,6 +592,53 @@ function DashboardContent({ publicView = false }) {
               </select>
             </label>
           </div>
+        )}
+
+        {selectedLot && (
+          <section className="customer-map" aria-labelledby="customer-map-title">
+            <div className="customer-map__heading">
+              <div>
+                <h3 id="customer-map-title">Vị trí bãi đỗ</h3>
+                <p className="muted">
+                  {selectedLot.address || "Bãi chưa có địa chỉ để hiển thị trên bản đồ."}
+                </p>
+              </div>
+              <div className="customer-map__actions">
+                <button
+                  type="button"
+                  className="btn btn--outline"
+                  onClick={useCurrentLocation}
+                  disabled={locationLoading}
+                >
+                  {locationLoading ? "Đang xác định vị trí..." : customerLocation ? "Cập nhật vị trí của tôi" : "Dùng vị trí của tôi"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={showRouteToLot}
+                  disabled={routeLoading || !selectedLot.latitude || !selectedLot.longitude}
+                >
+                  {routeLoading ? "Đang tìm đường..." : "Chỉ đường trên bản đồ"}
+                </button>
+              </div>
+            </div>
+            {locationError && (
+              <p className="customer-message customer-message--error" role="status">
+                {locationError}
+              </p>
+            )}
+            {routeError && (
+              <p className="customer-message customer-message--error" role="status">{routeError}</p>
+            )}
+            {routeSummary && <p className="customer-map__route-summary">{routeSummary}</p>}
+            <ParkingLocationsMap
+              lots={lots}
+              selectedLotId={selectedLotId}
+              customerLocation={customerLocation}
+              routeGeometry={routeGeometry}
+              onSelectLot={setSelectedLotId}
+            />
+          </section>
         )}
 
         {floorsLoading && (

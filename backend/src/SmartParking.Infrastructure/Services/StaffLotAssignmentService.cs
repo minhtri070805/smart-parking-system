@@ -109,6 +109,11 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
 
         if (roleCode == Roles.Manager)
         {
+            if (await _context.StaffLotAssignments.AnyAsync(a => a.UserId == targetUser.Id && a.IsActive && a.LotId != request.LotId, ct))
+                return (false, "Một Manager chỉ được phụ trách một bãi. Thu hồi phân công cũ trước khi chuyển bãi.", null);
+            if (await _context.StaffLotAssignments.AnyAsync(a => a.LotId == request.LotId && a.IsActive &&
+                    a.UserId != targetUser.Id && a.User.Role.Code == Roles.Manager, ct))
+                return (false, "Bãi này đã có Manager phụ trách. Thu hồi phân công cũ trước khi phân công Manager khác.", null);
             request.Duty = StaffDuties.Gate;
             request.FloorId = null;
             request.ZoneId = null;
@@ -274,6 +279,12 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
         if (filter.IsActive.HasValue)
         {
             baseQuery = baseQuery.Where(a => a.IsActive == filter.IsActive.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Role))
+        {
+            var role = filter.Role.Trim().ToUpperInvariant();
+            baseQuery = baseQuery.Where(a => a.User.Role.Code == role);
         }
 
         var totalCount = await baseQuery.CountAsync(ct);

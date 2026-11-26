@@ -10,11 +10,13 @@ export const roleNavigation = {
     ["/admin", "Tổng quan"],
     ["/admin/parking-settings", "Quản lý bãi xe"],
     ["/admin/people", "Tài khoản"],
+    ["/admin/audit-logs", "Audit log"],
     ["/parking", "3D"],
     ["/admin/parking-settings?view=tickets", "Xử lý vé"],
   ],
   MANAGER: [
     ["/manager", "Tổng quan"],
+    ["/manager/revenue", "Doanh thu"],
     ["/parking", "3D"],
     ["/parking/slots", "Quản lý ô đỗ"],
     ["/manager?view=sessions", "Xe đang gửi"],

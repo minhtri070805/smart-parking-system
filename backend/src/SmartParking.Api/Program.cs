@@ -280,6 +280,7 @@ builder.Services.AddApplicationServices();
 builder.Services.AddParkingPersistence(builder.Configuration);
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddHostedService<SmartParking.Api.HostedServices.BookingNoShowExpirationService>();
+builder.Services.AddHostedService<SmartParking.Api.HostedServices.ParkingPassExpirationWorker>();
 
 var app = builder.Build();
 

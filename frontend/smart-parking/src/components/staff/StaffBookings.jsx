@@ -11,8 +11,6 @@ import PlateCapture, {
   prepareCapture,
 } from "./PlateCapture.jsx";
 
-const POLL_INTERVAL_MS = 15_000;
-
 export default function StaffBookings({
   lotId,
   lotIsActive,
@@ -38,7 +36,6 @@ export default function StaffBookings({
 
   useEffect(() => {
     let active = true;
-    let timeoutId;
     let controller;
 
     const load = async () => {
@@ -64,10 +61,7 @@ export default function StaffBookings({
       } catch (requestError) {
         if (active && !controller.signal.aborted) setError(requestError);
       } finally {
-        if (active) {
-          setLoading(false);
-          timeoutId = window.setTimeout(load, POLL_INTERVAL_MS);
-        }
+        if (active) setLoading(false);
       }
     };
 
@@ -76,7 +70,6 @@ export default function StaffBookings({
     return () => {
       active = false;
       controller?.abort();
-      window.clearTimeout(timeoutId);
     };
   }, [lotId, revision, retry]);
 
@@ -162,7 +155,7 @@ export default function StaffBookings({
       </div>
       {newBookings.length > 0 && (
         <Notice kind="warning">
-          Có {newBookings.length} đặt chỗ mới. Danh sách được cập nhật tự động mỗi 15 giây.
+          Có {newBookings.length} đặt chỗ mới. Bấm Làm mới để tải lại danh sách.
         </Notice>
       )}
       {completedBooking && (

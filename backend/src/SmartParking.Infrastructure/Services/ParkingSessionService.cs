@@ -77,17 +77,29 @@ public class ParkingSessionService : IParkingSessionService
         }
     }
 
-    public async Task<MonthlyTrafficStatsDto> GetMonthlyTrafficStatsAsync(int year, int month, int? lotId, CancellationToken ct = default)
+    public async Task<MonthlyTrafficStatsDto> GetMonthlyTrafficStatsAsync(
+        int year,
+        int month,
+        int? lotId,
+        IReadOnlyList<int>? allowedLotIds = null,
+        CancellationToken ct = default)
     {
         // Dữ liệu lưu UTC, thống kê theo ngày giờ Việt Nam (UTC+7).
         var offset = TimeSpan.FromHours(7);
-        var startLocal = new DateTime(year, month, 1);
+        var startLocal = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
         var endLocal = startLocal.AddMonths(1);
         var startUtc = startLocal - offset;
         var endUtc = endLocal - offset;
 
         var query = _context.ParkingSessions.AsNoTracking().Where(s => s.Status != "CANCELLED");
-        if (lotId.HasValue) query = query.Where(s => s.LotId == lotId.Value);
+        if (lotId.HasValue)
+        {
+            query = query.Where(s => s.LotId == lotId.Value);
+        }
+        else if (allowedLotIds != null && allowedLotIds.Count > 0)
+        {
+            query = query.Where(s => allowedLotIds.Contains(s.LotId));
+        }
 
         var rows = await query
             .Where(s => (s.CheckInTime >= startUtc && s.CheckInTime < endUtc)
@@ -117,6 +129,26 @@ public class ParkingSessionService : IParkingSessionService
                 days[(paid + offset).Day - 1].Revenue += r.TotalFee;
         }
 
+        // Lấy 50 giao dịch đã thanh toán gần nhất trong tháng
+        var recentTransactions = await query
+            .Where(s => s.PaidAt != null && s.PaidAt >= startUtc && s.PaidAt < endUtc && s.TotalFee > 0)
+            .OrderByDescending(s => s.PaidAt)
+            .Take(50)
+            .Select(s => new MonthlyRevenueTransactionDto
+            {
+                SessionId = s.Id,
+                LotId = s.LotId,
+                LotName = s.Lot.Name,
+                PlateNumber = s.PlateNumber,
+                CheckInTime = s.CheckInTime,
+                CheckOutTime = s.CheckOutTime,
+                PaidAt = s.PaidAt,
+                TotalFee = s.TotalFee,
+                SlotCode = s.CurrentSlot != null ? s.CurrentSlot.SlotCode : null,
+                Status = s.Status
+            })
+            .ToListAsync(ct);
+
         return new MonthlyTrafficStatsDto
         {
             Year = year,
@@ -126,7 +158,8 @@ public class ParkingSessionService : IParkingSessionService
             TotalCheckOuts = days.Sum(d => d.CheckOuts),
             TotalRevenue = days.Sum(d => d.Revenue),
             Days = days,
-            CheckInsByHour = byHour
+            CheckInsByHour = byHour,
+            RecentTransactions = recentTransactions
         };
     }
 

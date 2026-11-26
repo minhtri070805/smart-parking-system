@@ -570,7 +570,7 @@ sequenceDiagram
 
 ## SP-MF-16 Đăng ký ô cố định và phát thẻ
 
-**Hiện trạng:** YÊU CẦU Sprint 5; chưa có schema/API.
+**Hiện trạng:** MỘT PHẦN; schema plan/pass và catalog/đăng ký/truy vấn Core API đã có. Bán tắt mặc định; Payment và phát thẻ chưa có.
 
 **Use case:** SP-UC-033, SP-UC-034.
 
@@ -598,7 +598,7 @@ sequenceDiagram
 | 4 | API nghiệp vụ → Staff cổng: Thông báo khách cần nhận thẻ lần đầu | Notification đề xuất | Không coi đã phát trước khi tới |
 | 5 | Staff cổng → Dữ liệu bền: Đối chiếu và bàn giao thẻ | Card/assignment/actor/time đề xuất | Quyền dịch vụ không tự tạo xe |
 
-**Ngoại lệ và phục hồi:** Kỳ/giá/quyền duyệt và loại thẻ còn quyết định mở; không biến số tiền mẫu thành chính sách chính thức.
+**Ngoại lệ và phục hồi:** Kỳ/giá/quyền duyệt và loại thẻ còn quyết định mở; API không có plan seed, và không bật bán nếu chưa cấu hình `Subscriptions:Enabled` cùng hợp đồng payment/policy.
 
 **Kết quả cần nghiệm thu:** Có quyền ô/xe/kỳ truy vết; chưa có xe vật lý chỉ vì đăng ký thành công. Phân biệt đã đăng ký và đã nhận thẻ; truy vết đúng khách/xe.
 

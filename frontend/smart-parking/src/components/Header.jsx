@@ -4,6 +4,7 @@ import AnchorLink from "./AnchorLink.jsx";
 import { apiRequest } from "../services/api.js";
 import { staffApi } from "../services/staffApi.js";
 import { staffDutiesOf, staffNavigationFor } from "../services/staffDuty.js";
+import { loadNotifications } from "../services/notifications.js";
 import {
   dashboardPath,
   navIsActive,
@@ -54,8 +55,13 @@ export default function Header({ workspace = false }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationReadIds, setNotificationReadIds] = useState(() => new Set());
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountDetails, setAccountDetails] = useState(null);
+  const [accountAssignedLots, setAccountAssignedLots] = useState([]);
+  const [accountLotsLoading, setAccountLotsLoading] = useState(false);
   const [accountLoading, setAccountLoading] = useState(false);
   const [accountSaving, setAccountSaving] = useState(false);
   const [accountError, setAccountError] = useState("");
@@ -66,15 +72,45 @@ export default function Header({ workspace = false }) {
     phoneNumber: "",
   });
   const profileRef = useRef(null);
+  const notificationRef = useRef(null);
   const role = session?.userProfile.role;
   const userId = session?.userProfile.id;
+  const notificationReadStorageKey = `smart-parking.notification-read.${userId || "guest"}.${role || "none"}`;
   const canEditProfile = role === "ADMIN" || role === "MANAGER" || role === "USER";
   const displayName = session?.userProfile?.fullName || session?.userProfile?.username || "Tài khoản";
   const avatarInitial = displayName.trim().charAt(0).toUpperCase() || "U";
 
   useEffect(() => {
+    try { setNotificationReadIds(new Set(JSON.parse(localStorage.getItem(notificationReadStorageKey) || "[]"))); }
+    catch { setNotificationReadIds(new Set()); }
+  }, [notificationReadStorageKey]);
+
+  useEffect(() => {
     setProfileOpen(false);
+    setNotificationOpen(false);
   }, [pathname, search]);
+
+  useEffect(() => {
+    if (!session?.userProfile?.role) {
+      setNotifications([]);
+      return undefined;
+    }
+    const controller = new AbortController();
+    const load = () => loadNotifications(session.userProfile.role, controller.signal)
+      .then((items) => { if (!controller.signal.aborted) setNotifications(Array.isArray(items) ? items : []); })
+      .catch(() => { if (!controller.signal.aborted) setNotifications([]); });
+    load();
+    return () => controller.abort();
+  }, [session?.userProfile?.role, session?.userProfile?.id]);
+
+  useEffect(() => {
+    if (!notificationOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) setNotificationOpen(false);
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [notificationOpen]);
 
   useEffect(() => {
     if (!profileOpen) return undefined;
@@ -131,6 +167,27 @@ export default function Header({ workspace = false }) {
     };
   }, [accountModalOpen, session]);
 
+  useEffect(() => {
+    if (!accountModalOpen || !["MANAGER", "STAFF"].includes(role)) {
+      setAccountAssignedLots([]);
+      setAccountLotsLoading(false);
+      return undefined;
+    }
+    const controller = new AbortController();
+    setAccountLotsLoading(true);
+    staffApi.assignedLots(controller.signal)
+      .then((lots) => {
+        if (!controller.signal.aborted) setAccountAssignedLots(Array.isArray(lots) ? lots : []);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setAccountAssignedLots([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAccountLotsLoading(false);
+      });
+    return () => controller.abort();
+  }, [accountModalOpen, role, userId]);
+
   async function saveAccountProfile(event) {
     event.preventDefault();
     if (!canEditProfile) return;
@@ -172,7 +229,7 @@ export default function Header({ workspace = false }) {
       setAccountSaving(false);
     }
   }
-  // Staff chỉ thấy menu thuộc loại phân công của mình (trực cổng hoặc trực khu vực).
+  // Staff luôn thấy đủ menu; API nghiệp vụ mới quyết định quyền theo ca đang chạy.
   const [staffDuties, setStaffDuties] = useState(null);
   useEffect(() => {
     if (role !== "STAFF") { setStaffDuties(null); return undefined; }
@@ -186,7 +243,22 @@ export default function Header({ workspace = false }) {
     ? [["/parking", "3D"], ...(staffDuties === null ? [] : staffNavigationFor(staffDuties))]
     : roleNavigation[role] || [];
   const roleLabel = { ADMIN: "Quản trị viên", MANAGER: "Quản lý bãi", STAFF: "Nhân viên", USER: "Khách hàng" }[role] || "Khách tham quan";
+  const assignedLotNames = [...new Set(accountAssignedLots.map((lot) => lot.lotName || lot.name).filter(Boolean))];
+  const assignedLotLabel = accountLotsLoading
+    ? "Đang tải…"
+    : assignedLotNames.length ? assignedLotNames.join(", ") : "Chưa được phân công";
   const activePage = pathname === "/parking" ? "Bãi đỗ 3D" : navItems.find(([target]) => navIsActive(target, pathname, search))?.[1] || (pathname.startsWith("/parking") ? "Bãi đỗ 3D" : "Khu vực làm việc");
+  const unreadNotifications = notifications.filter((item) => !notificationReadIds.has(String(item.id)));
+  function markNotificationRead(id) {
+    const key = String(id);
+    setNotificationReadIds((current) => {
+      if (current.has(key)) return current;
+      const next = new Set(current);
+      next.add(key);
+      try { localStorage.setItem(notificationReadStorageKey, JSON.stringify([...next].slice(-300))); } catch { /* storage may be unavailable */ }
+      return next;
+    });
+  }
   async function logout() {
     setBusy(true);
     setError("");
@@ -223,6 +295,25 @@ export default function Header({ workspace = false }) {
                   Khu vực của tôi
                 </Link>
               )}
+              <div className="header__notifications" ref={notificationRef}>
+                <button
+                  type="button"
+                  className={`header__notification-trigger ${notificationOpen ? "is-open" : ""}`}
+                  onClick={() => setNotificationOpen((value) => !value)}
+                  aria-label="Thông báo"
+                  aria-expanded={notificationOpen}
+                  aria-haspopup="menu"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></svg>
+                  {unreadNotifications.length > 0 && <b>{Math.min(unreadNotifications.length, 99)}</b>}
+                </button>
+                {notificationOpen && <div className="header__notification-popup" role="menu" aria-label="Thông báo">
+                  <div className="header__notification-head"><strong>Thông báo</strong><small>{unreadNotifications.length} chưa đọc</small></div>
+                  {notifications.length === 0 ? <p className="header__notification-empty">Chưa có thông báo mới.</p> : notifications.slice(0, 8).map((item) => <Link key={item.id} role="menuitem" className={`header__notification-item ${notificationReadIds.has(String(item.id)) ? "is-read" : "is-unread"}`} to={item.href || "#"} onClick={() => { markNotificationRead(item.id); setNotificationOpen(false); }}>
+                    <span className="header__notification-item-title"><i aria-hidden="true" /><strong>{item.title}</strong></span><span>{item.body}</span>
+                  </Link>)}
+                </div>}
+              </div>
               <div className="header__profile" ref={profileRef}>
                 <button
                   type="button"
@@ -360,6 +451,10 @@ export default function Header({ workspace = false }) {
                     <dt>Chức vụ</dt>
                     <dd>{roleLabel}</dd>
                   </div>
+                  {role === "MANAGER" && <div>
+                    <dt>Bãi phụ trách</dt>
+                    <dd>{assignedLotLabel}</dd>
+                  </div>}
                 </dl>
                 <div className="header__account-fields">
                   <label className="header__account-field">
@@ -442,6 +537,10 @@ export default function Header({ workspace = false }) {
                     <dt>Chức vụ</dt>
                     <dd>{roleLabel}</dd>
                   </div>
+                  {role === "STAFF" && <div>
+                    <dt>Bãi làm việc</dt>
+                    <dd>{assignedLotLabel}</dd>
+                  </div>}
                   <div>
                     <dt>Email</dt>
                     <dd>{accountDetails?.email || session.userProfile.email || "Chưa cập nhật"}</dd>
