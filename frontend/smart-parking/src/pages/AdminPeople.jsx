@@ -40,6 +40,7 @@ export function People({ assignmentsOnly = false }) {
   const [revision, refresh] = useState(0);
   const action = useMutation();
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("");
   const [active, setActive] = useState("");
@@ -71,13 +72,13 @@ export function People({ assignmentsOnly = false }) {
   const [candidateRole, setCandidateRole] = useState("STAFF");
   const users = useResource(
     view === "users"
-      ? `/v1/admin/users?${query({ page, pageSize: 20, search: appliedUserFilters.search, role: appliedUserFilters.role, isActive: appliedUserFilters.active, lotId: appliedUserFilters.lotId, internalOnly: true })}`
+      ? `/v1/admin/users?${query({ page, pageSize, search: appliedUserFilters.search, role: appliedUserFilters.role, isActive: appliedUserFilters.active, lotId: appliedUserFilters.lotId, internalOnly: true })}`
       : null,
     revision,
   );
   const assignments = useResource(
     view === "assignments"
-      ? `/v1/staff-assignments?${query({ page, pageSize: 20, isActive: appliedAssignmentFilters.active, lotId: appliedAssignmentFilters.lotId, role: appliedAssignmentFilters.role })}`
+      ? `/v1/staff-assignments?${query({ page, pageSize, isActive: appliedAssignmentFilters.active, lotId: appliedAssignmentFilters.lotId, role: appliedAssignmentFilters.role })}`
       : null,
     revision,
   );
@@ -145,13 +146,13 @@ export function People({ assignmentsOnly = false }) {
         change.kind === "revoke"
           ? write(`/v1/staff-assignments/${change.id}/revoke`, { reason })
           : write(
-              `/v1/admin/users/${change.id}/${change.kind}`,
-              {
-                [change.kind === "role" ? "role" : "isActive"]: change.value,
-                reason,
-              },
-              "PATCH",
-            ),
+            `/v1/admin/users/${change.id}/${change.kind}`,
+            {
+              [change.kind === "role" ? "role" : "isActive"]: change.value,
+              reason,
+            },
+            "PATCH",
+          ),
       () => {
         if (change.kind === "role") setRoleDrafts(drafts => {
           const next = { ...drafts }; delete next[change.id]; return next;
@@ -165,124 +166,120 @@ export function People({ assignmentsOnly = false }) {
     <section className="workspace container">
       <Feedback error={action.error} message={action.message} />
       {view === "users" ? (
-        <section className="workspace-panel">
-          <div className="workspace-heading">
-            <div><h2>Tài khoản nội bộ</h2><p className="workspace-note">Mỗi tài khoản được gắn với một bãi. Manager phụ trách bãi, Staff sẽ được Manager phân ca sau.</p></div>
-            <button type="button" className="btn btn--primary" onClick={() => { setUser({ ...emptyUser, lotId: String(availableLots[0]?.id || "") }); setShowCreateUser(true); }}>+ Tạo tài khoản</button>
-          </div>
+        <>
           {showCreateUser && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-internal-user-title" style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(16,36,59,.55)", display: "grid", placeItems: "center", padding: 16 }}>
-          <section className="workspace-panel" style={{ width: "min(680px, 100%)", maxHeight: "90vh", overflow: "auto", background: "#fff" }}>
-          <div className="workspace-heading"><h2 id="create-internal-user-title">Tạo tài khoản nội bộ</h2><button type="button" className="btn btn--outline" disabled={action.busy} onClick={() => setShowCreateUser(false)}>Đóng</button></div>
-          <form
-            className="workspace-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              action.run(
-                () =>
-                  write("/v1/admin/users", {
-                    ...user,
-                    username: user.username.trim(),
-                    email: user.email.trim(),
-                    fullName: user.fullName.trim(),
-                    phoneNumber: user.phoneNumber || null,
-                    lotId: Number(user.lotId),
-                    isActive: true,
-                  }),
-                (response) => {
-                  setUser(emptyUser);
-                  setShowCreateUser(false);
-                  setSelected(response.data?.id);
-                  updated();
-                },
-              );
-            }}
-          >
-            <fieldset disabled={action.busy}>
-              <label>
-                Tên đăng nhập
-                <input
-                  required
-                  pattern="[a-zA-Z0-9_.]{3,50}"
-                  title="3–50 ký tự chữ, số, chấm hoặc gạch dưới"
-                  value={user.username}
-                  onChange={(e) =>
-                    setUser({ ...user, username: e.target.value })
-                  }
-                  autoComplete="off"
-                />
-              </label>
-              <label>
-                Họ và tên
-                <input
-                  required
-                  maxLength={100}
-                  value={user.fullName}
-                  onChange={(e) =>
-                    setUser({ ...user, fullName: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Email
-                <input
-                  required
-                  type="email"
-                  maxLength={255}
-                  value={user.email}
-                  onChange={(e) => setUser({ ...user, email: e.target.value })}
-                  autoComplete="off"
-                />
-              </label>
-              <label>
-                Mật khẩu ban đầu
-                <input
-                  required
-                  type="password"
-                  minLength={8}
-                  maxLength={100}
-                  autoComplete="new-password"
-                  value={user.password}
-                  onChange={(e) =>
-                    setUser({ ...user, password: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Số điện thoại
-                <input
-                  type="tel"
-                  maxLength={20}
-                  value={user.phoneNumber}
-                  onChange={(e) =>
-                    setUser({ ...user, phoneNumber: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Vai trò
-                <select
-                  value={user.role}
-                  onChange={(e) => setUser({ ...user, role: e.target.value })}
-                >
-                  <option value="STAFF">Staff</option>
-                  <option value="MANAGER">Manager</option>
-                </select>
-              </label>
-              <label>
-                Bãi phụ trách
-                <select required value={user.lotId} onChange={e => setUser({ ...user, lotId: e.target.value })}>
-                  <option value="">Chọn bãi</option>
-                  {availableLots.map(lot => <option key={lot.id} value={lot.id}>{lot.name}</option>)}
-                </select>
-              </label>
-              <p className="workspace-note" style={{ gridColumn: "1 / -1", margin: 0 }}>Manager được gán làm người phụ trách bãi. Staff được gắn bãi và một tầng mặc định; Manager sẽ phân công ca làm sau.</p>
-              <button className="btn btn--primary" disabled={action.busy}>
-                Tạo tài khoản
-              </button>
-            </fieldset>
-          </form>
-          </section></div>}
-        </section>
+            <section className="workspace-panel" style={{ width: "min(680px, 100%)", maxHeight: "90vh", overflow: "auto", background: "#fff" }}>
+              <div className="workspace-heading"><h2 id="create-internal-user-title">Tạo tài khoản nội bộ</h2><button type="button" className="btn btn--outline" disabled={action.busy} onClick={() => setShowCreateUser(false)}>Đóng</button></div>
+              <form
+                className="workspace-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  action.run(
+                    () =>
+                      write("/v1/admin/users", {
+                        ...user,
+                        username: user.username.trim(),
+                        email: user.email.trim(),
+                        fullName: user.fullName.trim(),
+                        phoneNumber: user.phoneNumber || null,
+                        lotId: Number(user.lotId),
+                        isActive: true,
+                      }),
+                    (response) => {
+                      setUser(emptyUser);
+                      setShowCreateUser(false);
+                      setSelected(response.data?.id);
+                      updated();
+                    },
+                  );
+                }}
+              >
+                <fieldset disabled={action.busy}>
+                  <label>
+                    Tên đăng nhập
+                    <input
+                      required
+                      pattern="[a-zA-Z0-9_.]{3,50}"
+                      title="3–50 ký tự chữ, số, chấm hoặc gạch dưới"
+                      value={user.username}
+                      onChange={(e) =>
+                        setUser({ ...user, username: e.target.value })
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label>
+                    Họ và tên
+                    <input
+                      required
+                      maxLength={100}
+                      value={user.fullName}
+                      onChange={(e) =>
+                        setUser({ ...user, fullName: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Email
+                    <input
+                      required
+                      type="email"
+                      maxLength={255}
+                      value={user.email}
+                      onChange={(e) => setUser({ ...user, email: e.target.value })}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label>
+                    Mật khẩu ban đầu
+                    <input
+                      required
+                      type="password"
+                      minLength={8}
+                      maxLength={100}
+                      autoComplete="new-password"
+                      value={user.password}
+                      onChange={(e) =>
+                        setUser({ ...user, password: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Số điện thoại
+                    <input
+                      type="tel"
+                      maxLength={20}
+                      value={user.phoneNumber}
+                      onChange={(e) =>
+                        setUser({ ...user, phoneNumber: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Vai trò
+                    <select
+                      value={user.role}
+                      onChange={(e) => setUser({ ...user, role: e.target.value })}
+                    >
+                      <option value="STAFF">Staff</option>
+                      <option value="MANAGER">Manager</option>
+                    </select>
+                  </label>
+                  <label>
+                    Bãi phụ trách
+                    <select required value={user.lotId} onChange={e => setUser({ ...user, lotId: e.target.value })}>
+                      <option value="">Chọn bãi</option>
+                      {availableLots.map(lot => <option key={lot.id} value={lot.id}>{lot.name}</option>)}
+                    </select>
+                  </label>
+                  <p className="workspace-note" style={{ gridColumn: "1 / -1", margin: 0 }}>Manager được gán làm người phụ trách bãi. Staff được gắn bãi và một tầng mặc định; Manager sẽ phân công ca làm sau.</p>
+                  <button className="btn btn--primary" disabled={action.busy}>
+                    Tạo tài khoản
+                  </button>
+                </fieldset>
+              </form>
+            </section></div>}
+        </>
       ) : (
         <section className="workspace-panel">
           <h2>Phân công mới</h2>
@@ -495,16 +492,11 @@ export function People({ assignmentsOnly = false }) {
       )}
       <section className="workspace-panel">
         <div className="workspace-heading">
-          <h2>
-            {view === "users" ? "Danh sách tài khoản" : "Lịch sử phân công"}
-          </h2>
-          <button
-            className="btn btn--outline"
-            disabled={action.busy || list.loading}
-            onClick={updated}
-          >
-            Làm mới
-          </button>
+          <h2>{view === "users" ? "Danh sách" : "Lịch sử phân công"}</h2>
+          <div className="workspace-actions">
+            {view === "users" && <button type="button" className="btn btn--primary" onClick={() => { setUser({ ...emptyUser, lotId: String(availableLots[0]?.id || "") }); setShowCreateUser(true); }}>+ Tạo tài khoản</button>}
+            <button className="btn btn--outline" disabled={action.busy || list.loading} onClick={updated}>Làm mới</button>
+          </div>
         </div>
         <div className="workspace-filters">
           {view === "users" && (
@@ -572,6 +564,13 @@ export function People({ assignmentsOnly = false }) {
               <option value="false">Ngừng hoạt động</option>
             </select>
           </label>
+          {view === "users" && <label className="account-page-size" aria-label="Số dòng">
+            <select aria-label="Số dòng" value={pageSize} disabled={action.busy} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+            </select>
+          </label>}
           <div className="workspace-filter-actions">
             <button type="button" className="btn btn--outline workspace-filter-action" title="Đặt lại bộ lọc" aria-label="Đặt lại bộ lọc" disabled={action.busy} onClick={view === "users" ? resetUserFilters : resetAssignmentFilters}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8.25M3 3v5.25h5.25" /></svg>
@@ -585,7 +584,7 @@ export function People({ assignmentsOnly = false }) {
         {!list.loading && !list.error && !itemsOf(list.data).length && (
           <p className="workspace-empty">Không có kết quả phù hợp.</p>
         )}
-        <div className="workspace-table">
+        <div className={`workspace-table account-table ${view === "users" ? "account-table--users" : ""}`}>
           <table>
             <thead>
               <tr>
