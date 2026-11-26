@@ -54,6 +54,7 @@ export default function Header({ workspace = false }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountDetails, setAccountDetails] = useState(null);
   const [accountLoading, setAccountLoading] = useState(false);
@@ -74,7 +75,17 @@ export default function Header({ workspace = false }) {
 
   useEffect(() => {
     setProfileOpen(false);
+    setMobileNavOpen(false);
   }, [pathname, search]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [mobileNavOpen]);
 
   useEffect(() => {
     if (!profileOpen) return undefined;
@@ -204,7 +215,7 @@ export default function Header({ workspace = false }) {
     }
   }
   return (
-    <header className={`header ${workspace ? "header--workspace" : ""}`} ref={headerRef}>
+    <header className={`header ${workspace ? "header--workspace" : ""} ${session ? "" : "header--anonymous"}`} ref={headerRef}>
       <div className="container header__inner">
         <Link
           className="header__brand"
@@ -288,7 +299,26 @@ export default function Header({ workspace = false }) {
             </p>
           )}
         </div>
-        <nav className="header__nav" aria-label="Điều hướng chính">
+        <button
+          type="button"
+          className={`header__mobile-toggle ${mobileNavOpen ? "is-open" : ""}`}
+          aria-label={mobileNavOpen ? "Đóng menu điều hướng" : "Mở menu điều hướng"}
+          aria-expanded={mobileNavOpen}
+          aria-controls="header-mobile-nav"
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+        <nav
+          id="header-mobile-nav"
+          className={`header__nav ${mobileNavOpen ? "is-mobile-open" : ""}`}
+          aria-label="Điều hướng chính"
+          onClick={(event) => {
+            if (event.target.closest("a")) setMobileNavOpen(false);
+          }}
+        >
           {session ? (
             navItems.map(([target, label]) => (
               <Link
@@ -317,8 +347,22 @@ export default function Header({ workspace = false }) {
               <AnchorLink id="he-thong">Hệ thống</AnchorLink>
             </>
           )}
+          {!session && (
+            <div className="header__mobile-authlinks">
+              <Link className="btn btn--outline" to="/register">Đăng ký</Link>
+              <Link className="btn btn--primary" to="/login">Đăng nhập</Link>
+            </div>
+          )}
         </nav>
       </div>
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="header__mobile-backdrop"
+          aria-label="Đóng menu điều hướng"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
       {session && accountModalOpen && (
         <div
           className="header__account-backdrop"

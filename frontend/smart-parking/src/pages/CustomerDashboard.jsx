@@ -74,6 +74,7 @@ function DashboardContent({ publicView = false }) {
   const [vehiclePickerOpen, setVehiclePickerOpen] = useState(false);
   const [bookingPlateNumber, setBookingPlateNumber] = useState("");
   const [bookingStartTime, setBookingStartTime] = useState("");
+  const [bookingStartTimeChanged, setBookingStartTimeChanged] = useState(false);
   const [bookingNotes, setBookingNotes] = useState("");
   const [bookingSaving, setBookingSaving] = useState(false);
   const [bookingError, setBookingError] = useState("");
@@ -360,6 +361,7 @@ function DashboardContent({ publicView = false }) {
     setVehiclePickerOpen(false);
     const startTime = new Date();
     setBookingStartTime(localDateTimeValue(startTime));
+    setBookingStartTimeChanged(false);
     setBookingOpen(true);
   };
 
@@ -370,7 +372,14 @@ function DashboardContent({ publicView = false }) {
     setBookingMessage("");
 
     try {
-      const startTime = new Date(bookingStartTime);
+      const startTime = bookingStartTimeChanged
+        ? new Date(bookingStartTime)
+        : null;
+      if (startTime && startTime.getTime() <= Date.now()) {
+        throw new Error(
+          "Thời gian bắt đầu đã qua. Vui lòng chọn thời gian hiện tại hoặc trong tương lai.",
+        );
+      }
       if (bookingVehicles.length > 0 && !selectedVehicle) {
         throw new Error("Vui lòng chọn xe bạn sẽ sử dụng.");
       }
@@ -382,7 +391,7 @@ function DashboardContent({ publicView = false }) {
           ...(selectedVehicle
             ? { vehicleId: selectedVehicle.id }
             : { plateNumber: bookingPlateNumber.trim() }),
-          startTime: startTime.toISOString(),
+          ...(startTime ? { startTime: startTime.toISOString() } : {}),
           notes: bookingNotes.trim() || null,
         }),
       });
@@ -754,7 +763,10 @@ function DashboardContent({ publicView = false }) {
                   name="startTime"
                   value={bookingStartTime}
                   min={localDateTimeValue()}
-                  onChange={(event) => setBookingStartTime(event.target.value)}
+                  onChange={(event) => {
+                    setBookingStartTime(event.target.value);
+                    setBookingStartTimeChanged(true);
+                  }}
                   required
                 />
               </label>

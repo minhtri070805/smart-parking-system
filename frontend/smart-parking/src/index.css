@@ -597,3 +597,79 @@ section[id] { scroll-margin-top: 16px; }
 .admin-dashboard__table { width: 100%; border-collapse: collapse; text-align: left; font-size: 11px; }
 .admin-dashboard__table th, .admin-dashboard__table td { padding: 11px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .admin-dashboard__table th { color: var(--muted); font-size: 10px; }
+
+@media (max-width: 767px) {
+  .btn,
+  button,
+  [role="button"] {
+    min-height: 44px;
+  }
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  .hero {
+    gap: 28px;
+    padding-top: 40px;
+    padding-bottom: 40px;
+  }
+  .hero__text h1 {
+    font-size: clamp(32px, 9vw, 44px);
+  }
+  .hero__art,
+  .hero__text {
+    flex-basis: 100%;
+  }
+  .section {
+    gap: 28px;
+    padding-top: 48px;
+    padding-bottom: 48px;
+  }
+  .section-head h2 {
+    font-size: clamp(28px, 7vw, 36px);
+  }
+  .section-head p,
+  .lead {
+    font-size: 16px;
+  }
+  .card {
+    flex-basis: 100%;
+    padding: 20px;
+    border-radius: 16px;
+  }
+  .card h3 {
+    font-size: 22px;
+  }
+  .auth-page {
+    min-height: 0;
+    padding: 28px 16px;
+  }
+  .auth-modal {
+    width: 100%;
+    max-width: 100%;
+    padding: 22px 18px;
+  }
+  .role-dashboard__features,
+  .manager-permissions__grid,
+  .admin-dashboard__columns,
+  .admin-dashboard__lot-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-dashboard__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-dashboard__panel-heading,
+  .admin-dashboard__meta {
+    flex-wrap: wrap;
+  }
+  .admin-dashboard__hint {
+    white-space: normal;
+  }
+  .role-dashboard__table-wrap,
+  .admin-dashboard__table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

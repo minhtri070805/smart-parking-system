@@ -8,7 +8,7 @@ Parts 2 and 3 of the UI plan are covered here. The 3D viewer is owned by another
 
 - `/app/admin/people`: search/paginate accounts, filter role/status, create STAFF or MANAGER accounts, and view details. Internal accounts are approved and email-verified by the existing backend.
 - Change role or enable/disable with explicit confirmation and reason. Server rules enforce self-demotion and last-admin restrictions.
-- `/app/admin/people?view=assignments`: select active personnel and lot; choose GATE, SLOT_VERIFIER or BOTH and add notes. Manager uses BOTH per server contract. Selectors load all result pages.
+- `/app/admin/people?view=assignments`: select active personnel and lot; choose GATE or SLOT_VERIFIER and add notes. Staff assignments require a floor; SLOT_VERIFIER applies to every zone on that floor. Manager uses BOTH per server contract. Selectors load all result pages.
 - Assignment history supports pagination and lot/status filters. Revoke with confirmation and reason. To change duty, revoke and create again; there is no update-duty endpoint.
 - Duplicate writes are prevented. Failed drafts are retained; successful creation clears the password field.
 

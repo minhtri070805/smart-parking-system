@@ -146,9 +146,11 @@ public class StaffLotAssignmentService : IStaffLotAssignmentService
             floor = await _context.ParkingFloors.FirstOrDefaultAsync(f => f.Id == request.FloorId && f.LotId == request.LotId, ct);
             if (floor == null || !floor.IsActive)
                 return (false, "Tầng phải đang hoạt động và thuộc đúng bãi được phân công.", null);
-            zone = isArea ? await _context.ParkingZones.FirstOrDefaultAsync(z => z.Id == request.ZoneId && z.FloorId == floor.Id && z.LotId == request.LotId && z.IsActive, ct) : null;
-            if (isArea && zone == null)
-                return (false, "Tầng và khu vực phải đang hoạt động, thuộc đúng bãi và đúng quan hệ tầng–khu.", null);
+            zone = isArea && request.ZoneId.HasValue
+                ? await _context.ParkingZones.FirstOrDefaultAsync(z => z.Id == request.ZoneId && z.FloorId == floor.Id && z.LotId == request.LotId && z.IsActive, ct)
+                : null;
+            if (isArea && request.ZoneId.HasValue && zone == null)
+                return (false, "Khu vực phải đang hoạt động, thuộc đúng bãi và đúng tầng được phân công.", null);
             if (!isArea && request.ZoneId.HasValue)
                 return (false, "Phân công trực cổng chỉ chọn tầng, không chọn khu vực.", null);
         }

@@ -151,6 +151,37 @@ describe("CustomerDashboard booking", () => {
       startTime: new Date("2099-01-02T10:00").toISOString(),
       notes: "Gần lối vào",
     });
+  });
+
+  it("uses the server booking time when the customer leaves the default start time unchanged", async () => {
+    render(
+      <MemoryRouter
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <CustomerDashboard />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Đặt chỗ tại bãi này" }),
+    );
+    await screen.findByDisplayValue("Nguyễn An");
+    fireEvent.change(screen.getByLabelText("Biển số xe"), {
+      target: { value: "51F-123.45" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Xác nhận đặt chỗ" }));
+
+    await screen.findByRole("status");
+    const request = fetchMock.mock.calls.find(
+      ([input, options]) =>
+        new URL(input, "http://localhost").pathname === "/api/v1/bookings" &&
+        options.method === "POST",
+    );
+    expect(JSON.parse(request[1].body)).toEqual({
+      lotId: 1,
+      plateNumber: "51F-123.45",
+      notes: null,
+    });
     expect(screen.getByRole("status").textContent).toContain(
       "Mã đặt chỗ #28.",
     );

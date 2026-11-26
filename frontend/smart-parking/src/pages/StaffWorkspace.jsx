@@ -27,8 +27,8 @@ const views = [
   { id: "exit", name: "Xe ra", description: "Đối chiếu tại cổng ra" },
   {
     id: "verify",
-    name: "Xác minh ô",
-    description: "Ghép xe với vị trí thực tế",
+    name: "Sơ đồ 2D & xác minh ô",
+    description: "Xem bãi, cập nhật biển số và xác minh ô xe",
   },
   { id: "sessions", name: "Xe đang gửi", description: "Tra cứu phiên tại bãi" },
   {
@@ -61,10 +61,12 @@ function StaffContent() {
   // Mỗi Staff chỉ thấy chức năng của loại phân công tại bãi đang chọn (trực cổng hoặc trực khu vực).
   const duty = lot?.duty;
   const visibleViews = views.filter((item) => canUseStaffView(duty, item.id));
+  const defaultView =
+    visibleViews.find((item) => item.id === "verify") || visibleViews[0];
   // "Xe đặt qua web" mở từ sidebar/thông báo, không có tab riêng trong dãy tab.
   const view =
     visibleViews.find((item) => item.id === selectedView) ||
-    visibleViews[0] ||
+    defaultView ||
     views.find((item) => item.id === "entry");
   useEffect(() => {
     if (lot && view.id !== selectedView) setParams({ view: view.id }, { replace: true });

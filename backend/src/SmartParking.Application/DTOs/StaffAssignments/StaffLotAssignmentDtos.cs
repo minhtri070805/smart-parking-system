@@ -54,13 +54,12 @@ public class CreateStaffAssignmentRequestDto : IValidatableObject
 
     [Range(1, int.MaxValue)]
     public int? FloorId { get; set; }
+    /// <summary>Optional area restriction; null applies the assignment to the whole selected floor.</summary>
     [Range(1, int.MaxValue)]
     public int? ZoneId { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (Duty == StaffDuties.SlotVerifier && ZoneId is not > 0)
-            yield return new ValidationResult("Chọn khu vực được phân công.", [nameof(ZoneId)]);
         if (Duty is StaffDuties.Gate or StaffDuties.GateIn or StaffDuties.GateOut && ZoneId.HasValue)
             yield return new ValidationResult("Phân công trực cổng chỉ chọn tầng, không chọn khu vực.", [nameof(ZoneId)]);
     }

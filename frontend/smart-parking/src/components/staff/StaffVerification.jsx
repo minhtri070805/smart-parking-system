@@ -16,13 +16,7 @@ import {
   useStaffAction,
   useStaffQuery,
 } from "./StaffUI.jsx";
-
-const physicalLabels = {
-  EMPTY: "Cảm biến: trống",
-  OCCUPIED: "Cảm biến: có xe",
-  MAINTENANCE: "Bảo trì",
-  UNAVAILABLE: "Không khả dụng",
-};
+import StaffParkingMap from "./StaffParkingMap.jsx";
 
 export default function StaffVerification({
   lot,
@@ -339,52 +333,25 @@ export default function StaffVerification({
                         <i className="is-blocked" /> Không thể chọn
                       </span>
                     </div>
-                    <div
-                      className="staff-slot-picker"
-                      aria-label="Chọn ô đỗ thực tế"
-                    >
-                      {data.slots
-                        .filter(
-                          (item) =>
-                            !floorId || String(item.floorId) === floorId,
-                        )
-                        .map((item) => {
-                          const available = slotIsSelectable(
-                            item,
-                            session,
-                            data.sessions,
-                            mode,
-                          );
-                          const linked = data.sessions.find(
-                            (other) =>
-                              other.currentSlotId === item.id &&
-                              other.id !== session.id,
-                          );
-                          return (
-                            <button
-                              type="button"
-                              key={item.id}
-                              className={`staff-slot-choice staff-slot-choice--${String(item.physicalStatus).toLowerCase()} ${String(slotId) === String(item.id) ? "is-selected" : ""}`}
-                              disabled={action.busy || !available}
-                              aria-pressed={String(slotId) === String(item.id)}
-                              onClick={() => {
-                                setSlotId(String(item.id));
-                                setChecked(false);
-                              }}
-                            >
-                              <strong>{item.slotCode}</strong>
-                              <span>{item.floorName}</span>
-                              <small>
-                                {linked
-                                  ? `Đang gắn xe ${linked.plateNumber}`
-                                  : !available
-                                    ? "Chưa thể chọn"
-                                    : physicalLabels[item.physicalStatus]}
-                              </small>
-                            </button>
-                          );
-                        })}
-                    </div>
+                    <StaffParkingMap
+                      floors={data.floors.filter(
+                        (item) =>
+                          !floorId || String(item.id) === floorId,
+                      )}
+                      slots={data.slots.filter(
+                        (item) =>
+                          !floorId || String(item.floorId) === floorId,
+                      )}
+                      sessions={data.sessions}
+                      session={session}
+                      mode={mode}
+                      selectedSlotId={slotId}
+                      disabled={action.busy}
+                      onSelect={(item) => {
+                        setSlotId(String(item.id));
+                        setChecked(false);
+                      }}
+                    />
                     {data.slots.length === 0 && (
                       <Notice kind="warning">
                         Bãi chưa có ô hoạt động để lựa chọn. Liên hệ quản lý

@@ -349,3 +349,64 @@ button:focus-visible {
     transform: none;
   }
 }
+
+@media (max-width: 767px) {
+  .home .hero {
+    padding-top: 36px;
+    padding-bottom: 40px;
+  }
+  .home-demo-banner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+  }
+  .footer-resources {
+    padding-top: 28px;
+  }
+  .footer-resources__grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding-bottom: 24px;
+  }
+  .footer-resource-links {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .footer-resource-links a {
+    min-height: 56px;
+  }
+  .footer-bottom {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .information-page {
+    padding-top: 24px;
+    padding-bottom: 36px;
+  }
+  .information-heading {
+    margin-bottom: 24px;
+  }
+  .information-heading h1 {
+    font-size: clamp(28px, 8vw, 36px);
+  }
+  .information-heading > p {
+    font-size: 16px;
+  }
+  .information-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .information-layout aside {
+    position: static;
+  }
+}
+
+@media (hover: none) {
+  .home-interactive-card:hover,
+  .home .hero__cta .btn:hover,
+  .footer-resource-links a:hover > span:last-child {
+    transform: none;
+  }
+}
