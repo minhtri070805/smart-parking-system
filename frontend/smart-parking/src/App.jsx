@@ -17,6 +17,7 @@ import AdminDashboard from "./pages/AdminDashboard.jsx";
 import AdminParkingSettings from "./pages/AdminParkingSettings.jsx";
 import StaffWorkspace from "./pages/StaffWorkspace.jsx";
 import AdminPeople from "./pages/AdminPeople.jsx";
+import AdminAuditLogs from "./pages/AdminAuditLogs.jsx";
 import CustomerSessions from "./pages/CustomerSessions.jsx";
 import MyTickets from "./pages/MyTickets.jsx";
 import RevenuePage from "./pages/RevenuePage.jsx";
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/parking-settings" element={<AdminParkingSettings />} />
           <Route path="/admin/people" element={<AdminPeople />} />
+          <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
           <Route path="/manager" element={<ManagerWorkspace />} />
           <Route path="/manager/revenue" element={<RequireRole role="MANAGER"><RevenuePage /></RequireRole>} />
           <Route path="/manager/shifts" element={<RequireRole role="MANAGER"><ManagerOperations /></RequireRole>} />

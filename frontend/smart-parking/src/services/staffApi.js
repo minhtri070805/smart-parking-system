@@ -233,11 +233,18 @@ export const staffApi = {
       throw new Error("Không tìm thấy phiên xe tại bãi đang chọn.");
     return session;
   },
-  detect(file, lotId, purpose = "ENTRY") {
+  async detect(file, lotId, purpose = "ENTRY") {
     validatePhoto(file);
-    const body = new FormData();
-    body.append("file", file);
-    return data(`/v1/staff/detect?${query({ lotId, purpose })}`, { method: "POST", body });
+    // Use Operations Recognition facade when available, with fallback to legacy route
+    try {
+      const { operationsRecognitionApi } = await import("./operationsApi.js");
+      return await operationsRecognitionApi.detect(file, lotId, purpose);
+    } catch (err) {
+      // Fallback to legacy Monolith route if operations endpoint fails
+      const body = new FormData();
+      body.append("file", file);
+      return data(`/v1/staff/detect?${query({ lotId, purpose })}`, { method: "POST", body });
+    }
   },
   async upload(file) {
     validatePhoto(file);

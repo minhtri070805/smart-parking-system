@@ -47,6 +47,8 @@ public interface IStaffDetectionService
     Task<StaffDetectionDto?> GetByIdAsync(long id, CancellationToken cancellationToken);
 
     Task<StaffDetectionDto?> GetByCaptureIdAsync(string captureId, CancellationToken cancellationToken);
+
+    Task<StaffDetectionDto?> LinkToSessionAsync(long recognitionId, long sessionId, string? ticketId, CancellationToken cancellationToken);
 }
 
 public interface IAiServiceClient

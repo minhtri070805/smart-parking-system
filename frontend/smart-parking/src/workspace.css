@@ -46,6 +46,32 @@
   margin-bottom: 20px;
   box-shadow: 0 6px 24px #163c3010;
 }
+.account-page-size {
+  flex: 0 0 170px !important;
+}
+.account-table--users th,
+.account-table--users td {
+  padding: 11px 12px;
+}
+.account-table--users tbody tr:hover {
+  background: #fbfdff;
+}
+.account-table--users td:first-child button {
+  font-weight: 700;
+  color: #1d579e;
+}
+.account-table--users .account-role-editor {
+  min-width: 160px;
+}
+.account-table--users .account-role-editor select {
+  min-width: 126px;
+  padding: 8px 10px;
+}
+.account-table--users .account-role-editor .btn {
+  padding: 7px 10px;
+  min-height: 32px;
+  font-size: 11px;
+}
 .workspace-panel h2 {
   margin-top: 0;
 }

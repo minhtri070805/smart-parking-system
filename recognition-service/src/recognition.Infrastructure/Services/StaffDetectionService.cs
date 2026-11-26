@@ -200,6 +200,18 @@ public sealed class StaffDetectionService(
         return record is null ? null : Map(record, ResolveStatus(record));
     }
 
+    public async Task<StaffDetectionDto?> LinkToSessionAsync(long recognitionId, long sessionId, string? ticketId, CancellationToken cancellationToken)
+    {
+        var record = await db.RecognitionRecords.FirstOrDefaultAsync(x => x.Id == recognitionId, cancellationToken);
+        if (record is null) return null;
+
+        record.MatchedParkingSessionId = sessionId;
+        if (!string.IsNullOrWhiteSpace(ticketId)) record.TicketId = ticketId;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Map(record, RecognitionStatus.Linked);
+    }
+
     private static bool HasImageSignature(byte[] bytes, string contentType)
     {
         if (bytes.Length < 12) return false;
@@ -220,6 +232,7 @@ public sealed class StaffDetectionService(
 
     private static string ResolveStatus(AiRecognitionRecord r)
     {
+        if (r.MatchedParkingSessionId.HasValue && r.ConfirmedAt.HasValue) return RecognitionStatus.Linked;
         if (r.ConfirmedAt.HasValue) return RecognitionStatus.Confirmed;
         if (string.IsNullOrWhiteSpace(r.PlateNumber)) return RecognitionStatus.Unreadable;
         if (r.MatchedParkingSessionId.HasValue) return RecognitionStatus.PendingConfirmation;
