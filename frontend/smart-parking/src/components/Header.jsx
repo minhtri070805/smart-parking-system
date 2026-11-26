@@ -100,8 +100,7 @@ export default function Header({ workspace = false }) {
       .then((items) => { if (!controller.signal.aborted) setNotifications(Array.isArray(items) ? items : []); })
       .catch(() => { if (!controller.signal.aborted) setNotifications([]); });
     load();
-    const timer = window.setInterval(load, 60000);
-    return () => { controller.abort(); window.clearInterval(timer); };
+    return () => controller.abort();
   }, [session?.userProfile?.role, session?.userProfile?.id]);
 
   useEffect(() => {
@@ -230,7 +229,7 @@ export default function Header({ workspace = false }) {
       setAccountSaving(false);
     }
   }
-  // Staff chỉ thấy menu thuộc loại phân công của mình (trực cổng hoặc trực khu vực).
+  // Staff luôn thấy đủ menu; API nghiệp vụ mới quyết định quyền theo ca đang chạy.
   const [staffDuties, setStaffDuties] = useState(null);
   useEffect(() => {
     if (role !== "STAFF") { setStaffDuties(null); return undefined; }

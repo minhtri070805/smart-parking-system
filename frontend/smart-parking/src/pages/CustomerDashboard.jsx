@@ -50,7 +50,6 @@ function DashboardContent({ publicView = false }) {
   const [selectedFloorId, setSelectedFloorId] = useState(params.get("floorId") || "");
   const [slots, setSlots] = useState([]);
   const [slotsUpdatedAt, setSlotsUpdatedAt] = useState(null);
-  const [slotRevision, setSlotRevision] = useState(0);
   const [lotsLoading, setLotsLoading] = useState(true);
   const [floorsLoading, setFloorsLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -182,14 +181,6 @@ function DashboardContent({ publicView = false }) {
   }, [selectedLotId, revision]);
 
   useEffect(() => {
-    const timerId = window.setInterval(
-      () => setSlotRevision((value) => value + 1),
-      15_000,
-    );
-    return () => window.clearInterval(timerId);
-  }, []);
-
-  useEffect(() => {
     if (!selectedLotId) {
       setCapacity(null);
       setCapacityError("");
@@ -198,7 +189,6 @@ function DashboardContent({ publicView = false }) {
     }
 
     let active = true;
-    let timeoutId;
     const controller = new AbortController();
     const loadCapacity = async () => {
       try {
@@ -217,10 +207,7 @@ function DashboardContent({ publicView = false }) {
         if (active && !controller.signal.aborted)
           setCapacityError(error.message);
       } finally {
-        if (active) {
-          setCapacityLoading(false);
-          timeoutId = window.setTimeout(loadCapacity, 15_000);
-        }
+        if (active) setCapacityLoading(false);
       }
     };
 
@@ -229,7 +216,6 @@ function DashboardContent({ publicView = false }) {
     return () => {
       active = false;
       controller.abort();
-      window.clearTimeout(timeoutId);
     };
   }, [selectedLotId, revision]);
 
@@ -237,7 +223,6 @@ function DashboardContent({ publicView = false }) {
     if (publicView) return undefined;
 
     let active = true;
-    let timeoutId;
     const controller = new AbortController();
     const loadMyBookings = async () => {
       try {
@@ -258,10 +243,7 @@ function DashboardContent({ publicView = false }) {
         if (active && !controller.signal.aborted)
           setMyBookingsError(error.message);
       } finally {
-        if (active) {
-          setMyBookingsLoading(false);
-          timeoutId = window.setTimeout(loadMyBookings, 30_000);
-        }
+        if (active) setMyBookingsLoading(false);
       }
     };
 
@@ -270,7 +252,6 @@ function DashboardContent({ publicView = false }) {
     return () => {
       active = false;
       controller.abort();
-      window.clearTimeout(timeoutId);
     };
   }, [publicView, revision]);
 
@@ -309,7 +290,7 @@ function DashboardContent({ publicView = false }) {
     return () => {
       active = false;
     };
-  }, [selectedFloorId, revision, slotRevision]);
+  }, [selectedFloorId, revision]);
 
   useEffect(() => {
     if (!bookingOpen || publicView) return undefined;

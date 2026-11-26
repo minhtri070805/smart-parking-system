@@ -17,7 +17,6 @@ import {
   useStaffQuery,
 } from "../components/staff/StaffUI.jsx";
 import { staffApi } from "../services/staffApi.js";
-import { canUseStaffView } from "../services/staffDuty.js";
 import "../staff.css";
 
 const views = [
@@ -58,9 +57,9 @@ function StaffContent() {
     lots.data?.find((item) => String(item.lotId) === selectedLotId) ||
     lots.data?.[0];
   const lotId = lot?.lotId;
-  // Mỗi Staff chỉ thấy chức năng của loại phân công tại bãi đang chọn (trực cổng hoặc trực khu vực).
-  const duty = lot?.duty;
-  const visibleViews = views.filter((item) => canUseStaffView(duty, item.id));
+  // Tài khoản Staff luôn thấy đầy đủ workspace. Backend sẽ chặn thao tác nếu
+  // chưa được Manager đưa vào một ca đang chạy với nhiệm vụ phù hợp.
+  const visibleViews = views;
   // "Xe đặt qua web" mở từ sidebar/thông báo, không có tab riêng trong dãy tab.
   const view =
     visibleViews.find((item) => item.id === selectedView) ||
@@ -190,12 +189,10 @@ function StaffContent() {
             </article>
           </div>
           <StaffError error={capacity.error} />
-          {canUseStaffView(duty, "bookings") && newBookingsCount > 0 && view.id !== "bookings" && <Notice kind="success">Có {newBookingsCount} đặt chỗ mới. <button className="staff-text-button" disabled={busy} onClick={() => open("bookings")}>Xem xe đặt qua web</button></Notice>}
-          {canUseStaffView(duty, "bookings") && (
-            <section hidden={view.id !== "bookings"} aria-label="Xe đặt qua web">
-              <StaffBookings key={lotId} lotId={lotId} lotIsActive={lot.isActive} revision={revision} onChanged={refresh} onBusyChange={setBusy} onNewBookingsChange={setNewBookingsCount} />
-            </section>
-          )}
+          {newBookingsCount > 0 && view.id !== "bookings" && <Notice kind="success">Có {newBookingsCount} đặt chỗ mới. <button className="staff-text-button" disabled={busy} onClick={() => open("bookings")}>Xem xe đặt qua web</button></Notice>}
+          <section hidden={view.id !== "bookings"} aria-label="Xe đặt qua web">
+            <StaffBookings key={lotId} lotId={lotId} lotIsActive={lot.isActive} revision={revision} onChanged={refresh} onBusyChange={setBusy} onNewBookingsChange={setNewBookingsCount} />
+          </section>
 
           <div className="staff-workspace-meta">
             <span>{view.description}</span>

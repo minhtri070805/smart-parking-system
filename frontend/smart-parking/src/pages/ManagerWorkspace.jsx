@@ -308,7 +308,7 @@ function LotWorkspace({ lotId, revision, refresh, busy, action, view }) {
           <p className="workspace-note">
             Chỗ trống khả dụng đã trừ giữ chỗ từ lúc khách đặt. Khi xe vào bãi,
             lượt giữ chỗ được chuyển thành phiên đang gửi; ô có xe và danh sách
-            này tự cập nhật mỗi 15 giây.
+            này được tải lại khi bạn bấm Làm mới dữ liệu.
           </p>
           <Feedback loading={sessions.loading} error={sessions.error} />
           <div className="workspace-table">
@@ -493,11 +493,6 @@ function ManagerContent() {
   const assigned = itemsOf(lots.data);
   const lot =
     assigned.find((l) => String(l.lotId) === selectedLot) || assigned[0];
-  useEffect(() => {
-    if (!lot || !["overview", "sessions"].includes(view)) return undefined;
-    const timer = window.setInterval(() => setRevision((n) => n + 1), 15_000);
-    return () => window.clearInterval(timer);
-  }, [lot?.lotId, view]);
   return (
     <section className="workspace container">
       <div className="workspace-actions" style={{ justifyContent: "flex-end", marginBottom: 12 }}>
