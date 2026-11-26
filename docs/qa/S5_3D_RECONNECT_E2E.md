@@ -18,11 +18,35 @@ From `frontend/smart-parking` run:
 
 ```bash
 npx vitest run src/services/parkingScene.test.js --config vitest.config.js
+npx vitest run src/components/ParkingCanvas.ui.test.jsx src/components/ParkingAdminAssistant.ui.test.jsx --config vitest.config.js
 node --test ../tests/parking-3d-viewer.test.cjs
 ```
 
 The snapshot integration test covers the state sequence above and verifies that a
 late `RESERVED` snapshot cannot replace a newer `OCCUPIED` snapshot.
+
+The component checks also prove that a failed 3D renderer exposes the list
+fallback, and that the Admin assistant cannot write before a reason and an
+explicit confirmation are supplied. Protected slots and stale snapshots remain
+read-only.
+
+## Admin assistant safety check
+
+1. Sign in as Admin and open an active floor in `/app/parking`.
+2. Enter `xem ô A-01` and confirm the assistant only reports the current Core
+   snapshot state.
+3. Enter `đổi ô A-01 sang bảo trì`. Confirm the page shows a proposal and the
+   message `Chưa có dữ liệu nào được ghi.`
+4. Enter a reason and explicitly confirm. Verify exactly one
+   `PATCH /api/v1/parking-slots/<id>/status` request is sent.
+5. Verify the request is authorized again by Core and produces the existing
+   `UPDATE_SLOT_PHYSICAL_STATUS` audit event.
+6. Repeat while offline/stale and with a protected slot. The confirmation must
+   remain disabled or the proposal must be rejected before any request is sent.
+
+The assistant never connects to Neon directly. Its write path uses the existing
+Core endpoint so role, lot access, active-session/booking protection, and audit
+rules stay authoritative.
 
 ## Shared-environment prerequisites
 
