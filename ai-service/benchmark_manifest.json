@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "description": "Benchmark dataset manifest for Vietnamese license plate recognition",
+  "conditions": ["clear_daylight", "night_low_light", "angled", "blurry", "unreadable", "partial_obscured"],
+  "items": [
+    { "id": 1, "image_path": "dataset/sample_01.jpg", "ground_truth": "29A-12345", "condition": "clear_daylight" },
+    { "id": 2, "image_path": "dataset/sample_02.jpg", "ground_truth": "30E-67890", "condition": "night_low_light" },
+    { "id": 3, "image_path": "dataset/sample_03.jpg", "ground_truth": "51A-99999", "condition": "angled" },
+    { "id": 4, "image_path": "dataset/sample_04.jpg", "ground_truth": "43B-11111", "condition": "blurry" },
+    { "id": 5, "image_path": "dataset/sample_05.jpg", "ground_truth": "", "condition": "unreadable" }
+  ]
+}

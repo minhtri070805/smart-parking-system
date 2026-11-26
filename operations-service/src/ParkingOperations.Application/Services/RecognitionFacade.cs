@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using ParkingOperations.Application.Common.Exceptions;
 using ParkingOperations.Application.Common.Interfaces;
 using ParkingOperations.Application.DTOs.Recognition;
+using ParkingOperations.Domain.Enums;
 
 namespace ParkingOperations.Application.Services;
 
@@ -26,7 +27,7 @@ public sealed class RecognitionFacade(
         long contentLength,
         long staffUserId,
         int lotId,
-        string purpose,
+        RecognitionPurpose purpose,
         string? captureId,
         string? imageId,
         string? eventId,
@@ -40,9 +41,9 @@ public sealed class RecognitionFacade(
         if (staffUserId <= 0)
             throw new ImageValidationException("Invalid staffUserId. Authentication required.");
 
-        var normalizedPurpose = purpose?.Trim().ToUpperInvariant();
-        if (normalizedPurpose is not ("ENTRY" or "EXIT"))
+        if (!Enum.IsDefined(purpose))
             throw new ImageValidationException("Purpose must be either 'ENTRY' or 'EXIT'.");
+        var normalizedPurpose = purpose.ToString();
 
         var validation = fileValidationService.ValidateImageFile(imageStream, contentType, contentLength);
         if (!validation.IsValid)
@@ -80,7 +81,7 @@ public sealed class RecognitionFacade(
                 contentLength,
                 staffUserId,
                 lotId,
-                normalizedPurpose,
+                purpose,
                 captureId,
                 imageId,
                 eventId,
