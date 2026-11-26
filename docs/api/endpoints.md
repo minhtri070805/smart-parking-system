@@ -411,9 +411,9 @@ Frontend 3D phải dùng endpoint này làm nguồn authoritative và áp stale 
 
 ## 7 API còn thiếu và hợp đồng đề xuất
 
-Các URI dưới đây là **ĐỀ XUẤT, chưa tồn tại tại commit đối chiếu**. Không gọi chúng như API đã có. Chốt tên/DTO/quyền và migration trước khi bàn giao.
+Các URI dưới đây gồm API hiện có và API **ĐỀ XUẤT**; từng dòng ghi quyền/trạng thái. Các đề xuất chưa tồn tại không được gọi như API đã có. Với API subscription đã triển khai, xem trạng thái bán và giới hạn trong dòng tương ứng.
 
-| Nhóm | URI đề xuất | Quyền và kết quả cần đạt |
+| Nhóm | URI | Quyền và kết quả cần đạt |
 |---|---|---|
 | Tài khoản | `POST /api/v1/auth/register`, `/verify-email`, `/resend-verification` | Customer, Gmail/reCAPTCHA, giới hạn và token dùng một lần; tên endpoint khôi phục cần thống nhất |
 | Nhiệm vụ | `PATCH /api/v1/staff-assignments/{id}/duties` | Admin, nhiệm vụ cổng/điều phối độc lập theo bãi |
@@ -424,7 +424,7 @@ Các URI dưới đây là **ĐỀ XUẤT, chưa tồn tại tại commit đối
 | Cổng ra | `POST /api/v1/exit-lookups`; `POST /api/v1/parking-sessions/{id}/confirm-exit` | Quẹt vé/thẻ để tải phiên và tính phí; chỉ confirm-exit sau thanh toán/ngoại lệ và xe thực sự qua cổng |
 | Ảnh theo phiên | `POST /api/v1/parking-sessions/{id}/images` | Liên kết ảnh/nhận diện/xác nhận, quyền theo bãi và phiên |
 | Bảng IoT slot cố định | `GET /api/v1/devices/{id}/slot-display-config` | Thiết bị được xác thực nhận full biển số đúng slot/quyền/hiệu lực; không public và không dùng token người dùng |
-| Gói cố định | `/api/v1/parking-passes`, `/renewals` | Customer sở hữu, ô/khu/xe/quyền hạn và điều kiện tiền/duyệt |
+| Gói cố định | `GET /api/v1/subscription-plans` (anonymous catalog); Admin `GET /api/v1/admin/subscription-plans` (all plans; optional `status`, `lotId`), `POST /api/v1/subscription-plans`, `PUT /api/v1/subscription-plans/{id}`, `POST /api/v1/subscription-plans/{id}/approve`; Customer `GET /api/v1/parking-passes/my`, `GET /api/v1/parking-passes/{id}`; Admin `POST /api/v1/parking-passes/{id}/suspend` | Plans cover every zone and slot in their lot. Core has no plan-delete or pass-purchase route; checkout is created by Payment Service at `POST /api/payments/payos/subscriptions` with an `Idempotency-Key`. Core creates or renews a pass only after a verified webhook and signed internal confirmation. See [PayOS subscription payments](payos-subscriptions.md). |
 | Report | `/api/v1/slot-reports` | Chủ quyền ô gửi bằng chứng; nội bộ xác minh; không tự tạo khoản phạt |
 | Hoàn tiền/báo cáo | `/api/v1/refunds`, `/reports` | Đúng quyền, giao dịch gốc/retention và phạm vi bãi |
 

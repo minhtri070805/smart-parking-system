@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddScoped<ParkingLotService>();
         services.AddScoped<IoTService>();
         services.AddScoped<ParkingOperationsService>();
+        services.AddScoped<IParkingPassExpirationService, ParkingPassExpirationService>();
 
         // Sprint 3 – Thức: Event Ingestion Pipeline
         // Use factory so DI resolves IVehicleCompatibilityChecker and IParkingEventBridge

@@ -36,6 +36,16 @@
 - Staff sai bãi hoặc sai duty bị chặn tại API.
 - Đổi xe chỉ cập nhật bảng IoT sau khi yêu cầu được xác minh và có hiệu lực.
 
+## Gói gửi cố định (Core slice hiện có)
+
+- Catalog chỉ trả plan APPROVED đang trong khoảng hiệu lực; DRAFT/RETIRED không xuất hiện.
+- Admin tạo plan version mới cho zone FIXED; giá lấy từ request Admin và lưu snapshot trên pass.
+- Customer chỉ yêu cầu pass cho xe active của chính mình; không nhận owner, giá, trạng thái hoặc scope từ browser.
+- Purchase cần `Idempotency-Key`; retry cùng key trả lại cùng pass, và unique DB indexes chặn trùng xe-zone/slot đang PENDING/SCHEDULED/ACTIVE.
+- Purchase trả PENDING và không cấp quyền truy cập; cấu hình gốc tắt, Development bật để thử, production phải giữ tắt cho tới khi payment/policy được cấu hình.
+- Customer chỉ đọc pass của mình; Admin suspension có lý do và audit.
+- Payment clearance, renewal/change request, cards/barrier, expiry job và UI chưa có tiêu chí chạy đạt; không mở bán hoặc coi pass là entitlement hoàn chỉnh.
+
 ## Phục hồi
 
 - Restart không mất session chờ, queue, event result hoặc khoản thu.

@@ -177,7 +177,7 @@ Khoản thu thành công giữ nguyên lịch sử; hoàn tiền là bản ghi r
 
 ## SM-09 Quyền gửi cố định và thẻ đích
 
-**YÊU CẦU/ĐỀ XUẤT**, chưa có bảng/API gói/thẻ core. Quyền dịch vụ và thẻ vật lý có hai vòng đời.
+Core stores subscription passes in `parking_passes_subcription`. Each pass stores `lot_id`; it does not store zone or slot. A verified PayOS payment confirmation creates or renews an `ACTIVE` pass. A Core worker checks `ends_at_utc` every minute and marks due passes `EXPIRED`.
 
 ```mermaid
 stateDiagram-v2

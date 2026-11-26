@@ -26,6 +26,8 @@ public interface IApplicationDbContext
     DbSet<ParkingZone> ParkingZones { get; }
     DbSet<ParkingPolicy> ParkingPolicies { get; }
     DbSet<ParkingTicket> ParkingTickets { get; }
+    DbSet<SubscriptionPlan> SubscriptionPlans { get; }
+    DbSet<ParkingPass> ParkingPasses { get; }
 
     DatabaseFacade Database { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

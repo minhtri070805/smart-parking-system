@@ -5,7 +5,7 @@ Payment Service hiện dùng VNPay Sandbox. Không dùng thông tin cấu hình 
 ## Chạy demo local
 
 1. Chạy Core API tại `http://localhost:5295` và Payment Service tại `http://localhost:5183`.
-2. Cấu hình cùng một `PaymentService:SharedSecret` cho Core API và Payment Service. Payment Service gọi Core tại `Core:BaseUrl` (mặc định `http://localhost:5295`).
+2. Cấu hình cùng một `PaymentService:SharedSecret` cho Core API và Payment Service. Đặt URL gốc Core một lần trong `payment-service/.env` bằng `Services__Core__BaseUrl` (mặc định `http://localhost:5295/`); các lệnh gọi Core trong Payment Service dùng chung giá trị này.
 3. Chạy tunnel công khai tới Payment Service, ví dụ:
 
    ```powershell
