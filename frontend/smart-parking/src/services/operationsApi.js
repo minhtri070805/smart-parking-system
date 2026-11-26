@@ -41,17 +41,19 @@ export function operationsApiBaseConfigured() {
 
 // Operations Recognition APIs
 export const operationsRecognitionApi = {
-  detect: async (file, lotId, purpose = "ENTRY", imageId = null) => {
+  detect: async (file, lotId, purpose = "ENTRY", options = {}) => {
     const body = new FormData();
     body.append("file", file);
     const queryParams = new URLSearchParams({
       lotId: String(lotId),
       purpose,
-      ...(imageId ? { imageId } : {}),
+      ...(options.captureId ? { captureId: options.captureId } : {}),
     });
+    const key = options.idempotencyKey || crypto.randomUUID();
     return operationsRequest(`/recognition/detect?${queryParams.toString()}`, {
       method: "POST",
       body,
+      headers: { "Idempotency-Key": key },
     });
   },
 

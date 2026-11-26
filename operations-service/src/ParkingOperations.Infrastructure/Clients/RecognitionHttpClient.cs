@@ -5,6 +5,7 @@ using System.Text.Json;
 using ParkingOperations.Application.Common.Exceptions;
 using ParkingOperations.Application.Common.Interfaces;
 using ParkingOperations.Application.DTOs.Recognition;
+using ParkingOperations.Domain.Enums;
 
 namespace ParkingOperations.Infrastructure.Clients;
 
@@ -20,7 +21,7 @@ public sealed class RecognitionHttpClient(HttpClient client) : IRecognitionClien
         long contentLength,
         long staffUserId,
         int lotId,
-        string purpose,
+        RecognitionPurpose purpose,
         string? captureId = null,
         string? imageId = null,
         string? eventId = null,
@@ -36,7 +37,7 @@ public sealed class RecognitionHttpClient(HttpClient client) : IRecognitionClien
         content.Headers.ContentType = mediaType;
         form.Add(content, "file", "staff-upload");
 
-        var query = $"internal/recognition/detect?staffUserId={staffUserId}&lotId={lotId}&purpose={Uri.EscapeDataString(purpose)}";
+        var query = $"internal/recognition/detect?staffUserId={staffUserId}&lotId={lotId}&purpose={Uri.EscapeDataString(purpose.ToString())}";
         if (!string.IsNullOrWhiteSpace(captureId))
         {
             query += $"&captureId={Uri.EscapeDataString(captureId)}";

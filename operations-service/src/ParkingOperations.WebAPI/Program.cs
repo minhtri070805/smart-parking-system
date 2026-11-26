@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using ParkingOperations.Application.Common.Interfaces;
 using ParkingOperations.Application.Services;
 using ParkingOperations.Infrastructure;
@@ -13,8 +15,43 @@ using ParkingOperations.Infrastructure.Services;
 using ParkingOperations.WebAPI.Health;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+builder.Services.AddControllers().AddJsonOptions(options =>
+    options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Parking Operations API",
+        Version = "v1",
+        Description = "Parking operations and recognition APIs."
+    });
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Nhập JWT access token. Swagger sẽ tự thêm tiền tố Bearer."
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 
 const long maxUploadSizeBytes = 10 * 1024 * 1024;
 builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = maxUploadSizeBytes);
@@ -91,7 +128,12 @@ builder.Services.AddSingleton<IRecognitionRouteConfig, RecognitionRouteConfig>()
 builder.Services.AddScoped<IRecognitionFacade, RecognitionFacade>();
 
 var app = builder.Build();
-if (app.Environment.IsDevelopment()) app.MapOpenApi();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Parking Operations API v1"));
+}
 app.MapOperationsHealthChecks();
 app.UseHttpsRedirection();
 app.UseCors();

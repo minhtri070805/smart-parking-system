@@ -9,12 +9,14 @@ public static class PersistenceDependencyInjection
 {
     public static IServiceCollection AddRecognitionPersistence(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var connectionString = configuration.GetConnectionString("AiRecognitionConnection");
         if (string.IsNullOrWhiteSpace(connectionString))
-            throw new InvalidOperationException("ConnectionStrings:DefaultConnection is missing for Recognition Persistence.");
+            throw new InvalidOperationException("ConnectionStrings:AiRecognitionConnection is missing for Recognition Persistence.");
 
         services.AddDbContext<AiRecognitionDbContext>(options =>
-            options.UseNpgsql(connectionString, b => b.MigrationsAssembly(typeof(AiRecognitionDbContext).Assembly.FullName)));
+            options.UseNpgsql(connectionString, b => b
+                .MigrationsAssembly(typeof(AiRecognitionDbContext).Assembly.FullName)
+                .MigrationsHistoryTable("__AiRecognitionMigrationsHistory")));
 
         return services;
     }

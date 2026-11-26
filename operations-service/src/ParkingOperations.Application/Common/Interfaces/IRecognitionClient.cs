@@ -1,4 +1,5 @@
 using ParkingOperations.Application.DTOs.Recognition;
+using ParkingOperations.Domain.Enums;
 
 namespace ParkingOperations.Application.Common.Interfaces;
 
@@ -10,7 +11,7 @@ public interface IRecognitionClient
         long contentLength,
         long staffUserId,
         int lotId,
-        string purpose,
+        RecognitionPurpose purpose,
         string? captureId = null,
         string? imageId = null,
         string? eventId = null,
