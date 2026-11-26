@@ -1,36 +1,12 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import ParkingAdminAssistant from "../components/ParkingAdminAssistant.jsx";
 import ParkingCanvas from "../components/ParkingCanvas.jsx";
-import { apiRequest } from "../services/api.js";
 import { getAuthSession, subscribeAuthSession } from "../services/authSession.js";
 import { Feedback, itemsOf, useResource, useMutation, write } from "../components/WorkspaceUI.jsx";
 import { sceneStatuses, sceneToDefinition } from "../services/parkingScene.js";
-import { initialSceneSnapshotState, sceneRequestKey, sceneSnapshotReducer } from "../services/sceneSnapshot.js";
-import { canUseStaffView } from "../services/staffDuty.js";
+import { useSceneSnapshot } from "../services/useSceneSnapshot.js";
 import "../parking-scene.css";
-
-function useScene(lotId, revision, identity) {
-  const [state, dispatch] = useReducer(sceneSnapshotReducer, initialSceneSnapshotState);
-  const requestSequence = useRef(0);
-  useEffect(() => {
-    const controller = new AbortController(); let timer;
-    if (!lotId) { dispatch({ type: "reset" }); return () => controller.abort(); }
-    const key = sceneRequestKey(lotId, identity);
-    async function load() {
-      const requestId = ++requestSequence.current;
-      dispatch({ type: "begin", key, requestId });
-      try {
-        const result = await apiRequest(`/v1/parking-lots/${lotId}/scene`, { signal: controller.signal });
-        if (!result?.data) throw new Error("API không trả về snapshot bãi đỗ.");
-        if (!controller.signal.aborted) dispatch({ type: "success", key, requestId, lotId, data: result.data });
-      } catch (e) { if (!controller.signal.aborted) dispatch({ type: "failure", key, requestId, error: e.message }); }
-      finally { if (!controller.signal.aborted) timer = setTimeout(load, 15000); }
-    }
-    load();
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [lotId, revision, identity]);
-  return state;
-}
 
 export default function ParkingScene() {
   const session = useSyncExternalStore(subscribeAuthSession, getAuthSession, getAuthSession);
@@ -51,10 +27,11 @@ export default function ParkingScene() {
   const rawLots = itemsOf(lots.data);
   const choices = rawLots.map(l => ({ id: l.lotId ?? l.id, name: l.lotName ?? l.name, duty: l.duty }));
   const lot = choices.find(l => String(l.id) === lotChoice) || choices[0];
-  const staffDuty = lot?.duty;
-  const canGate = role === "STAFF" && canUseStaffView(staffDuty, "entry");
-  const canArea = role === "STAFF" && canUseStaffView(staffDuty, "verify");
-  const state = useScene(lot?.id, revision, `${session?.userProfile.id || "guest"}:${role || ""}`);
+  // Staff mới vẫn thấy đủ thao tác để biết workspace; Core sẽ kiểm tra ca
+  // đang chạy trước khi thực hiện bất kỳ nghiệp vụ nào.
+  const canGate = role === "STAFF" && Boolean(lot);
+  const canArea = role === "STAFF" && Boolean(lot);
+  const state = useSceneSnapshot(lot?.id, revision, `${session?.userProfile.id || "guest"}:${role || ""}`);
   const scene = state.data?.id === lot?.id ? state.data : null;
   const definition = useMemo(() => sceneToDefinition(scene), [JSON.stringify(scene?.floors), scene?.id, scene?.name]);
   const floors = definition?.liveFloors || [];
@@ -72,7 +49,7 @@ export default function ParkingScene() {
     <div className="parking-toolbar"><label>Bãi đỗ<select aria-label="Bãi đỗ" disabled={action.busy || lots.loading} value={lot?.id || ""} onChange={e => { setLotChoice(e.target.value); setFloorChoice(""); setSelectedId(null); setNextStatus(""); setParams({ lotId: e.target.value }, { replace: true }); }}>
       {!choices.length && <option value="">Chưa có bãi</option>}{choices.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
       <label>Tầng<select aria-label="Tầng" disabled={action.busy || !floor} value={floor?.id || ""} onChange={e => selectFloor(e.target.value)}>{!floor && <option value="">Chưa có tầng</option>}{floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
-      <div className="parking-sync"><i className={state.stale || state.error ? "is-stale" : ""} /><div><strong>{state.stale ? "Dữ liệu có thể đã cũ" : state.error ? "Chưa đồng bộ" : state.loading ? "Đang đồng bộ…" : scene ? "Dữ liệu hệ thống" : "Đang tải bãi"}</strong><small>{scene ? `Cập nhật ${new Date(scene.generatedAtUtc).toLocaleTimeString("vi-VN")} · v${scene.snapshotVersion ?? "cũ"}` : "Tự cập nhật mỗi 15 giây"}</small></div></div>
+      <div className="parking-sync"><i className={state.stale || state.error ? "is-stale" : ""} /><div><strong>{state.stale ? "Dữ liệu có thể đã cũ" : state.error ? "Chưa đồng bộ" : state.loading ? "Đang đồng bộ…" : scene ? "Dữ liệu hệ thống" : "Đang tải bãi"}</strong><small>{scene ? `Cập nhật ${new Date(scene.generatedAtUtc).toLocaleTimeString("vi-VN")} · v${scene.snapshotVersion ?? "cũ"}` : "Tự tải lại khi có kết nối"}</small></div></div>
       <button className="btn btn--outline" disabled={state.loading || action.busy} onClick={refresh}>↻ Làm mới</button>
     </div>
     <Feedback error={lots.error || state.error || action.error} message={action.message} />
@@ -103,6 +80,15 @@ export default function ParkingScene() {
           <select aria-label="Lọc trạng thái ô" value={filter} onChange={e => setFilter(e.target.value)}><option value="">Tất cả trạng thái</option>{Object.entries(sceneStatuses).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
           <div className="parking-slot-list">{rows.map(s => <button key={s.id} className={`parking-slot-row ${selectedId === s.id ? "is-selected" : ""}`} onClick={() => focus(s)}><span><strong>{s.code}</strong>{s.plate && <small>{s.plate}{s.isMine ? " · Xe của tôi" : ""}</small>}</span><span className={`slot-status slot-status--${s.status.toLowerCase()}`}>{sceneStatuses[s.status] || s.status}</span></button>)}{!rows.length && <p className="workspace-empty">{floor.slots.length ? "Không tìm thấy ô phù hợp." : "Tầng chưa có ô đỗ."}</p>}</div>
         </aside></div>
+      {role === "ADMIN" && scene.canManage && <ParkingAdminAssistant
+        slots={floor.slots}
+        disabled={state.loading || state.stale || Boolean(state.error)}
+        onConfirm={async ({ slot: target, status, reason: assistantReason }) => {
+          const result = await write(`/v1/parking-slots/${target.id}/status`, { physicalStatus: status, reason: assistantReason }, "PATCH");
+          refresh();
+          return result;
+        }}
+      />}
       <div className="parking-quick-actions">
         <div>
           <strong>Vận hành tại {scene.name}</strong>

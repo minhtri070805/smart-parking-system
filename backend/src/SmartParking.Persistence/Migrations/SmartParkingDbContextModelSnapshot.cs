@@ -413,6 +413,14 @@ namespace SmartParking.Persistence.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("latitude");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("double precision")
+                        .HasColumnName("longitude");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -441,6 +449,111 @@ namespace SmartParking.Persistence.Migrations
                     b.ToTable("parking_lots", null, t =>
                         {
                             t.HasCheckConstraint("chk_parking_lots_capacity", "total_capacity >= 0");
+
+                            t.HasCheckConstraint("chk_parking_lots_coordinates", "(latitude IS NULL AND longitude IS NULL) OR (latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180)");
+                        });
+                });
+
+            modelBuilder.Entity("SmartParking.Domain.Entities.ParkingPass", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<DateTime>("EndsAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at_utc");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<int>("LotId")
+                        .HasColumnType("integer")
+                        .HasColumnName("lot_id");
+
+                    b.Property<long>("OwnerUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<Guid?>("PaymentInvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_invoice_id");
+
+                    b.Property<long>("PlanId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("plan_id");
+
+                    b.Property<int>("PlanVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("plan_version");
+
+                    b.Property<decimal>("PriceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("price_amount");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("revision");
+
+                    b.Property<DateTime>("StartsAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at_utc");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<long>("VehicleId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("vehicle_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EndsAtUtc")
+                        .HasFilter("status = 'ACTIVE'");
+
+                    b.HasIndex("PlanId");
+
+                    b.HasIndex("OwnerUserId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("VehicleId", "LotId");
+
+                    b.ToTable("parking_passes_subcription", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_parking_passes_dates", "ends_at_utc > starts_at_utc");
+
+                            t.HasCheckConstraint("ck_parking_passes_price", "price_amount >= 0");
+
+                            t.HasCheckConstraint("ck_parking_passes_status", "status IN ('PENDING','SCHEDULED','ACTIVE','EXPIRED','SUSPENDED','CANCELLED')");
                         });
                 });
 
@@ -1266,6 +1379,201 @@ namespace SmartParking.Persistence.Migrations
                     b.ToTable("stored_images", (string)null);
                 });
 
+            modelBuilder.Entity("SmartParking.Domain.Entities.SubscriptionPaymentIntent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTime>("BillingPeriodEndUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("billing_period_end_utc");
+
+                    b.Property<DateTime>("BillingPeriodStartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("billing_period_start_utc");
+
+                    b.Property<DateTime?>("ConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at_utc");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc");
+
+                    b.Property<int>("LotId")
+                        .HasColumnType("integer")
+                        .HasColumnName("lot_id");
+
+                    b.Property<long>("OrderCode")
+                        .HasColumnType("bigint")
+                        .HasColumnName("order_code");
+
+                    b.Property<long>("OwnerUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<long?>("ParkingPassId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("parking_pass_id");
+
+                    b.Property<long>("PlanId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("plan_id");
+
+                    b.Property<string>("ProviderReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("provider_reference");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("status");
+
+                    b.Property<int>("TermMonths")
+                        .HasColumnType("integer")
+                        .HasColumnName("term_months");
+
+                    b.Property<long>("VehicleId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("vehicle_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderCode")
+                        .IsUnique();
+
+                    b.HasIndex("ProviderReference")
+                        .IsUnique()
+                        .HasFilter("provider_reference IS NOT NULL");
+
+                    b.HasIndex("VehicleId", "LotId")
+                        .IsUnique()
+                        .HasFilter("status = 'PENDING_PAYMENT'");
+
+                    b.ToTable("subscription_payment_intents", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_subscription_payment_intents_status", "status IN ('PENDING_PAYMENT','CONFIRMED','CANCELLED')");
+                        });
+                });
+
+            modelBuilder.Entity("SmartParking.Domain.Entities.SubscriptionPlan", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("ApprovedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at_utc");
+
+                    b.Property<long?>("ApprovedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<long>("CreatedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<DateTime>("EffectiveFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from_utc");
+
+                    b.Property<DateTime?>("EffectiveToUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_to_utc");
+
+                    b.Property<int>("LotId")
+                        .HasColumnType("integer")
+                        .HasColumnName("lot_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("PriceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("price_amount");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<int>("TermMonths")
+                        .HasColumnType("integer")
+                        .HasColumnName("term_months");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LotId");
+
+                    b.HasIndex("Code", "Version")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "LotId", "EffectiveFromUtc");
+
+                    b.ToTable("subscription_plans", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_subscription_plans_price", "price_amount >= 0");
+
+                            t.HasCheckConstraint("ck_subscription_plans_status", "status IN ('DRAFT','APPROVED','RETIRED')");
+
+                            t.HasCheckConstraint("ck_subscription_plans_term", "term_months > 0");
+                        });
+                });
+
             modelBuilder.Entity("SmartParking.Domain.Entities.User", b =>
                 {
                     b.Property<long>("Id")
@@ -1661,6 +1969,33 @@ namespace SmartParking.Persistence.Migrations
                     b.Navigation("Zone");
                 });
 
+            modelBuilder.Entity("SmartParking.Domain.Entities.ParkingPass", b =>
+                {
+                    b.HasOne("SmartParking.Domain.Entities.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmartParking.Domain.Entities.SubscriptionPlan", "Plan")
+                        .WithMany()
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SmartParking.Domain.Entities.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("Plan");
+
+                    b.Navigation("Vehicle");
+                });
+
             modelBuilder.Entity("SmartParking.Domain.Entities.ParkingPolicy", b =>
                 {
                     b.HasOne("SmartParking.Domain.Entities.ParkingLot", null)
@@ -1876,6 +2211,17 @@ namespace SmartParking.Persistence.Migrations
                         .HasConstraintName("fk_stored_images_user");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SmartParking.Domain.Entities.SubscriptionPlan", b =>
+                {
+                    b.HasOne("SmartParking.Domain.Entities.ParkingLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Lot");
                 });
 
             modelBuilder.Entity("SmartParking.Domain.Entities.User", b =>

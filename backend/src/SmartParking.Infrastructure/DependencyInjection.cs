@@ -103,6 +103,7 @@ public static class DependencyInjection
         services.AddScoped<IParkingAuthorizationService, ParkingAuthorizationService>();
         services.AddScoped<IStaffLotAssignmentService, StaffLotAssignmentService>();
         services.AddScoped<IAdminUserService, AdminUserService>();
+        services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IBookingService, BookingService>();
         services.AddScoped<IBookingPaymentGateway, BookingPaymentGateway>();
         services.AddScoped<IImageService, ImageService>();

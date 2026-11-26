@@ -10,6 +10,18 @@ public static class ReverseProxyConfig
         [
             new RouteConfig
             {
+                RouteId = "payos-webhook",
+                ClusterId = "paymentService",
+                Match = new RouteMatch { Path = "/api/payments/payos/webhook" }
+            },
+            new RouteConfig
+            {
+                RouteId = "payos-subscriptions",
+                ClusterId = "paymentService",
+                Match = new RouteMatch { Path = "/api/payments/payos/subscriptions/{**catch-all}" }
+            },
+            new RouteConfig
+            {
                 RouteId = "api",
                 ClusterId = "smartParkingApi",
                 Match = new RouteMatch { Path = "/api/{**catch-all}" }
@@ -63,6 +75,18 @@ public static class ReverseProxyConfig
             }
         }
 
+        var paymentDestinations = new Dictionary<string, DestinationConfig>();
+        foreach (var destination in configuration.GetSection("DownstreamServices:PaymentService:Destinations").GetChildren())
+        {
+            if (string.IsNullOrWhiteSpace(destination.Value))
+                throw new InvalidOperationException($"Payment destination '{destination.Key}' must have an address.");
+            if (!Uri.TryCreate(destination.Value, UriKind.Absolute, out var address) || address.Scheme is not ("http" or "https"))
+                throw new InvalidOperationException($"Payment destination '{destination.Key}' must be an absolute HTTP or HTTPS URL.");
+            paymentDestinations.Add(destination.Key, new DestinationConfig { Address = destination.Value });
+        }
+        if (paymentDestinations.Count == 0)
+            throw new InvalidOperationException("Configure at least one destination under DownstreamServices:PaymentService:Destinations.");
+
         return
         [
             new ClusterConfig
@@ -81,6 +105,12 @@ public static class ReverseProxyConfig
                     }
                 },
                 Destinations = destinations
+            },
+            new ClusterConfig
+            {
+                ClusterId = "paymentService",
+                LoadBalancingPolicy = "RoundRobin",
+                Destinations = paymentDestinations
             }
         ];
     }

@@ -25,7 +25,7 @@ public class AiRecognitionDbContext(DbContextOptions<AiRecognitionDbContext> opt
             entity.Property(e => e.ConfirmationIdempotencyKey).HasColumnName("confirmation_idempotency_key").HasMaxLength(256);
             entity.Property(e => e.CorrelationId).HasColumnName("correlation_id").HasMaxLength(128);
             entity.Property(e => e.ModelVersion).HasColumnName("model_version").HasMaxLength(64);
-            entity.Property(e => e.ContentSha256).HasColumnName("content_sha256").HasMaxLength(64);
+            entity.Property(e => e.ContentSha256).HasColumnName("content_sha256");
             entity.Property(e => e.PlateNumber).HasColumnName("plate_number").HasMaxLength(32);
             entity.Property(e => e.RawPlateNumber).HasColumnName("raw_plate_number").HasMaxLength(64);
             entity.Property(e => e.FailureReason).HasColumnName("failure_reason").HasMaxLength(256);

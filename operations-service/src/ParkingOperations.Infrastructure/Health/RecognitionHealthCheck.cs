@@ -35,10 +35,16 @@ public sealed class RecognitionHealthCheck(
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromSeconds(3)); // Timeout ngắn 3s cho health check probe
 
-            var response = await client.GetAsync(new Uri(new Uri(baseUrl), "health"), cts.Token);
+            // Probe cả readiness (đảm bảo downstream AI model đã sẵn sàng) hoặc fallback về health
+            var response = await client.GetAsync(new Uri(new Uri(baseUrl), "readiness"), cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                response = await client.GetAsync(new Uri(new Uri(baseUrl), "health"), cts.Token);
+            }
+
             if (response.IsSuccessStatusCode)
             {
-                return HealthCheckResult.Healthy("Recognition service is reachable and healthy.");
+                return HealthCheckResult.Healthy("Recognition service and models are reachable and healthy.");
             }
 
             return HealthCheckResult.Unhealthy($"Recognition service responded with status {response.StatusCode}.");

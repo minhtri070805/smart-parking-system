@@ -54,6 +54,17 @@ export function sceneSnapshotReducer(state, action) {
         loading: false,
         stale: Boolean(state.data),
       };
+    case "offline": {
+      const sameSource = state.key === action.key;
+      return {
+        ...state,
+        key: action.key,
+        data: sameSource ? state.data : null,
+        error: "Bạn đang ngoại tuyến. Dữ liệu sẽ được tải lại khi có kết nối.",
+        loading: false,
+        stale: sameSource && Boolean(state.data),
+      };
+    }
     default:
       return state;
   }

@@ -74,3 +74,7 @@ ai-service/tracking/deep_sort/deep/checkpoint/*.pb
 
 # Local macOS demo launcher
 /start-all.command
+
+# Local-only subscription flow runbook
+/docs/product/subscription-flow-runbook.md
+/docs/product/subscription-implementation-plan.md

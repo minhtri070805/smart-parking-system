@@ -10,7 +10,7 @@ function loadRenderer() {
   return rendererCode;
 }
 
-export default function ParkingCanvas({ definition, floorId, role, onSelect, onFloor, viewerRef, busy = false }) {
+export default function ParkingCanvas({ definition, floorId, role, onSelect, onFloor, viewerRef, busy = false, rendererLoader = loadRenderer }) {
   const host = useRef(null);
   const selected = useRef(onSelect); selected.current = onSelect;
   const changeFloor = useRef(onFloor); changeFloor.current = onFloor;
@@ -21,7 +21,7 @@ export default function ParkingCanvas({ definition, floorId, role, onSelect, onF
     if (!definition) return undefined;
     let active = true, viewer;
     setError("");
-    loadRenderer().then(() => {
+    rendererLoader().then(() => {
       if (!active) return;
       let ready = false;
       const mappedRole = role === "USER" ? "user" : role === "ADMIN" ? "admin" : role === "MANAGER" ? "manager" : role === "STAFF" ? "staff" : "guest";
@@ -36,7 +36,7 @@ export default function ParkingCanvas({ definition, floorId, role, onSelect, onF
       ready = true;
     }).catch(e => { if (active) { viewer?.destroy(); setError("Không mở được đồ họa 3D. Bạn vẫn có thể xem và thao tác bằng danh sách ô bên cạnh."); } });
     return () => { active = false; viewer?.destroy(); if (viewerRef.current === viewer) viewerRef.current = null; };
-  }, [key, role]);
+  }, [key, role, rendererLoader]);
   useEffect(() => {
     const index = definition?.liveFloors.findIndex(f => String(f.id) === String(floorId));
     if (index >= 0) viewerRef.current?.setFloor(index);

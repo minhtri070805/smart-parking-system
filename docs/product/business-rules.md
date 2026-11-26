@@ -351,12 +351,12 @@ Hoàn không vượt phần có thể hoàn của khoản hợp lệ; lưu lý d
 
 ## BR-FIX-01 Khu và ô cố định
 
-Đăng ký gửi cố định gắn tài khoản/xe/quyền ô riêng theo kỳ; barrier và bảng IoT dùng quyền đã xác nhận. Bảng IoT vật lý tại mỗi slot cố định hiển thị đầy đủ biển số đã đăng ký còn hiệu lực của slot đó.
+Đăng ký gửi cố định gắn tài khoản/xe/quyền khu hoặc ô theo kỳ; barrier và bảng IoT chỉ được dùng quyền đã xác nhận. Bảng IoT vật lý tại mỗi slot cố định hiển thị đầy đủ biển số đã đăng ký còn hiệu lực của slot đó.
 
 - **Nguồn:** Nghiệp vụ khu cố định; DEC-09.
 - **Điểm thực thi:** [DB] [APP] [UI].
-- **Hiện trạng:** YÊU CẦU Sprint 5; chưa có schema/API; giá và kỳ chưa chốt chi tiết.
-- **Đối chiếu:** Mua quyền không tự tạo xe; xe/thẻ sai không mở barrier hoặc thay biển số bảng ô; đổi xe chỉ đổi biển số full sau khi yêu cầu được xác minh và có hiệu lực.
+- **Hiện trạng:** MỘT PHẦN; Core có plan/pass và API catalog/đăng ký/truy vấn/tạm ngưng. Cấu hình mặc định tắt, Development bật để thử tạo pass PENDING; chưa có Payment clearance, thẻ, barrier, gia hạn hoặc đổi xe. Giá/kỳ/phạm vi vẫn cần quyết định.
+- **Đối chiếu:** Mua quyền không tự tạo xe; pass PENDING không cấp quyền vào; xe/thẻ sai không mở barrier hoặc thay biển số bảng ô; đổi xe chỉ đổi biển số full sau khi yêu cầu được xác minh và có hiệu lực.
 
 ## BR-FIX-02 Hai bố cục khu cố định
 

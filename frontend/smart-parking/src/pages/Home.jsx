@@ -236,8 +236,6 @@ export default function Home() {
 
   useEffect(() => {
     void loadSystemStatus();
-    const refreshTimer = window.setInterval(loadSystemStatus, 30000);
-    return () => window.clearInterval(refreshTimer);
   }, [loadSystemStatus]);
 
   const healthOnline = systemStatus.health?.status === "Healthy";

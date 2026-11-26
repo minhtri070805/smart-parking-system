@@ -1,9 +1,12 @@
 --extra-index-url https://download.pytorch.org/whl/cu118
 
-# PyTorch với GPU CUDA 11.8 (cho card RTX 2050 của bạn)
-torch==2.4.0+cu118
-torchvision==0.19.0+cu118
-torchaudio==2.4.0+cu118
+# CUDA wheels for Linux/Windows; macOS uses the native PyPI wheels.
+torch==2.4.0+cu118; sys_platform == "linux" or sys_platform == "win32"
+torchvision==0.19.0+cu118; sys_platform == "linux" or sys_platform == "win32"
+torchaudio==2.4.0+cu118; sys_platform == "linux" or sys_platform == "win32"
+torch==2.4.0; sys_platform == "darwin"
+torchvision==0.19.0; sys_platform == "darwin"
+torchaudio==2.4.0; sys_platform == "darwin"
 
 # ONNX Runtime & Core CV
 onnx>=1.15.0

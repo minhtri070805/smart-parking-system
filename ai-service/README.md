@@ -67,9 +67,14 @@ ai-service/
 
 3. **Cài đặt thư viện:**
    ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
+   python -m pip install --upgrade pip
+   python -m pip install -r requirements.txt
    ```
+
+   `requirements.txt` chọn PyTorch CUDA 11.8 trên Linux/Windows và wheel macOS
+   trên máy Mac. CUDA không chạy trên Apple Silicon; pipeline hiện dùng CPU khi
+   không có CUDA. Chạy `python -m pip` trong virtualenv để tránh cài nhầm vào
+   Python hệ thống.
 
 ---
 

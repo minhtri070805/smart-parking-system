@@ -7,6 +7,7 @@ using ParkingOperations.Application.Common.Exceptions;
 using ParkingOperations.Application.Common.Interfaces;
 using ParkingOperations.Application.DTOs.Common;
 using ParkingOperations.Application.DTOs.Recognition;
+using ParkingOperations.Domain.Enums;
 
 namespace ParkingOperations.WebAPI.Controllers;
 
@@ -24,7 +25,7 @@ public class RecognitionController(
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Detect(
         [FromQuery] int lotId,
-        [FromQuery] string purpose,
+        [FromQuery] RecognitionPurpose purpose,
         [FromQuery] string? captureId,
         [FromQuery] string? imageId,
         [FromQuery] string? eventId,
@@ -34,6 +35,8 @@ public class RecognitionController(
     {
         var correlationId = GetCorrelationId();
         var staffUserId = GetCurrentUserId();
+        idempotencyKey = string.IsNullOrWhiteSpace(idempotencyKey) ? Guid.NewGuid().ToString("N") : idempotencyKey.Trim();
+        captureId = string.IsNullOrWhiteSpace(captureId) ? Guid.NewGuid().ToString("N") : captureId.Trim();
 
         if (staffUserId <= 0)
         {

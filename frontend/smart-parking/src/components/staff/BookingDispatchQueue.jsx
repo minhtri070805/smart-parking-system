@@ -8,8 +8,6 @@ import {
   useStaffAction,
 } from "./StaffUI.jsx";
 
-const POLL_INTERVAL_MS = 15_000;
-
 export default function BookingDispatchQueue({
   lot,
   revision,
@@ -31,7 +29,6 @@ export default function BookingDispatchQueue({
 
   useEffect(() => {
     let active = true;
-    let timeoutId;
     let controller;
     const load = async () => {
       controller = new AbortController();
@@ -47,15 +44,12 @@ export default function BookingDispatchQueue({
         }
       } catch (error) {
         if (active && !controller.signal.aborted) setQueueError(error);
-      } finally {
-        if (active) timeoutId = window.setTimeout(load, POLL_INTERVAL_MS);
       }
     };
     load();
     return () => {
       active = false;
       controller?.abort();
-      window.clearTimeout(timeoutId);
     };
   }, [lot.lotId, revision, retry, selectedId]);
 
@@ -160,7 +154,7 @@ export default function BookingDispatchQueue({
           <div>
             <span className="staff-eyebrow">HÀNG CHỜ ĐIỀU PHỐI</span>
             <h2 id="booking-dispatch-title">Xe đặt qua web chờ phân ô</h2>
-            <p>Danh sách cập nhật tự động mỗi 15 giây sau khi nhân viên cổng check-in.</p>
+            <p>Dữ liệu tải khi mở màn hình hoặc khi bạn bấm Làm mới.</p>
           </div>
           <span className="staff-count">{bookings?.length ?? "—"}</span>
         </div>
