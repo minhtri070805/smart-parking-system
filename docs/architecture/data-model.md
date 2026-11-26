@@ -594,7 +594,7 @@ Các tên sau là **ĐỀ XUẤT**, chưa có migration/API; chỉ chốt sau kh
 | parking_event_logs | EventId unique, core session ID, lot/slot, actor hoặc thiết bị, nguồn/thời điểm/kết quả | DEC-16; một nguồn trạng thái; không thêm event session cạnh tranh |
 | session_images / recognition_results | Liên kết ảnh-bãi-phiên, kết quả OCR gốc, xác nhận sửa, quyền xem và retention | DEC-02/17; ảnh tồn tại không chứng minh xe tại slot |
 | bookings + hold/time controls | Hạn giữ, khung giờ hợp lệ, mã nhận chỗ, điều kiện xác nhận và khoản tiền liên quan | DEC-06/07/08; giữ sức chứa vãng lai, không để khách chiếm slot |
-| `subscription_plans` / `parking_passes` | Core lưu phạm vi/giá/hiệu lực theo version; pass lưu chủ xe, xe, bãi/khu/ô tùy chọn, kỳ, trạng thái, snapshot giá, mã invoice và idempotency key | Migration `AddSubscriptionPlansAndPasses`; chưa có gia hạn, thẻ hoặc kích hoạt qua Payment. Bán tắt mặc định; không suy ra quyền từ `IsMonthlyPass`. |
+| `subscription_plans` / `parking_passes_subcription` | Passes store `lot_id` and reference their subscription plan; zone and slot are not stored on a pass. | Migrations `RenameParkingPassesSubcriptionAndDropLotZone` and `AddLotDropSlotToParkingPassesSubcription`; passes activate only after verified payment confirmation. |
 | slot_reports / report_evidences | Người có quyền ô, slot/xe, ảnh, người xử lý, kết quả, thông báo | SP-DEC-18; report không tự tạo khoản phạt |
 | notifications | Người nhận, loại, tham chiếu nghiệp vụ, kênh và kết quả gửi | Không ghi thông báo đã tới khi kênh gửi thất bại |
 

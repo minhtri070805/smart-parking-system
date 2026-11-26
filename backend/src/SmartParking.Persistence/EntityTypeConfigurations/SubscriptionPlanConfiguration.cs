@@ -20,8 +20,6 @@ public sealed class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Sub
         b.Property(x => x.Name).HasColumnName("name").HasMaxLength(120).IsRequired();
         b.Property(x => x.Version).HasColumnName("version");
         b.Property(x => x.LotId).HasColumnName("lot_id");
-        b.Property(x => x.ZoneId).HasColumnName("zone_id");
-        b.Property(x => x.SlotId).HasColumnName("slot_id");
         b.Property(x => x.TermMonths).HasColumnName("term_months");
         b.Property(x => x.PriceAmount).HasColumnName("price_amount").HasPrecision(18, 2);
         b.Property(x => x.Currency).HasColumnName("currency").HasMaxLength(3).IsRequired();
@@ -33,9 +31,7 @@ public sealed class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Sub
         b.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasDefaultValueSql("now()");
         b.Property(x => x.ApprovedAtUtc).HasColumnName("approved_at_utc");
         b.HasIndex(x => new { x.Code, x.Version }).IsUnique();
-        b.HasIndex(x => new { x.Status, x.LotId, x.ZoneId, x.EffectiveFromUtc });
+        b.HasIndex(x => new { x.Status, x.LotId, x.EffectiveFromUtc });
         b.HasOne(x => x.Lot).WithMany().HasForeignKey(x => x.LotId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne(x => x.Zone).WithMany().HasForeignKey(x => x.ZoneId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne(x => x.Slot).WithMany().HasForeignKey(x => x.SlotId).OnDelete(DeleteBehavior.Restrict);
     }
 }

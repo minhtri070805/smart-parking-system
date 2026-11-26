@@ -11,19 +11,18 @@ namespace SmartParking.Api.Controllers;
 [ApiController]
 [Route("api/v1")]
 [Produces("application/json")]
-public sealed class SubscriptionsController(IApplicationDbContext db, IConfiguration configuration) : ControllerBase
+public sealed class SubscriptionsController(IApplicationDbContext db) : ControllerBase
 {
     [HttpGet("subscription-plans")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetPlans([FromQuery] int? lotId, [FromQuery] int? zoneId, CancellationToken ct)
+    public async Task<IActionResult> GetPlans([FromQuery] int? lotId, CancellationToken ct)
     {
         var now = DateTime.UtcNow;
         var plans = await db.SubscriptionPlans.AsNoTracking()
             .Where(x => x.Status == "APPROVED" && x.EffectiveFromUtc <= now && (x.EffectiveToUtc == null || x.EffectiveToUtc > now))
             .Where(x => !lotId.HasValue || x.LotId == lotId.Value)
-            .Where(x => !zoneId.HasValue || x.ZoneId == zoneId.Value)
-            .OrderBy(x => x.LotId).ThenBy(x => x.ZoneId).ThenBy(x => x.PriceAmount)
-            .Select(x => new { x.Id, x.Code, x.Name, x.Version, x.LotId, x.ZoneId, x.SlotId, x.TermMonths, x.PriceAmount, x.Currency, x.EffectiveFromUtc, x.EffectiveToUtc })
+            .OrderBy(x => x.LotId).ThenBy(x => x.PriceAmount)
+            .Select(x => new { x.Id, x.Code, x.Name, x.Version, x.LotId, x.TermMonths, x.PriceAmount, x.Currency, x.EffectiveFromUtc, x.EffectiveToUtc })
             .ToListAsync(ct);
         return Ok(new { data = plans });
     }
@@ -33,7 +32,6 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
     public async Task<IActionResult> GetAllPlansForAdmin(
         [FromQuery] string? status,
         [FromQuery] int? lotId,
-        [FromQuery] int? zoneId,
         CancellationToken ct)
     {
         var query = db.SubscriptionPlans.AsNoTracking();
@@ -45,8 +43,6 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
             query = query.Where(x => x.Status == normalizedStatus);
         }
         if (lotId.HasValue) query = query.Where(x => x.LotId == lotId.Value);
-        if (zoneId.HasValue) query = query.Where(x => x.ZoneId == zoneId.Value);
-
         var plans = await query
             .OrderBy(x => x.Code).ThenBy(x => x.Version)
             .Select(x => new
@@ -57,11 +53,6 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
                 x.Version,
                 x.LotId,
                 LotName = x.Lot.Name,
-                x.ZoneId,
-                ZoneCode = x.Zone.Code,
-                ZoneName = x.Zone.Name,
-                x.SlotId,
-                SlotCode = x.Slot != null ? x.Slot.SlotCode : null,
                 x.TermMonths,
                 x.PriceAmount,
                 x.Currency,
@@ -84,12 +75,9 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
         if (request.PriceAmount <= 0 || request.TermMonths != 1 || string.IsNullOrWhiteSpace(request.Code) || request.Code.Trim().Length > 50 ||
             string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 120)
             return BadRequest(new { code = "INVALID_PLAN", message = "A plan requires a code, name, positive price and one-month term." });
-        var zone = await db.ParkingZones.Include(x => x.Lot).Include(x => x.Slots)
-            .FirstOrDefaultAsync(x => x.Id == request.ZoneId && x.LotId == request.LotId, ct);
-        if (zone is null || !zone.IsActive || zone.Lot is null || !zone.Lot.IsActive || zone.Type != "FIXED")
-            return BadRequest(new { code = "INVALID_FIXED_ZONE", message = "Plans can only target an active FIXED zone in the selected lot." });
-        if (request.SlotId.HasValue && !zone.Slots.Any(x => x.Id == request.SlotId.Value && x.IsActive))
-            return BadRequest(new { code = "INVALID_SLOT", message = "The selected slot must be active and belong to the fixed zone." });
+        var lotExists = await db.ParkingLots.AnyAsync(x => x.Id == request.LotId && x.IsActive, ct);
+        if (!lotExists)
+            return BadRequest(new { code = "INVALID_LOT", message = "Plans can only target an active parking lot." });
         var normalizedCode = request.Code.Trim().ToUpperInvariant();
         var version = (await db.SubscriptionPlans.Where(x => x.Code == normalizedCode).Select(x => (int?)x.Version).MaxAsync(ct) ?? 0) + 1;
         var plan = new SubscriptionPlan
@@ -98,8 +86,6 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
             Name = request.Name.Trim(),
             Version = version,
             LotId = request.LotId,
-            ZoneId = request.ZoneId,
-            SlotId = request.SlotId,
             TermMonths = 1,
             PriceAmount = request.PriceAmount,
             Currency = string.IsNullOrWhiteSpace(request.Currency) ? "VND" : request.Currency.Trim().ToUpperInvariant(),
@@ -126,12 +112,9 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
         if (request.PriceAmount <= 0 || request.TermMonths != 1 || string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 120)
             return BadRequest(new { code = "INVALID_PLAN", message = "A plan requires a name, positive price and one-month term." });
 
-        var zone = await db.ParkingZones.Include(x => x.Lot).Include(x => x.Slots)
-            .FirstOrDefaultAsync(x => x.Id == request.ZoneId && x.LotId == request.LotId, ct);
-        if (zone is null || !zone.IsActive || zone.Lot is null || !zone.Lot.IsActive || zone.Type != "FIXED")
-            return BadRequest(new { code = "INVALID_FIXED_ZONE", message = "Plans can only target an active FIXED zone in the selected lot." });
-        if (request.SlotId.HasValue && !zone.Slots.Any(x => x.Id == request.SlotId.Value && x.IsActive))
-            return BadRequest(new { code = "INVALID_SLOT", message = "The selected slot must be active and belong to the fixed zone." });
+        var lotExists = await db.ParkingLots.AnyAsync(x => x.Id == request.LotId && x.IsActive, ct);
+        if (!lotExists)
+            return BadRequest(new { code = "INVALID_LOT", message = "Plans can only target an active parking lot." });
 
         var currency = string.IsNullOrWhiteSpace(request.Currency) ? "VND" : request.Currency.Trim().ToUpperInvariant();
         var startsAtUtc = request.EffectiveFromUtc.UtcDateTime;
@@ -139,11 +122,9 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
         if (currency.Length != 3 || (endsAtUtc.HasValue && endsAtUtc <= startsAtUtc))
             return BadRequest(new { code = "INVALID_PLAN", message = "Currency or effective date range is invalid." });
 
-        var oldValues = $"Name={plan.Name};LotId={plan.LotId};ZoneId={plan.ZoneId};SlotId={plan.SlotId};TermMonths={plan.TermMonths};PriceAmount={plan.PriceAmount};Currency={plan.Currency};EffectiveFromUtc={plan.EffectiveFromUtc:O};EffectiveToUtc={plan.EffectiveToUtc:O}";
+        var oldValues = $"Name={plan.Name};LotId={plan.LotId};TermMonths={plan.TermMonths};PriceAmount={plan.PriceAmount};Currency={plan.Currency};EffectiveFromUtc={plan.EffectiveFromUtc:O};EffectiveToUtc={plan.EffectiveToUtc:O}";
         plan.Name = request.Name.Trim();
         plan.LotId = request.LotId;
-        plan.ZoneId = request.ZoneId;
-        plan.SlotId = request.SlotId;
         plan.TermMonths = 1;
         plan.PriceAmount = request.PriceAmount;
         plan.Currency = currency;
@@ -156,33 +137,10 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
             TargetEntity = "SubscriptionPlan",
             TargetId = id.ToString(),
             OldValues = oldValues,
-            NewValues = $"Name={plan.Name};LotId={plan.LotId};ZoneId={plan.ZoneId};SlotId={plan.SlotId};TermMonths={plan.TermMonths};PriceAmount={plan.PriceAmount};Currency={plan.Currency};EffectiveFromUtc={plan.EffectiveFromUtc:O};EffectiveToUtc={plan.EffectiveToUtc:O}"
+            NewValues = $"Name={plan.Name};LotId={plan.LotId};TermMonths={plan.TermMonths};PriceAmount={plan.PriceAmount};Currency={plan.Currency};EffectiveFromUtc={plan.EffectiveFromUtc:O};EffectiveToUtc={plan.EffectiveToUtc:O}"
         });
         await db.SaveChangesAsync(ct);
         return Ok(new { data = ToPlanResponse(plan) });
-    }
-
-    [HttpDelete("subscription-plans/{id:long}")]
-    [Authorize(Roles = Roles.Admin)]
-    public async Task<IActionResult> DeleteDraftPlan(long id, CancellationToken ct)
-    {
-        var plan = await db.SubscriptionPlans.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (plan is null) return NotFound(new { code = "PLAN_NOT_FOUND" });
-        if (plan.Status != "DRAFT") return Conflict(new { code = "PLAN_IMMUTABLE", message = "Only DRAFT plans can be deleted." });
-        if (await db.ParkingPasses.AnyAsync(x => x.PlanId == id, ct))
-            return Conflict(new { code = "PLAN_HAS_PASSES", message = "A plan referenced by a parking pass cannot be deleted." });
-
-        db.AuditLogs.Add(new AuditLog
-        {
-            ActorId = CurrentUserId(),
-            Action = "SUBSCRIPTION_PLAN_DELETED",
-            TargetEntity = "SubscriptionPlan",
-            TargetId = id.ToString(),
-            OldValues = $"{plan.Code}:v{plan.Version};Name={plan.Name};PriceAmount={plan.PriceAmount};Currency={plan.Currency}"
-        });
-        db.SubscriptionPlans.Remove(plan);
-        await db.SaveChangesAsync(ct);
-        return NoContent();
     }
 
     [HttpPost("subscription-plans/{id:long}/approve")]
@@ -200,68 +158,6 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
         return Ok(new { data = ToPlanResponse(plan) });
     }
 
-    [HttpPost("parking-passes")]
-    [Authorize(Roles = Roles.User)]
-    public async Task<IActionResult> Purchase([FromBody] CreateParkingPassRequest request, [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey, CancellationToken ct)
-    {
-        if (!configuration.GetValue<bool>("Subscriptions:Enabled"))
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { code = "SUBSCRIPTIONS_DISABLED", message = "Subscription sales are disabled until payment and business policies are configured." });
-        idempotencyKey = idempotencyKey?.Trim();
-        if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 100)
-            return BadRequest(new { code = "IDEMPOTENCY_KEY_REQUIRED" });
-
-        var ownerId = CurrentUserId();
-        var existing = await db.ParkingPasses.FirstOrDefaultAsync(x => x.OwnerUserId == ownerId && x.IdempotencyKey == idempotencyKey, ct);
-        if (existing is not null) return Ok(new { data = ToPassResponse(existing), replay = true });
-        var plan = await db.SubscriptionPlans.FirstOrDefaultAsync(x => x.Id == request.PlanId && x.Status == "APPROVED", ct);
-        var now = DateTime.UtcNow;
-        if (plan is null || plan.EffectiveFromUtc > now || (plan.EffectiveToUtc.HasValue && plan.EffectiveToUtc <= now))
-            return BadRequest(new { code = "PLAN_UNAVAILABLE" });
-        if (!await db.Vehicles.AnyAsync(x => x.Id == request.VehicleId && x.UserId == ownerId && x.IsActive, ct))
-            return BadRequest(new { code = "VEHICLE_NOT_OWNED_OR_INACTIVE" });
-        var conflictingPass = await db.ParkingPasses.AnyAsync(x => x.VehicleId == request.VehicleId && x.ZoneId == plan.ZoneId &&
-            (x.Status == "PENDING" || x.Status == "SCHEDULED" || x.Status == "ACTIVE"), ct);
-        if (conflictingPass) return Conflict(new { code = "VEHICLE_ALREADY_HAS_PASS" });
-        if (plan.SlotId.HasValue && await db.ParkingPasses.AnyAsync(x => x.SlotId == plan.SlotId &&
-            (x.Status == "PENDING" || x.Status == "SCHEDULED" || x.Status == "ACTIVE"), ct))
-            return Conflict(new { code = "SLOT_ALREADY_ASSIGNED" });
-
-        // The approved plan and price are snapshotted. A pending pass never grants access.
-        var starts = now > plan.EffectiveFromUtc ? now : plan.EffectiveFromUtc;
-        var pass = new ParkingPass
-        {
-            OwnerUserId = ownerId,
-            VehicleId = request.VehicleId,
-            PlanId = plan.Id,
-            PlanVersion = plan.Version,
-            LotId = plan.LotId,
-            ZoneId = plan.ZoneId,
-            SlotId = plan.SlotId,
-            StartsAtUtc = starts,
-            EndsAtUtc = starts.AddMonths(plan.TermMonths),
-            PriceAmount = plan.PriceAmount,
-            Currency = plan.Currency,
-            IdempotencyKey = idempotencyKey.Trim(),
-            Status = "PENDING"
-        };
-        db.ParkingPasses.Add(pass);
-        db.AuditLogs.Add(new AuditLog { ActorId = ownerId, Action = "PARKING_PASS_REQUESTED", TargetEntity = "ParkingPass", NewValues = $"PlanId={plan.Id};Version={plan.Version};Amount={plan.PriceAmount};Currency={plan.Currency}" });
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateException)
-        {
-            var replay = await db.ParkingPasses.AsNoTracking().FirstOrDefaultAsync(x => x.OwnerUserId == ownerId && x.IdempotencyKey == idempotencyKey, ct);
-            if (replay is not null) return Ok(new { data = ToPassResponse(replay), replay = true });
-            var hasVehicleConflict = await db.ParkingPasses.AsNoTracking().AnyAsync(x => x.VehicleId == request.VehicleId && x.ZoneId == plan.ZoneId &&
-                (x.Status == "PENDING" || x.Status == "SCHEDULED" || x.Status == "ACTIVE"), ct);
-            if (hasVehicleConflict) return Conflict(new { code = "VEHICLE_ALREADY_HAS_PASS" });
-            if (plan.SlotId.HasValue && await db.ParkingPasses.AsNoTracking().AnyAsync(x => x.SlotId == plan.SlotId &&
-                (x.Status == "PENDING" || x.Status == "SCHEDULED" || x.Status == "ACTIVE"), ct))
-                return Conflict(new { code = "SLOT_ALREADY_ASSIGNED" });
-            throw;
-        }
-        return Accepted(new { data = ToPassResponse(pass), payment = "NOT_CONFIGURED", accessGranted = false });
-    }
-
     [HttpGet("parking-passes/my")]
     [Authorize(Roles = Roles.User)]
     public async Task<IActionResult> GetMine(CancellationToken ct)
@@ -269,7 +165,7 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
         var ownerId = CurrentUserId();
         var passes = await db.ParkingPasses.AsNoTracking().Where(x => x.OwnerUserId == ownerId)
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Select(x => new { x.Id, x.VehicleId, x.PlanId, x.PlanVersion, x.LotId, x.ZoneId, x.SlotId, x.StartsAtUtc, x.EndsAtUtc, x.Status, x.PriceAmount, x.Currency, x.CreatedAtUtc })
+            .Select(x => new { x.Id, x.VehicleId, x.PlanId, x.PlanVersion, x.LotId, x.StartsAtUtc, x.EndsAtUtc, x.Status, x.PriceAmount, x.Currency, x.CreatedAtUtc })
             .ToListAsync(ct);
         return Ok(new { data = passes });
     }
@@ -281,7 +177,7 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
         var ownerId = CurrentUserId();
         var isAdmin = User.IsInRole(Roles.Admin);
         var pass = await db.ParkingPasses.AsNoTracking().Where(x => x.Id == id && (isAdmin || x.OwnerUserId == ownerId))
-            .Select(x => new { x.Id, x.OwnerUserId, x.VehicleId, x.PlanId, x.PlanVersion, x.LotId, x.ZoneId, x.SlotId, x.StartsAtUtc, x.EndsAtUtc, x.Status, x.PriceAmount, x.Currency, x.CreatedAtUtc, x.Revision })
+            .Select(x => new { x.Id, x.OwnerUserId, x.VehicleId, x.PlanId, x.PlanVersion, x.LotId, x.StartsAtUtc, x.EndsAtUtc, x.Status, x.PriceAmount, x.Currency, x.CreatedAtUtc, x.Revision })
             .FirstOrDefaultAsync(ct);
         return pass is null ? NotFound() : Ok(new { data = pass });
     }
@@ -312,8 +208,6 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
         plan.Name,
         plan.Version,
         plan.LotId,
-        plan.ZoneId,
-        plan.SlotId,
         plan.TermMonths,
         plan.PriceAmount,
         plan.Currency,
@@ -325,28 +219,8 @@ public sealed class SubscriptionsController(IApplicationDbContext db, IConfigura
         plan.ApprovedAtUtc
     };
 
-    private static object ToPassResponse(ParkingPass pass) => new
-    {
-        pass.Id,
-        pass.OwnerUserId,
-        pass.VehicleId,
-        pass.PlanId,
-        pass.PlanVersion,
-        pass.LotId,
-        pass.ZoneId,
-        pass.SlotId,
-        pass.StartsAtUtc,
-        pass.EndsAtUtc,
-        pass.Status,
-        pass.PriceAmount,
-        pass.Currency,
-        pass.PaymentInvoiceId,
-        pass.CreatedAtUtc,
-        pass.Revision
-    };
 }
 
-public sealed record CreateSubscriptionPlanRequest(string Code, string Name, int LotId, int ZoneId, long? SlotId, int TermMonths, decimal PriceAmount, string Currency, DateTimeOffset EffectiveFromUtc, DateTimeOffset? EffectiveToUtc);
-public sealed record UpdateSubscriptionPlanRequest(string Name, int LotId, int ZoneId, long? SlotId, int TermMonths, decimal PriceAmount, string Currency, DateTimeOffset EffectiveFromUtc, DateTimeOffset? EffectiveToUtc);
-public sealed record CreateParkingPassRequest(long PlanId, long VehicleId);
+public sealed record CreateSubscriptionPlanRequest(string Code, string Name, int LotId, int TermMonths, decimal PriceAmount, string Currency, DateTimeOffset EffectiveFromUtc, DateTimeOffset? EffectiveToUtc);
+public sealed record UpdateSubscriptionPlanRequest(string Name, int LotId, int TermMonths, decimal PriceAmount, string Currency, DateTimeOffset EffectiveFromUtc, DateTimeOffset? EffectiveToUtc);
 public sealed record SuspendParkingPassRequest(string Reason);

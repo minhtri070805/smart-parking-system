@@ -424,13 +424,12 @@ Danh mục lấy từ type thực tế của tham số controller, gồm body v�
 
 ### Admin subscription plan list
 
-`GET /api/v1/admin/subscription-plans` yêu cầu role `ADMIN` và trả tất cả plan, không lọc theo hiệu lực nếu không truyền query. Có thể lọc bằng `status` (`DRAFT`, `APPROVED`, `RETIRED`), `lotId`, `zoneId`. Response trả `count` và `data`; mỗi phần tử là projection scalar gồm ID/code/version, trạng thái, bãi/khu/ô (kèm tên/mã hiển thị), giá, kỳ, ngày hiệu lực và actor/thời điểm tạo/duyệt. Không trả navigation graph EF.
+`GET /api/v1/admin/subscription-plans` yêu cầu role `ADMIN` và trả tất cả plan, không lọc theo hiệu lực nếu không truyền query. Có thể lọc bằng `status` (`DRAFT`, `APPROVED`, `RETIRED`) và `lotId`. Plan áp dụng toàn bãi; response không có `zoneId` hoặc `slotId`. Response trả `count` và `data`; mỗi phần tử là projection scalar gồm ID/code/version, trạng thái, bãi (kèm tên), giá, kỳ, ngày hiệu lực và actor/thời điểm tạo/duyệt. Không trả navigation graph EF.
 
 ### UpdateSubscriptionPlanRequest
 
-Admin-only `PUT /api/v1/subscription-plans/{id}`. Chỉ sửa plan `DRAFT`; `code` và `version` không đổi. Payload dùng `name`, `lotId`, `zoneId`, `slotId`, `termMonths`, `priceAmount`, `currency`, `effectiveFromUtc`, `effectiveToUtc` theo cùng quy tắc lúc tạo. Mỗi lần sửa ghi audit log. Plan `APPROVED`/`RETIRED` trả `409 PLAN_IMMUTABLE`; muốn đổi plan đã duyệt thì tạo version mới.
+Admin-only `PUT /api/v1/subscription-plans/{id}`. Chỉ sửa plan `DRAFT`; `code` và `version` không đổi. Payload dùng `name`, `lotId`, `termMonths`, `priceAmount`, `currency`, `effectiveFromUtc`, `effectiveToUtc` theo cùng quy tắc lúc tạo. Mỗi lần sửa ghi audit log. Plan `APPROVED`/`RETIRED` trả `409 PLAN_IMMUTABLE`; muốn đổi plan đã duyệt thì tạo version mới.
 
-Admin-only `DELETE /api/v1/subscription-plans/{id}` chỉ xóa plan `DRAFT` chưa được pass nào tham chiếu. Xóa thành công trả `204 No Content` và lưu audit log; plan đã duyệt/retired hoặc có pass tham chiếu bị từ chối `409`.
 
 ### CreateSubscriptionPlanRequest
 
@@ -440,25 +439,33 @@ Admin-only `POST /api/v1/subscription-plans`. Giá và ngày hiệu lực do Adm
 |---|---|---|---|
 | `code` | String | No | Required; normalized uppercase; max 50 in storage |
 | `name` | String | No | Required; max 120 in storage |
-| `lotId` | Int32 | No | Must contain the selected active FIXED zone |
-| `zoneId` | Int32 | No | Active FIXED zone |
-| `slotId` | Int64 | Yes | Optional active slot belonging to the selected zone |
+| `lotId` | Int32 | No | Active parking lot; plan covers all zones and slots in this lot |
 | `termMonths` | Int32 | No | Must equal 1 in the initial API |
 | `priceAmount` | Decimal | No | Must be greater than zero |
 | `currency` | String | No | Three-character currency; defaults to VND if empty |
 | `effectiveFromUtc` | DateTimeOffset | No | Explicit offset required by the request type |
 | `effectiveToUtc` | DateTimeOffset | Yes | Must be later than start |
 
-### CreateParkingPassRequest
+Example request body:
 
-Customer-only `POST /api/v1/parking-passes`; bắt buộc header `Idempotency-Key` (1–100 ký tự). Server lấy chủ, phạm vi, giá và kỳ từ JWT, quyền sở hữu xe và plan đã duyệt. Request chỉ có:
+```json
+{
+  "code": "LOT-MONTHLY",
+  "name": "Monthly access — whole lot",
+  "lotId": 12,
+  "termMonths": 1,
+  "priceAmount": 1000000,
+  "currency": "VND",
+  "effectiveFromUtc": "2026-12-01T00:00:00Z",
+  "effectiveToUtc": null
+}
+```
 
-| JSON field | Type | Nullable | Rules |
-|---|---|---|---|
-| `planId` | Int64 | No | Approved plan currently within its effective dates |
-| `vehicleId` | Int64 | No | Active vehicle owned by the caller |
+The created plan has no zone or slot restriction. A vehicle with a pending, scheduled, or active pass cannot request another pass for the same lot.
 
-API trả pass `PENDING` cùng snapshot giá/version và `accessGranted: false`. `Subscriptions:Enabled` là false trong cấu hình gốc và true trong Development; không bật bán production vì chưa có payment clearance, gia hạn, thẻ hoặc barrier.
+### Parking pass purchase
+
+Core does not expose `POST /api/v1/parking-passes` or `DELETE /api/v1/subscription-plans/{id}`. Customers create checkout through Payment Service `POST /api/payments/payos/subscriptions`; Core creates or renews a pass only after the verified PayOS webhook and signed internal confirmation. Passes are read through `GET /api/v1/parking-passes/my` or `GET /api/v1/parking-passes/{id}`.
 
 ### IngestEventRequest
 

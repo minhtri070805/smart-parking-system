@@ -8,10 +8,6 @@ public sealed class SubscriptionPlan
     public int Version { get; set; } = 1;
     public int LotId { get; set; }
     public ParkingLot Lot { get; set; } = null!;
-    public int ZoneId { get; set; }
-    public ParkingZone Zone { get; set; } = null!;
-    public long? SlotId { get; set; }
-    public ParkingSlot? Slot { get; set; }
     public int TermMonths { get; set; } = 1;
     public decimal PriceAmount { get; set; }
     public string Currency { get; set; } = "VND";

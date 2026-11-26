@@ -761,7 +761,7 @@ Bộ này có **42 use case SP-UC-001…SP-UC-042**; đây là mã bổ sung c�
 - **Tác nhân:** Customer.
 - **Phân kỳ:** Sprint 5.
 - **Hiện trạng:** MỘT PHẦN; schema plan/pass và Core API đã có. `Subscriptions:Enabled` mặc định false, được bật trong `appsettings.Development.json` để thử; pass mới luôn PENDING.
-- **API:** `GET /api/v1/subscription-plans`; Admin `POST /api/v1/subscription-plans` và `POST /api/v1/subscription-plans/{id}/approve`; Customer `POST /api/v1/parking-passes`, `GET /api/v1/parking-passes/my`, `GET /api/v1/parking-passes/{id}`. Tra hợp đồng ở [04 Endpoints](../api/endpoints.md).
+- **API:** `GET /api/v1/subscription-plans`; Admin `POST /api/v1/subscription-plans` and `POST /api/v1/subscription-plans/{id}/approve`; Customer checkout via Payment Service `POST /api/payments/payos/subscriptions`, pass reads via Core `GET /api/v1/parking-passes/my` and `GET /api/v1/parking-passes/{id}`. See [API endpoints](../api/endpoints.md).
 - **Dữ liệu:** Khu/ô, xe, gói/quyền kỳ, tiền/duyệt đề xuất.
 - **Tiền điều kiện:** Tài khoản/xe xác minh, có khu/ô và kỳ/chính sách được chốt.
 - **Nguồn yêu cầu:** FR-PASS-01/02/03; nghiệp vụ khu cố định.

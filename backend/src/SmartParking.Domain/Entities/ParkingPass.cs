@@ -11,8 +11,6 @@ public sealed class ParkingPass
     public SubscriptionPlan Plan { get; set; } = null!;
     public int PlanVersion { get; set; }
     public int LotId { get; set; }
-    public int ZoneId { get; set; }
-    public long? SlotId { get; set; }
     public DateTime StartsAtUtc { get; set; }
     public DateTime EndsAtUtc { get; set; }
     public string Status { get; set; } = "PENDING"; // PENDING, SCHEDULED, ACTIVE, EXPIRED, SUSPENDED, CANCELLED
