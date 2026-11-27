@@ -34,7 +34,10 @@ export function StaffExit({
   const [checkedAt, setCheckedAt] = useState(null);
   const action = useStaffAction(onBusyChange);
   const busy = action.busy || captureBusy || rechecking;
-  const isTicketed = Boolean(session?.verificationStatus && session.verificationStatus !== "LEGACY");
+  // Xe vào bằng vé tháng: không có vé giấy và không thu phí; xe ra chỉ cần đối chiếu biển số.
+  const isPass = session?.verificationStatus === "MONTHLY_PASS";
+  const isTicketed = Boolean(session?.verificationStatus && session.verificationStatus !== "LEGACY" && !isPass);
+  const canExit = isPass || session?.status === "PAID";
   useEffect(() => {
     lookupId.current = initialSessionId || null;
   }, [initialSessionId]);
@@ -201,7 +204,13 @@ export function StaffExit({
               <h2>Thông tin lúc xe vào</h2>
             </div>
             <SessionInfo session={session} />
-            {session.status === "ACTIVE" && (
+            {isPass && session.status === "ACTIVE" && (
+              <Notice kind="success">
+                <strong>Xe vào bằng vé tháng — không thu phí.</strong> Đối chiếu biển số tại cổng ra rồi xác nhận
+                xe ra. Không cần thanh toán.
+              </Notice>
+            )}
+            {!isPass && session.status === "ACTIVE" && (
               <Notice kind="warning">
                 {isTicketed && session.verificationStatus !== "VERIFIED" ? (
                   <>
@@ -239,7 +248,7 @@ export function StaffExit({
                 )}
               </Notice>
             )}
-            {session.status === "ACTIVE" &&
+            {!isPass && session.status === "ACTIVE" &&
               (!isTicketed || session.verificationStatus === "VERIFIED") && (
                 <div style={{ marginTop: 12 }}>
                   <p>Khách thanh toán tiền mặt tại quầy trước khi checkout.</p>
@@ -301,7 +310,7 @@ export function StaffExit({
                     type="checkbox"
                     checked={checked}
                     onChange={(event) => setChecked(event.target.checked)}
-                    disabled={busy || session.status !== "PAID"}
+                    disabled={busy || !canExit}
                     required
                   />
                   <span>
@@ -311,7 +320,7 @@ export function StaffExit({
                 <button
                   type="submit"
                   className="staff-button staff-button--primary staff-submit"
-                  disabled={busy || session.status !== "PAID"}
+                  disabled={busy || !canExit}
                 >
                   <StaffIcon name="exit" />
                   {action.busy ? "Đang ghi nhận…" : "Xác nhận xe đã ra bãi"}
