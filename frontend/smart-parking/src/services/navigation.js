@@ -33,6 +33,7 @@ export const roleNavigation = {
     ["/customer", "Bãi đỗ"],
     ["/customer/sessions", "Phiên gửi xe"],
     ["/customer/my-tickets", "Vé của tôi"],
+    ["/customer/monthly-pass", "Vé tháng"],
     ["/customer/profile", "Xe của tôi"],
   ],
 };
