@@ -101,7 +101,7 @@ export function TicketVerification({ lot, revision, onChanged, onBusyChange, ini
   };
   const session = query.data?.sessions.find(s => s.id === selected?.id && s.revision === selected.revision);
   const move = session?.verificationStatus === "VERIFIED";
-  const hasModernSessions = query.data?.sessions.some(s => s.eventId);
+  const hasModernSessions = query.data?.sessions.some(s => s.eventId && s.verificationStatus !== "MONTHLY_PASS");
   const canSelectSlot = slot => Boolean(
     session &&
     slot.physicalStatus === "EMPTY" &&
@@ -150,7 +150,7 @@ export function TicketVerification({ lot, revision, onChanged, onBusyChange, ini
       <button className="staff-button" disabled={action.busy || query.loading} onClick={query.reload}>Tải lại danh sách</button>
       {query.loading && <Notice>Đang tải dữ liệu…</Notice>}
       {!query.loading && !query.error && !query.data?.sessions.length && <p>Không có lượt xe đang mở.</p>}
-      <div className="operations-session-list">{!query.error && query.data?.sessions.filter(s => s.eventId).map(s => <button className={`operations-session ${s.id === selected?.id ? "is-selected" : ""}`} disabled={action.busy} key={s.id} onClick={() => choose(s)}>
+      <div className="operations-session-list">{!query.error && query.data?.sessions.filter(s => s.eventId && s.verificationStatus !== "MONTHLY_PASS").map(s => <button className={`operations-session ${s.id === selected?.id ? "is-selected" : ""}`} disabled={action.busy} key={s.id} onClick={() => choose(s)}>
         <strong>{s.ticketCode} · #{s.id}</strong><span>{s.plateNumber || s.temporaryPlateNumber || "Chưa đọc được biển số"}</span>
         <small>{s.verificationStatus === "WAITING_VERIFICATION" ? "Chờ xác minh" : `Đã đỗ · ${s.slotCode}`}</small>
       </button>)}</div>
