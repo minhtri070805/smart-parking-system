@@ -188,6 +188,93 @@ public sealed class ParkingOperationsService(IApplicationDbContext db,
             return await View(session, ct);
         }, ct);
     }
+    // ---- Xe vé tháng: tra vé theo biển số và cho xe vào khu cố định không cần vé giấy.
+    private sealed record PassRow(long Id, long VehicleId, string Plate, string Status, DateTime StartsAtUtc, DateTime EndsAtUtc, string PlanName);
+
+    /// <summary>Quyết định xe có được vào bằng vé tháng hay không. Dựa trên thời gian thực, không chờ worker đánh dấu hết hạn.</summary>
+    private async Task<PassLookupDto> ResolvePass(int lotId, string plateInput, CancellationToken ct)
+    {
+        var plate = PlateNumberHelper.Normalize(plateInput);
+        PassLookupDto No(string reason, string message, PassRow? pass = null) => new(false, reason, message, plate,
+            pass?.Id, pass?.VehicleId, pass?.PlanName, pass?.Status, pass?.StartsAtUtc, pass?.EndsAtUtc);
+        if (!PlateNumberHelper.IsValidPlateFormat(plate))
+            return No("INVALID_PLATE", "Biển số không hợp lệ. Ví dụ đúng: 51F-123.45.");
+
+        var now = DateTime.UtcNow;
+        // Bỏ vé đã hủy và vé hết hạn từ lâu để không tải cả lịch sử của bãi; so khớp biển số ở bộ nhớ vì mỗi xe viết một kiểu.
+        var rows = (await db.ParkingPasses.AsNoTracking()
+            .Where(p => p.LotId == lotId && p.Status != "CANCELLED" && p.EndsAtUtc > now.AddDays(-90))
+            .Select(p => new PassRow(p.Id, p.VehicleId, p.Vehicle.PlateNumber, p.Status, p.StartsAtUtc, p.EndsAtUtc, p.Plan.Name))
+            .ToListAsync(ct))
+            .Where(p => PlateNumberHelper.IsMatch(p.Plate, plate)).ToList();
+
+        var valid = rows.Where(p => p.Status == "ACTIVE" && p.StartsAtUtc <= now && p.EndsAtUtc > now)
+            .OrderByDescending(p => p.EndsAtUtc).FirstOrDefault();
+        if (valid == null)
+        {
+            var upcoming = rows.Where(p => p.Status is "ACTIVE" or "SCHEDULED" && p.StartsAtUtc > now).OrderBy(p => p.StartsAtUtc).FirstOrDefault();
+            var suspended = rows.FirstOrDefault(p => p.Status == "SUSPENDED" && p.EndsAtUtc > now);
+            var unpaid = rows.FirstOrDefault(p => p.Status == "PENDING");
+            if (suspended != null) return No("PASS_SUSPENDED", "Vé tháng của xe này đang bị tạm khóa. Liên hệ quản lý bãi.", suspended);
+            if (upcoming != null) return No("PASS_NOT_STARTED", "Vé tháng của xe này chưa đến ngày bắt đầu hiệu lực.", upcoming);
+            var latest = rows.Where(p => p.Status is "ACTIVE" or "EXPIRED").OrderByDescending(p => p.EndsAtUtc).FirstOrDefault();
+            if (latest != null) return No("PASS_EXPIRED", "Vé tháng của xe này đã hết hạn.", latest);
+            if (unpaid != null) return No("PASS_UNPAID", "Vé tháng của xe này chưa được thanh toán.", unpaid);
+            return No("PASS_NOT_FOUND", "Không tìm thấy vé tháng của xe này tại bãi.");
+        }
+
+        // Biển số chỉ được có một lượt đang mở trong toàn hệ thống (khớp chỉ mục duy nhất của phiên đang mở).
+        var inside = await db.ParkingSessions.AnyAsync(s => s.PlateNumber == plate && (s.Status == "ACTIVE" || s.Status == "PAID"), ct);
+        if (inside) return No("ALREADY_INSIDE", "Xe này đang có một lượt gửi chưa kết thúc.", valid);
+        return new PassLookupDto(true, "OK", "Vé tháng còn hiệu lực.", plate, valid.Id, valid.VehicleId, valid.PlanName,
+            valid.Status, valid.StartsAtUtc, valid.EndsAtUtc);
+    }
+
+    public async Task<PassLookupDto> LookupPass(int lotId, string? plate, long actor, string role, CancellationToken ct)
+    {
+        await Access(lotId, actor, role, "GATE", ct);
+        return await ResolvePass(lotId, plate ?? "", ct);
+    }
+
+    public async Task<PassEntryResult> EnterWithPass(int lotId, PassEntryRequest r, long actor, string role, CancellationToken ct)
+    {
+        await Access(lotId, actor, role, StaffDuties.GateIn, ct);
+        Require(r.EventId != Guid.Empty && r.ZoneId > 0, "Thiếu EventId hoặc khu.", status: 400);
+        Require(r.Note is null || r.Note.Length <= 500, "Ghi chú tối đa 500 ký tự.", status: 400);
+        var plate = PlateNumberHelper.Normalize(r.PlateNumber);
+        Require(PlateNumberHelper.IsValidPlateFormat(plate), "Biển số không hợp lệ.", "INVALID_PLATE", 400);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+            new { Kind = VerificationStatuses.MonthlyPass, lotId, r.ZoneId, Plate = PlateNumberHelper.NormalizeForComparison(plate), r.ImageId }))));
+        return await writer.ExecuteAsync(lotId, async () => {
+            var previous = await db.ParkingSessions.FirstOrDefaultAsync(s => s.EntryEventId == r.EventId, ct);
+            if (previous != null) {
+                Require(previous.LotId == lotId && previous.EntryRequestHash == hash,
+                    "EventId đã được dùng với nội dung khác.", "EVENT_MISMATCH");
+                return new PassEntryResult(await View(previous, ct), null, true);
+            }
+            Require(await db.ParkingLots.AnyAsync(l => l.Id == lotId && l.IsActive, ct), "Bãi đang đóng nhận xe.");
+            var zone = await db.ParkingZones.FirstOrDefaultAsync(z => z.Id == r.ZoneId && z.LotId == lotId, ct);
+            Require(await auth.CanOperateAreaAsync(actor, role, lotId, StaffDuties.GateIn, null, r.ZoneId, ct), "Bạn không có nhiệm vụ tại tầng này.", "FORBIDDEN", 403);
+            Require(zone is { IsActive: true, Type: "FIXED" }, "Xe vé tháng chỉ vào khu cố định (FIXED) đang hoạt động.", "NOT_A_MONTHLY_ZONE");
+            var pass = await ResolvePass(lotId, plate, ct);
+            Require(pass.CanEnter, pass.Message, pass.Reason);
+            if (r.ImageId.HasValue)
+                Require(await db.StoredImages.AnyAsync(i => i.Id == r.ImageId && i.UserId == actor, ct),
+                    "Ảnh không tồn tại hoặc không thuộc người tiếp nhận.", "INVALID_IMAGE", 403);
+            var now = DateTime.UtcNow;
+            var policy = await ParkingPolicyResolver.ResolveAsync(db, lotId, r.ZoneId, now, ct);
+            var session = new ParkingSession { LotId = lotId, ZoneId = r.ZoneId, PolicyId = policy?.Id, VehicleId = pass.VehicleId,
+                EntryEventId = r.EventId, EntryRequestHash = hash, EntryImageId = r.ImageId, PlateNumber = plate,
+                VerificationStatus = VerificationStatuses.MonthlyPass, VerifiedAt = now, VerifiedBy = actor,
+                Status = "ACTIVE", Revision = 1, CheckInTime = now };
+            db.ParkingSessions.Add(session); await db.SaveChangesAsync(ct);
+            Audit("MONTHLY_PASS_ENTRY", "parking_sessions", session.Id, actor, null,
+                new { session.EntryEventId, session.EntryImageId, session.ZoneId, PassId = pass.PassId, pass.PlanName, pass.EndsAtUtc, Plate = plate, r.Note });
+            await db.SaveChangesAsync(ct);
+            return new PassEntryResult(await View(session, ct), pass, false);
+        }, ct);
+    }
+
     public async Task<object> Sessions(int lotId, bool waitingOnly, long actor, string role, CancellationToken ct)
     {
         await Access(lotId, actor, role, "READ", ct);

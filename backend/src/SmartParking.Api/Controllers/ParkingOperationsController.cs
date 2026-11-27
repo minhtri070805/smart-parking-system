@@ -41,6 +41,10 @@ public class ParkingOperationsController(ParkingOperationsService service) : Con
     public Task<IActionResult> CreatePolicy(int lotId, PolicyRequest r, CancellationToken ct) => Run(() => service.CreatePolicy(lotId, r, Actor, Role, ct));
     [HttpPost("entries")]
     public Task<IActionResult> Entry(int lotId, EntryRequest r, CancellationToken ct) => Run(async () => await service.Enter(lotId, r, Actor, Role, ct));
+    [HttpGet("passes/lookup")]
+    public Task<IActionResult> LookupPass(int lotId, string? plate, CancellationToken ct) => Run(async () => await service.LookupPass(lotId, plate, Actor, Role, ct));
+    [HttpPost("pass-entries")]
+    public Task<IActionResult> PassEntry(int lotId, PassEntryRequest r, CancellationToken ct) => Run(async () => await service.EnterWithPass(lotId, r, Actor, Role, ct));
     [HttpGet("sessions")]
     public Task<IActionResult> Sessions(int lotId, bool waitingOnly, CancellationToken ct) => Run(() => service.Sessions(lotId, waitingOnly, Actor, Role, ct));
     [HttpGet("tickets/{code}")]

@@ -6,6 +6,10 @@ public record ZoneFloorRequest(string Name, int FloorNumber);
 public record FloorZoneRequest(int ZoneId);
 public record SlotFuelRequest(string AllowedFuelType);
 public record EntryRequest(Guid EventId, int ZoneId, string TicketCode, long? ImageId, string? ManualReason);
+public record PassEntryRequest(Guid EventId, int ZoneId, string PlateNumber, long? ImageId, string? Note);
+public record PassLookupDto(bool CanEnter, string Reason, string Message, string PlateNumber, long? PassId,
+    long? VehicleId, string? PlanName, string? Status, DateTime? StartsAtUtc, DateTime? EndsAtUtc);
+public record PassEntryResult(OperationSessionDto Session, PassLookupDto? Pass, bool Replay);
 public record VerifyVehicleRequest(long ActualSlotId, string PlateNumber, string FuelType,
     long ExpectedRevision, bool VehicleObserved, string? Reason);
 public record MoveVehicleRequest(long ActualSlotId, long ExpectedRevision, bool OldSlotObservedEmpty,
