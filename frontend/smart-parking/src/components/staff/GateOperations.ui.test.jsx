@@ -32,6 +32,7 @@ beforeEach(() => {
     entry: (body) => ok({ session: { id: 77, plateNumber: body.plateNumber }, pass: validPass, replay: false }),
     session: null,
     byPlate: () => Response.json({ message: "not found" }, { status: 404 }),
+    bookings: [],
     detect: null,
     checkOut: null,
     sessions: [],
@@ -47,6 +48,7 @@ beforeEach(() => {
     if (path.endsWith("/operations/sessions")) return ok(model.sessions);
     if (path.endsWith("/operations/layout")) return ok({ floors: [], slots: [] });
     if (path.includes("/parking-sessions/by-plate/")) return model.byPlate();
+    if (path === "/api/v1/bookings") return ok({ items: model.bookings, totalCount: model.bookings.length, totalPages: model.bookings.length ? 1 : 0, pageNumber: 1, pageSize: 100 });
     if (path === "/api/v1/parking-sessions/active") return ok({ items: [], totalCount: 0, totalPages: 0 });
     if (path.endsWith("/operations/tickets/VE-0042")) return ok({ id: 10, ticketCode: "VE-0042", ticketStatus: "ISSUED" });
     if (path === "/api/v1/images") return ok({ id: 88, url: "https://images.example.invalid/gate.jpg" });
@@ -69,7 +71,8 @@ const router = (ui) =>
   render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>{ui}</MemoryRouter>);
 const mountGate = (props = {}) => {
   const onChanged = vi.fn();
-  router(<GateOperations lot={lot} revision={0} onChanged={onChanged} onBusyChange={() => {}} {...props} />);
+  // Các test của file này kiểm tra chế độ thủ công (Staff bấm xác nhận); chế độ tự động có file test riêng.
+  router(<GateOperations lot={lot} revision={0} onChanged={onChanged} onBusyChange={() => {}} autoAdmit={false} {...props} />);
   return { onChanged };
 };
 const checkPlate = async (user, plate = "51F12345") => {
@@ -237,7 +240,7 @@ describe("Gate screen: choosing the branch", () => {
     expect(calls("GET", "/passes/lookup")).toHaveLength(0);
     expect(screen.queryByLabelText("Biển số thực tế tại cổng ra")).toBeNull();
     expect(screen.getByText(/Biển số tại cổng ra:/)).toBeTruthy();
-    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("checkbox", { name: /Đã đối chiếu/ }));
     await user.click(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }));
     await screen.findByText(/Phiên đã kết thúc/);
 
@@ -258,7 +261,7 @@ describe("Gate screen: choosing the branch", () => {
     await waitFor(() => expect(screen.getByLabelText("Biển số xe").value).toBe("51F-123.45"));
     await user.click(screen.getByRole("button", { name: "Kiểm tra" }));
     await screen.findByText(/Xe vào bằng vé tháng — không thu phí/);
-    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("checkbox", { name: /Đã đối chiếu/ }));
     await user.click(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }));
     await screen.findByText(/Phiên đã kết thúc/);
     expect(calls("POST", "/detections/501/confirm-exit")).toHaveLength(1);
@@ -329,7 +332,7 @@ describe("Exit branch opened from a session link", () => {
 
     const input = await screen.findByLabelText("Biển số thực tế tại cổng ra");
     await user.type(input, "51F99999");
-    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("checkbox", { name: /Đã đối chiếu/ }));
     await user.click(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }));
     await screen.findByText(/Biển số tại cổng ra không khớp/);
     expect(calls("POST", "/check-out")).toHaveLength(0);
@@ -347,7 +350,7 @@ describe("Exit branch opened from a session link", () => {
     expect(await screen.findByText(/Chưa xác nhận thanh toán/)).toBeTruthy();
     expect(screen.queryByText(/không thu phí\./)).toBeNull();
     expect(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }).disabled).toBe(true);
-    expect(screen.getByRole("checkbox").disabled).toBe(true);
+    expect(screen.getByRole("checkbox", { name: /Đã đối chiếu/ }).disabled).toBe(true);
   });
 });
 

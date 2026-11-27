@@ -52,6 +52,8 @@ function mount(view = "entry", extra = "") {
 }
 
 beforeEach(() => {
+  // Các test của file này kiểm tra luồng thủ công của màn Cổng; chế độ tự động có test riêng (GateAuto.ui.test.jsx).
+  localStorage.setItem("smart-parking.gate.auto", "off");
   model = {
     duty: undefined,
     sessions: [{ ...primary }],
@@ -285,6 +287,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => {
+  localStorage.removeItem("smart-parking.gate.auto");
   clearAuthSession();
   vi.unstubAllGlobals();
 });
@@ -494,7 +497,8 @@ describe("Staff workspace", () => {
     const body = JSON.parse(requests("/entries")[0][1].body);
     expect(body).toMatchObject({ ticketCode: "VE-001", zoneId: 1 });
     expect(body.recognitionId).toBeUndefined();
-    expect(body.eventId).toBeTruthy(); expect(body.plateNumber).toBeUndefined();
+    // Biển số đã quét đi kèm chỉ làm biển số TẠM để Staff khu vực đối chiếu; biển số chính thức vẫn do xác minh tại ô ghi.
+    expect(body.eventId).toBeTruthy(); expect(body.plateNumber).toBe("30H-123.45");
     expect(requests("/check-in")).toHaveLength(0);
   });
 
