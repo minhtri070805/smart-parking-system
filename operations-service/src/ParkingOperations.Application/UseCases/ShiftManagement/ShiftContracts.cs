@@ -39,6 +39,33 @@ public sealed record ParkingShiftDto(Guid Id, int LotId, DateOnly BusinessDate, 
 public sealed record ShiftWorkspaceDto(IReadOnlyList<ParkingShiftDto> Shifts, IReadOnlyList<StaffOptionDto> Staff);
 public sealed record ShiftOperationResult(bool Success, int StatusCode, string Message, ParkingShiftDto? Data = null);
 
+public sealed class ClockOutShiftRequest
+{
+    [Range(0, 1_000_000_000)] public decimal? HandoverCashAmount { get; init; }
+}
+
+public sealed record StaffShiftDto(
+    Guid ShiftId,
+    int LotId,
+    DateOnly BusinessDate,
+    string Code,
+    DateTime StartsAtUtc,
+    DateTime EndsAtUtc,
+    string ShiftStatus,
+    Guid AssignmentId,
+    string DutyCode,
+    string AssignmentStatus,
+    DateTime? ClockInAtUtc,
+    DateTime? ClockOutAtUtc,
+    decimal? HandoverCashAmount,
+    decimal? SystemCashAmount,
+    decimal? AdjustmentAmount,
+    string? AdjustmentNote,
+    long? VerifiedBy,
+    DateTime? VerifiedAt);
+
+public sealed record StaffShiftOperationResult(bool Success, int StatusCode, string Message, StaffShiftDto? Data = null);
+
 public interface IParkingShiftService
 {
     Task<ShiftWorkspaceDto> LoadManagerWorkspaceAsync(int lotId, DateOnly? from, DateOnly? to, string token, CancellationToken ct);
@@ -46,4 +73,8 @@ public interface IParkingShiftService
     Task<ShiftOperationResult> AssignAsync(Guid shiftId, AssignStaffToShiftRequest request, long managerId, string token, CancellationToken ct);
     Task<ShiftOperationResult> StartAsync(Guid shiftId, string token, CancellationToken ct);
     Task<ShiftOperationResult> CompleteAsync(Guid shiftId, string token, CancellationToken ct);
+    Task<IReadOnlyList<StaffShiftDto>> GetMyShiftsAsync(long staffId, CancellationToken ct);
+    Task<StaffShiftOperationResult> GetMyShiftDetailAsync(Guid shiftId, long staffId, CancellationToken ct);
+    Task<StaffShiftOperationResult> ClockInAsync(Guid shiftId, long staffId, CancellationToken ct);
+    Task<StaffShiftOperationResult> ClockOutAsync(Guid shiftId, long staffId, ClockOutShiftRequest request, CancellationToken ct);
 }

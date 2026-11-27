@@ -45,6 +45,14 @@ public sealed class ParkingShift
     public ICollection<ShiftAssignment> Assignments { get; set; } = new List<ShiftAssignment>();
 }
 
+public static class ShiftAssignmentStatuses
+{
+    public const string Assigned = "ASSIGNED";
+    public const string ClockedIn = "CLOCKED_IN";
+    public const string PendingReconciliation = "PENDING_RECONCILIATION";
+    public const string Verified = "VERIFIED";
+}
+
 public sealed class ShiftAssignment
 {
     public Guid Id { get; set; }
@@ -54,4 +62,13 @@ public sealed class ShiftAssignment
     public string DutyCode { get; set; } = ParkingShiftDuties.Gate;
     public long AssignedByManagerId { get; set; }
     public DateTime AssignedAtUtc { get; set; }
+    public DateTime? ClockInAtUtc { get; set; }
+    public DateTime? ClockOutAtUtc { get; set; }
+    public decimal? SystemCashAmount { get; set; }
+    public decimal? HandoverCashAmount { get; set; }
+    public decimal? AdjustmentAmount { get; set; }
+    public string? AdjustmentNote { get; set; }
+    public string Status { get; set; } = ShiftAssignmentStatuses.Assigned;
+    public long? VerifiedBy { get; set; }
+    public DateTime? VerifiedAt { get; set; }
 }

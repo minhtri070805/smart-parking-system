@@ -155,6 +155,95 @@ public sealed class ParkingShiftService(OperationsDbContext db, ICoreStaffAccess
         return Ok(ParkingShiftDto.From(shift), "Ca đã được chốt.");
     }
 
+    public async Task<IReadOnlyList<StaffShiftDto>> GetMyShiftsAsync(long staffId, CancellationToken ct)
+    {
+        var assignments = await db.ShiftAssignments.AsNoTracking()
+            .Include(x => x.Shift)
+            .Where(x => x.StaffId == staffId)
+            .OrderByDescending(x => x.Shift.BusinessDate)
+            .ThenBy(x => x.Shift.StartsAtUtc)
+            .Take(60)
+            .ToListAsync(ct);
+
+        return assignments.Select(ToStaffShiftDto).ToList();
+    }
+
+    public async Task<StaffShiftOperationResult> GetMyShiftDetailAsync(Guid shiftId, long staffId, CancellationToken ct)
+    {
+        var assignment = await db.ShiftAssignments.AsNoTracking()
+            .Include(x => x.Shift)
+            .FirstOrDefaultAsync(x => x.ShiftId == shiftId && x.StaffId == staffId, ct);
+
+        return assignment is null
+            ? new StaffShiftOperationResult(false, 404, "Không tìm thấy ca trực của bạn.")
+            : new StaffShiftOperationResult(true, 200, "Lấy thông tin ca trực thành công.", ToStaffShiftDto(assignment));
+    }
+
+    public async Task<StaffShiftOperationResult> ClockInAsync(Guid shiftId, long staffId, CancellationToken ct)
+    {
+        var assignment = await db.ShiftAssignments
+            .Include(x => x.Shift)
+            .FirstOrDefaultAsync(x => x.ShiftId == shiftId && x.StaffId == staffId, ct);
+
+        if (assignment is null)
+            return new StaffShiftOperationResult(false, 404, "Bạn không được phân công vào ca trực này.");
+        if (assignment.Shift.Status == ParkingShiftStatuses.Completed)
+            return new StaffShiftOperationResult(false, 409, "Ca trực đã kết thúc, không thể Clock-in.");
+        if (assignment.ClockInAtUtc.HasValue)
+            return new StaffShiftOperationResult(false, 409, "Bạn đã Clock-in cho ca trực này rồi.");
+
+        var now = UtcNow;
+        if (now >= assignment.Shift.EndsAtUtc)
+            return new StaffShiftOperationResult(false, 409, "Ca trực đã quá giờ kết thúc, không thể Clock-in.");
+
+        assignment.ClockInAtUtc = now;
+        assignment.Status = ShiftAssignmentStatuses.ClockedIn;
+        await db.SaveChangesAsync(ct);
+
+        return new StaffShiftOperationResult(true, 200, "Clock-in thành công.", ToStaffShiftDto(assignment));
+    }
+
+    public async Task<StaffShiftOperationResult> ClockOutAsync(Guid shiftId, long staffId, ClockOutShiftRequest request, CancellationToken ct)
+    {
+        var assignment = await db.ShiftAssignments
+            .Include(x => x.Shift)
+            .FirstOrDefaultAsync(x => x.ShiftId == shiftId && x.StaffId == staffId, ct);
+
+        if (assignment is null)
+            return new StaffShiftOperationResult(false, 404, "Bạn không được phân công vào ca trực này.");
+        if (!assignment.ClockInAtUtc.HasValue)
+            return new StaffShiftOperationResult(false, 409, "Bạn chưa Clock-in nên không thể Clock-out.");
+        if (assignment.ClockOutAtUtc.HasValue)
+            return new StaffShiftOperationResult(false, 409, "Bạn đã Clock-out cho ca trực này rồi.");
+
+        assignment.ClockOutAtUtc = UtcNow;
+        assignment.HandoverCashAmount = request.HandoverCashAmount;
+        assignment.Status = ShiftAssignmentStatuses.PendingReconciliation;
+        await db.SaveChangesAsync(ct);
+
+        return new StaffShiftOperationResult(true, 200, "Clock-out thành công. Ca đã chuyển sang chờ đối soát.", ToStaffShiftDto(assignment));
+    }
+
+    private static StaffShiftDto ToStaffShiftDto(ShiftAssignment a) => new(
+        a.ShiftId,
+        a.Shift.LotId,
+        a.Shift.BusinessDate,
+        a.Shift.Code,
+        a.Shift.StartsAtUtc,
+        a.Shift.EndsAtUtc,
+        a.Shift.Status,
+        a.Id,
+        a.DutyCode,
+        a.Status,
+        a.ClockInAtUtc,
+        a.ClockOutAtUtc,
+        a.HandoverCashAmount,
+        a.SystemCashAmount,
+        a.AdjustmentAmount,
+        a.AdjustmentNote,
+        a.VerifiedBy,
+        a.VerifiedAt);
+
     private static (DateTime StartUtc, DateTime EndUtc) GetShiftWindow(DateOnly businessDate, string code)
     {
         var (startHour, endHour, endDayOffset) = code switch
