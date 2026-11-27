@@ -7,7 +7,6 @@ import {
   getAuthSession,
   subscribeAuthSession,
 } from "../services/authSession.js";
-import "../home.css";
 
 const highlights = [
   "Xem bãi, tầng và trạng thái ô đỗ",
@@ -200,6 +199,51 @@ function ParkingIllustration() {
   );
 }
 
+function ControlRoomPreview({ status, online }) {
+  const slots = [
+    ["A-01", "Trống"],
+    ["A-02", "Có xe"],
+    ["A-03", "Đã giữ"],
+    ["A-04", "Trống"],
+    ["A-05", "Có xe"],
+    ["A-06", "Trống"],
+  ];
+  return (
+    <div className="control-room" role="img" aria-label="Giao diện điều hành bãi đỗ với trạng thái ô, lượt xe và kết nối hệ thống">
+      <div className="control-room__bar">
+        <div className="control-room__brand"><span>P</span><strong>Trung tâm điều hành</strong></div>
+        <div className={`control-room__live ${online ? "is-online" : ""}`}><i />{online ? "Kết nối trực tuyến" : status}</div>
+      </div>
+      <div className="control-room__body">
+        <aside className="control-room__rail" aria-hidden="true">
+          <span className="is-active" /><span /><span /><span />
+        </aside>
+        <div className="control-room__content">
+          <div className="control-room__heading">
+            <div><small>Bãi Trung Tâm</small><strong>Sơ đồ tầng B1</strong></div>
+            <button type="button" tabIndex={-1}>Chế độ 3D</button>
+          </div>
+          <div className="control-room__grid">
+            <div className="control-room__lot">
+              {slots.map(([code, state]) => (
+                <div key={code} className={`control-room__slot is-${state === "Trống" ? "free" : state === "Có xe" ? "busy" : "held"}`}>
+                  <span>{code}</span><small>{state}</small>
+                </div>
+              ))}
+            </div>
+            <div className="control-room__feed">
+              <small>Luồng vận hành</small>
+              <div><i className="is-green" /><span><strong>Xe vào</strong><small>Đối chiếu biển số</small></span></div>
+              <div><i className="is-amber" /><span><strong>Đặt chỗ</strong><small>Chờ xác nhận tại cổng</small></span></div>
+              <div><i /><span><strong>Xe ra</strong><small>Kiểm tra phiên gửi xe</small></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const revealRef = useScrollReveal();
   const session = useSyncExternalStore(
@@ -260,23 +304,18 @@ export default function Home() {
 {/* ---------- Giới thiệu ---------- */}
       <section id="gioi-thieu" className="container hero" data-enter>
         <div className="hero__text">
-          <span className="tag">Một hệ thống cho 4 vai trò</span>
-          <h1>Hệ thống quản lý bãi đỗ xe</h1>
+          <span className="tag"><i aria-hidden="true" /> Một hệ thống cho 4 vai trò</span>
+          <h1>Trung tâm vận hành bãi đỗ xe</h1>
           <p className="lead">
-            Smart-Parking kết nối đặt chỗ, tiếp nhận xe, đối chiếu biển số và
-            theo dõi phiên gửi xe cho khách hàng cùng đội vận hành.
+            Theo dõi chỗ đỗ, tiếp nhận xe, đối chiếu biển số và xử lý đặt chỗ
+            trong cùng một luồng dữ liệu cho khách hàng và đội vận hành.
           </p>
-          <ul className="bullets">
-            {highlights.map((h) => (
-              <li key={h}>{h}</li>
-            ))}
-          </ul>
           <div className="hero__cta">
             <AnchorLink
               id="cach-hoat-dong"
               className="btn btn--primary btn--lg"
             >
-              Xem cách vận hành
+              Xem quy trình
             </AnchorLink>
             {session?.userProfile.role === "USER" ? (
               <Link to="/customer" className="btn btn--dark-outline btn--lg">
@@ -290,7 +329,7 @@ export default function Home() {
           </div>
         </div>
         <div className="hero__art" data-scroll-reveal>
-          <ParkingIllustration />
+          <ControlRoomPreview status={apiStatusLabel} online={apiOnline} />
         </div>
       </section>
 
@@ -303,8 +342,8 @@ export default function Home() {
         <div className="container section">
           <SectionHead
             tag="Cách thức hoạt động"
-            title="Quy trình cho từng vai trò"
-            text="Hai luồng công việc chính dành cho đội vận hành tại bãi và khách hàng đặt chỗ trên website."
+            title="Hai luồng, một hệ thống"
+            text="Đội vận hành xử lý xe tại bãi. Khách hàng tự xem chỗ, đặt xe và theo dõi phiên của mình."
           />
           <div className="grid-2">
             {methods.map((m) => (
@@ -341,7 +380,7 @@ export default function Home() {
         className="container section"
         data-scroll-reveal
       >
-        <SectionHead tag="Hệ thống" title="Công cụ vận hành bãi đỗ" />
+        <SectionHead tag="Hệ thống" title="Dữ liệu đủ để ra quyết định" />
         <div className="grid-2">
           <article className="card card--dark home-interactive-card">
             <span className="icon-box icon-box--yellow">

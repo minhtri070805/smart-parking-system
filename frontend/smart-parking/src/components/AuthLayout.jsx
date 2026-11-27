@@ -16,6 +16,14 @@ export default function AuthLayout({ title, description, children }) {
             <li>Xác minh email bằng mã OTP</li>
             <li>Quyền truy cập tách biệt theo vai trò</li>
           </ul>
+          <div className="auth-intro__matrix" aria-hidden="true">
+            <span className="is-free">A-01</span>
+            <span>A-02</span>
+            <span className="is-held">A-03</span>
+            <span className="is-free">A-04</span>
+            <span>A-05</span>
+            <span className="is-free">A-06</span>
+          </div>
         </aside>
         <div className="auth-modal" aria-labelledby="auth-title">
           <nav className="auth-tabs" aria-label="Đăng nhập hoặc đăng ký">

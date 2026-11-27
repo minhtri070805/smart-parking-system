@@ -19,8 +19,8 @@ import {
 export function Logo({ small = false }) {
   return (
     <span className={small ? "logo logo--small" : "logo"}>
-      <span className="logo__mark">P</span>
-      <span className="logo__text">SMART-PARKING</span>
+      <span className="logo__mark"><b>P</b><i aria-hidden="true" /></span>
+      <span className="logo__text">Smart Parking</span>
     </span>
   );
 }
