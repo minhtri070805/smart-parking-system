@@ -6,19 +6,29 @@ using ParkingOperations.Persistence.Data;
 
 namespace ParkingOperations.Infrastructure;
 
-public sealed class ParkingShiftService(OperationsDbContext db, ICoreStaffAccessClient coreAccess) : IParkingShiftService
+public sealed class ParkingShiftService(OperationsDbContext db, ICoreStaffAccessClient coreAccess, TimeProvider? timeProvider = null) : IParkingShiftService
 {
     private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+    private DateTime UtcNow => (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
 
-    public async Task<ShiftWorkspaceDto> LoadManagerWorkspaceAsync(int lotId, string token, CancellationToken ct)
+    public async Task<ShiftWorkspaceDto> LoadManagerWorkspaceAsync(int lotId, DateOnly? from, DateOnly? to, string token, CancellationToken ct)
     {
         if (!await coreAccess.IsCallerAssignedToLotAsync(token, lotId, ct))
             throw new UnauthorizedAccessException("Bạn không có quyền xem ca tại bãi này.");
 
-        var shifts = await db.ParkingShifts.AsNoTracking().Include(x => x.Assignments)
-            .Where(x => x.LotId == lotId)
-            .OrderByDescending(x => x.BusinessDate).ThenBy(x => x.StartsAtUtc)
-            .Take(100).ToListAsync(ct);
+        var query = db.ParkingShifts.AsNoTracking().Include(x => x.Assignments)
+            .Where(x => x.LotId == lotId);
+
+        if (from.HasValue)
+            query = query.Where(x => x.BusinessDate >= from.Value);
+        if (to.HasValue)
+            query = query.Where(x => x.BusinessDate <= to.Value);
+
+        var ordered = query.OrderByDescending(x => x.BusinessDate).ThenBy(x => x.StartsAtUtc);
+        var shifts = from.HasValue || to.HasValue
+            ? await ordered.ToListAsync(ct)
+            : await ordered.Take(100).ToListAsync(ct);
+
         var staff = await coreAccess.GetActiveStaffAtLotAsync(token, lotId, ct);
         return new ShiftWorkspaceDto(shifts.Select(ParkingShiftDto.From).ToList(), staff);
     }
@@ -28,7 +38,11 @@ public sealed class ParkingShiftService(OperationsDbContext db, ICoreStaffAccess
         if (!await coreAccess.IsCallerAssignedToLotAsync(token, request.LotId, ct))
             return Fail(403, "Bạn không được phân công quản lý bãi này.");
 
+        var now = UtcNow;
         var (start, end) = GetShiftWindow(request.BusinessDate, request.ShiftCode);
+        if (end <= now)
+            return Fail(409, "Không thể tạo ca cho thời gian đã qua.");
+
         var shift = new ParkingShift
         {
             Id = Guid.NewGuid(),
@@ -39,7 +53,7 @@ public sealed class ParkingShiftService(OperationsDbContext db, ICoreStaffAccess
             EndsAtUtc = end,
             Status = ParkingShiftStatuses.Planned,
             CreatedByManagerId = managerId,
-            CreatedAtUtc = DateTime.UtcNow,
+            CreatedAtUtc = now,
             Version = 1
         };
 
@@ -62,6 +76,9 @@ public sealed class ParkingShiftService(OperationsDbContext db, ICoreStaffAccess
             return Fail(404, "Không tìm thấy ca làm việc.");
         if (shift.Status != ParkingShiftStatuses.Planned)
             return Fail(409, "Chỉ được thay đổi phân công khi ca đang được lên lịch.");
+        var now = UtcNow;
+        if (shift.EndsAtUtc <= now)
+            return Fail(409, "Không thể phân công nhân viên vào ca đã qua.");
         if (!ParkingShiftDuties.IsValid(request.DutyCode))
             return Fail(400, "dutyCode phải là GATE, SLOT_VERIFIER hoặc BOTH.");
         if (!await coreAccess.IsCallerAssignedToLotAsync(token, shift.LotId, ct))
@@ -107,8 +124,14 @@ public sealed class ParkingShiftService(OperationsDbContext db, ICoreStaffAccess
         if (shift.Assignments.Count == 0)
             return Fail(409, "Hãy phân công ít nhất một nhân viên trước khi bắt đầu ca.");
 
+        var now = UtcNow;
+        if (now < shift.StartsAtUtc)
+            return Fail(409, "Chưa đến giờ bắt đầu ca. Chỉ có thể bắt đầu khi nằm trong khung giờ ca.");
+        if (now >= shift.EndsAtUtc)
+            return Fail(409, "Ca làm việc đã quá giờ kết thúc, không thể bắt đầu.");
+
         shift.Status = ParkingShiftStatuses.InProgress;
-        shift.StartedAtUtc = DateTime.UtcNow;
+        shift.StartedAtUtc = now;
         shift.Version++;
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { return Fail(409, "Ca vừa được cập nhật bởi yêu cầu khác. Hãy tải lại dữ liệu."); }

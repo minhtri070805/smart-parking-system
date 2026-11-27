@@ -13,15 +13,25 @@ const SHIFT_CONFIGS = [
 const DUTY_LABELS = {
   GATE: "Trực cổng",
   SLOT_VERIFIER: "Trực khu vực",
-  BOTH: "Cổng & Khu vực",
+  BOTH: "Trực cổng & khu vực",
 };
 
-const DEFAULT_FLOORS = [
-  { id: 1, name: "Tầng 1" },
-  { id: 2, name: "Tầng 2" },
-  { id: 3, name: "Tầng 3" },
-  { id: 4, name: "Tầng hầm B1" },
-];
+const SHIFT_STATUS_LABELS = {
+  PLANNED: "Lên lịch",
+  IN_PROGRESS: "Đang trực",
+  COMPLETED: "Đã kết thúc",
+};
+
+function getShiftWindowRange(dateStr, code) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const startHour = code === "MORNING" ? 5 : code === "AFTERNOON" ? 13 : 21;
+  const endHour = code === "MORNING" ? 13 : code === "AFTERNOON" ? 21 : 5;
+  const endDayOffset = code === "NIGHT" ? 1 : 0;
+  // Giờ vận hành VN (UTC+7)
+  const startUtc = Date.UTC(y, m - 1, d, startHour - 7, 0, 0);
+  const endUtc = Date.UTC(y, m - 1, d + endDayOffset, endHour - 7, 0, 0);
+  return { startUtc, endUtc };
+}
 
 function toDateString(d) {
   const year = d.getFullYear();
@@ -68,7 +78,6 @@ export default function ShiftManagement() {
   const [lotId, setLotId] = useState("");
   const [staff, setStaff] = useState([]);
   const [records, setRecords] = useState([]);
-  const [floors, setFloors] = useState(DEFAULT_FLOORS);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -85,7 +94,6 @@ export default function ShiftManagement() {
   const [activeModal, setActiveModal] = useState(null); // { dateStr, config, shift }
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [selectedDuty, setSelectedDuty] = useState("GATE");
-  const [selectedFloor, setSelectedFloor] = useState("Tầng 1");
 
   // Load danh sách bãi xe
   useEffect(() => {
@@ -102,24 +110,19 @@ export default function ShiftManagement() {
     return () => { active = false; };
   }, []);
 
-  // Load layout bãi để lấy danh sách tầng
-  useEffect(() => {
-    if (!lotId) return;
-    apiRequest(`/v1/parking-lots/${lotId}/operations/layout`)
-      .then((res) => {
-        const floorItems = itemsOf(res?.data?.floors);
-        if (floorItems.length > 0) setFloors(floorItems);
-        else setFloors(DEFAULT_FLOORS);
-      })
-      .catch(() => setFloors(DEFAULT_FLOORS));
-  }, [lotId]);
+  const weekFrom = useMemo(() => toDateString(selectedMonday), [selectedMonday]);
+  const weekTo = useMemo(() => {
+    const sunday = new Date(selectedMonday);
+    sunday.setDate(sunday.getDate() + 6);
+    return toDateString(sunday);
+  }, [selectedMonday]);
 
-  // Load ca trực từ Operations Service
+  // Load ca trực từ Operations Service theo tuần đang xem
   useEffect(() => {
     if (!lotId) return;
     let active = true;
     setError("");
-    operationsRequest(`/shifts/workspace?lotId=${lotId}`)
+    operationsRequest(`/shifts/workspace?lotId=${lotId}&from=${weekFrom}&to=${weekTo}`)
       .then((result) => {
         if (!active) return;
         setRecords(itemsOf(result?.data?.shifts));
@@ -127,7 +130,7 @@ export default function ShiftManagement() {
       })
       .catch((e) => { if (active) setError(e.message); });
     return () => { active = false; };
-  }, [lotId, revision]);
+  }, [lotId, weekFrom, weekTo, revision]);
 
   // Tính 7 ngày trong tuần từ selectedMonday
   const weekDays = useMemo(() => {
@@ -174,6 +177,14 @@ export default function ShiftManagement() {
     setCurrentMonth(today.getMonth() + 1);
   }
 
+  const staffNameMap = useMemo(() => {
+    const map = new Map();
+    staff.forEach((p) => {
+      map.set(p.userId, p.userFullName || `NV #${p.userId}`);
+    });
+    return map;
+  }, [staff]);
+
   // Map ca trực theo key: `${dateStr}_${code}`
   const shiftMap = useMemo(() => {
     const map = new Map();
@@ -186,54 +197,53 @@ export default function ShiftManagement() {
   // Tính màu sắc ca:
   // - Ngày đã qua (< 17/11): 🔴 Màu đỏ (dù có hay chưa phân công)
   // - Từ hôm nay trở đi (>= 17/11): 🟢 Xanh lá cây nếu Ca trống | 🟡 Vàng nếu đã phân công (chưa tới giờ / đang trực)
-  function getShiftStatusStyle(shift, dateStr) {
-    const todayStr = toDateString(today);
-    const isPast = dateStr < todayStr;
+  function getShiftStatusStyle(shift, dateStr, code) {
+    const { endUtc } = getShiftWindowRange(dateStr, code);
+    const isPast = endUtc <= Date.now();
     const assignments = shift?.assignments || [];
     const hasAssignments = assignments.length > 0;
 
-    // 1. Ngày đã qua trong quá khứ (< hôm nay): ĐÁNH MÀU ĐỎ HẾT
     if (isPast) {
       return {
         type: "ended",
+        isPast: true,
         className: "shift-slot--ended",
         badge: hasAssignments ? "Đã kết thúc" : "Đã qua (Trống)",
       };
     }
 
-    // 2. Từ hôm nay trở đi: Chưa phân công -> 🟢 Màu xanh lá cây
     if (!hasAssignments) {
       return {
         type: "empty",
+        isPast: false,
         className: "shift-slot--empty",
         badge: "Ca trống",
       };
     }
 
-    // Ca hôm nay nếu đã bấm chốt hoàn thành:
     if (shift?.status === "COMPLETED") {
       return {
         type: "ended",
+        isPast: false,
         className: "shift-slot--ended",
         badge: "Đã chốt",
       };
     }
 
-    // 3. Đã phân công và chưa tới giờ làm việc / đang trực -> 🟡 Màu vàng
     return {
       type: "upcoming",
+      isPast: false,
       className: "shift-slot--upcoming",
       badge: shift?.status === "IN_PROGRESS" ? "Đang trực" : "Sắp tới",
     };
   }
 
-  // Mở popup phân công cho ô ca
+  // Mở popup xem / phân công cho ô ca
   function openSlotModal(dateStr, config) {
     const shift = shiftMap.get(`${dateStr}_${config.code}`) || null;
     setActiveModal({ dateStr, config, shift });
     setSelectedStaffId("");
     setSelectedDuty("GATE");
-    setSelectedFloor(floors[0]?.name || "Tầng 1");
   }
 
   // Đồng bộ lại modal khi records cập nhật
@@ -467,15 +477,25 @@ export default function ShiftManagement() {
                 </td>
                 {weekDays.map((d) => {
                   const shift = shiftMap.get(`${d.dateStr}_${cfg.code}`);
-                  const statusInfo = getShiftStatusStyle(shift, d.dateStr);
+                  const statusInfo = getShiftStatusStyle(shift, d.dateStr, cfg.code);
                   const assignments = shift?.assignments || [];
+                  const isDisabledPastEmpty = statusInfo.isPast && assignments.length === 0;
 
                   return (
                     <td key={d.dateStr}>
                       <div
                         className={`shift-slot ${statusInfo.className}`}
-                        onClick={() => openSlotModal(d.dateStr, cfg)}
-                        title="Bấm để xem và phân công nhân viên"
+                        style={isDisabledPastEmpty ? { opacity: 0.65, cursor: "not-allowed" } : undefined}
+                        onClick={() => {
+                          if (!isDisabledPastEmpty) openSlotModal(d.dateStr, cfg);
+                        }}
+                        title={
+                          isDisabledPastEmpty
+                            ? "Ca đã qua, không thể phân công"
+                            : statusInfo.isPast
+                            ? "Bấm để xem thông tin ca đã qua"
+                            : "Bấm để xem và phân công nhân viên"
+                        }
                       >
                         <div className="shift-slot__top">
                           <span>{cfg.label}</span>
@@ -485,14 +505,14 @@ export default function ShiftManagement() {
                         <div className="shift-slot__roster">
                           {assignments.length === 0 ? (
                             <span style={{ fontStyle: "italic", opacity: 0.8 }}>
-                              + Bấm để phân công
+                              {statusInfo.isPast ? "Đã qua" : "+ Bấm để phân công"}
                             </span>
                           ) : (
                             assignments.slice(0, 2).map((a) => (
                               <div key={a.id} className="shift-slot__person">
-                                <span>👤 NV #{a.staffId}</span>
+                                <span>👤 {staffNameMap.get(a.staffId) || `NV #${a.staffId}`}</span>
                                 <span className="shift-slot__person-role">
-                                  ({a.dutyCode === "GATE" ? "Cổng" : "Khu vực"})
+                                  ({DUTY_LABELS[a.dutyCode] || a.dutyCode})
                                 </span>
                               </div>
                             ))
@@ -583,121 +603,130 @@ export default function ShiftManagement() {
                         }}
                       >
                         <div>
-                          <strong>Nhân viên #{a.staffId}</strong>
+                          <strong>{staffNameMap.get(a.staffId) || `Nhân viên #${a.staffId}`}</strong>
                           <span style={{ color: "#64748b", marginLeft: "8px" }}>
                             {DUTY_LABELS[a.dutyCode] || a.dutyCode}
                           </span>
                         </div>
-                        <span className="ops-badge ops-badge--success">Đang trực</span>
+                        <span className="ops-badge ops-badge--neutral">
+                          {SHIFT_STATUS_LABELS[activeModal.shift?.status] || "Lên lịch"}
+                        </span>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Form thêm nhân viên vào ca */}
-              <form
-                onSubmit={handleAssignStaff}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "12px",
-                  padding: "14px",
-                  background: "#f1f5f9",
-                  borderRadius: "8px",
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: "13px", color: "#1e293b" }}>
-                  + Thêm nhân viên vào ca này (cho phép tương lai):
-                </div>
+              {/* Form thêm nhân viên vào ca: ẩn với ca quá khứ hoặc ca không ở trạng thái PLANNED */}
+              {(() => {
+                const { startUtc, endUtc } = getShiftWindowRange(activeModal.dateStr, activeModal.config.code);
+                const nowMs = Date.now();
+                const isPastShift = endUtc <= nowMs;
+                const canAssign = !isPastShift && (!activeModal.shift || activeModal.shift.status === "PLANNED");
+                const canStartNow =
+                  activeModal.shift?.status === "PLANNED" &&
+                  activeModal.shift.assignments?.length > 0 &&
+                  nowMs >= startUtc &&
+                  nowMs < endUtc;
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" }}>
-                    <span>Chọn nhân viên</span>
-                    <select
-                      required
-                      value={selectedStaffId}
-                      onChange={(e) => setSelectedStaffId(e.target.value)}
-                      style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
-                    >
-                      <option value="">-- Chọn Staff --</option>
-                      {staff.map((p) => (
-                        <option key={p.userId} value={p.userId}>
-                          {p.userFullName} (#{p.userId})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" }}>
-                    <span>Nhiệm vụ trực</span>
-                    <select
-                      value={selectedDuty}
-                      onChange={(e) => setSelectedDuty(e.target.value)}
-                      style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
-                    >
-                      <option value="GATE">Trực cổng (GATE)</option>
-                      <option value="SLOT_VERIFIER">Trực khu vực (SLOT_VERIFIER)</option>
-                      <option value="BOTH">Trực cổng & khu vực (BOTH)</option>
-                    </select>
-                  </label>
-                </div>
-
-                {/* Nếu chọn trực khu vực -> Hiện chọn Tầng của bãi */}
-                {selectedDuty !== "GATE" && (
-                  <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" }}>
-                    <span>Phân công tại Tầng (Khu vực bãi xe)</span>
-                    <select
-                      value={selectedFloor}
-                      onChange={(e) => setSelectedFloor(e.target.value)}
-                      style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
-                    >
-                      {floors.map((fl) => (
-                        <option key={fl.id || fl.name} value={fl.name}>
-                          {fl.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
-                  <button
-                    type="submit"
-                    className="ops-btn-sm ops-btn-sm--primary"
-                    disabled={busy || !selectedStaffId}
-                  >
-                    {busy ? "Đang lưu…" : "Xác nhận phân công"}
-                  </button>
-                </div>
-              </form>
-
-              {/* Các thao tác ca nếu cần */}
-              {activeModal.shift && (
-                <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                  {activeModal.shift.status === "PLANNED" &&
-                    activeModal.shift.assignments?.length > 0 && (
-                      <button
-                        type="button"
-                        className="ops-btn-sm ops-btn-sm--primary"
-                        disabled={busy}
-                        onClick={() => handleShiftAction("start")}
-                      >
-                        Bắt đầu ca
-                      </button>
+                return (
+                  <>
+                    {isPastShift && (
+                      <p className="workspace-note" style={{ margin: 0, color: "#991b1b" }}>
+                        Ca này đã qua thời gian làm việc, chỉ xem thông tin và không thể thao tác.
+                      </p>
                     )}
-                  {activeModal.shift.status === "IN_PROGRESS" && (
-                    <button
-                      type="button"
-                      className="ops-btn-sm ops-btn-sm--outline"
-                      disabled={busy}
-                      onClick={() => handleShiftAction("complete")}
-                    >
-                      Chốt ca
-                    </button>
-                  )}
-                </div>
-              )}
+
+                    {canAssign && (
+                      <form
+                        onSubmit={handleAssignStaff}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "12px",
+                          padding: "14px",
+                          background: "#f1f5f9",
+                          borderRadius: "8px",
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, fontSize: "13px", color: "#1e293b" }}>
+                          + Thêm nhân viên vào ca này:
+                        </div>
+
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                          <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" }}>
+                            <span>Chọn nhân viên</span>
+                            <select
+                              required
+                              value={selectedStaffId}
+                              onChange={(e) => setSelectedStaffId(e.target.value)}
+                              style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                            >
+                              <option value="">-- Chọn Staff --</option>
+                              {staff.map((p) => (
+                                <option key={p.userId} value={p.userId}>
+                                  {p.userFullName} (#{p.userId})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" }}>
+                            <span>Nhiệm vụ trực</span>
+                            <select
+                              value={selectedDuty}
+                              onChange={(e) => setSelectedDuty(e.target.value)}
+                              style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                            >
+                              <option value="GATE">Trực cổng (GATE)</option>
+                              <option value="SLOT_VERIFIER">Trực khu vực (SLOT_VERIFIER)</option>
+                              <option value="BOTH">Trực cổng & khu vực (BOTH)</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+                          <button
+                            type="submit"
+                            className="ops-btn-sm ops-btn-sm--primary"
+                            disabled={busy || !selectedStaffId}
+                          >
+                            {busy ? "Đang lưu…" : "Xác nhận phân công"}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Các thao tác ca */}
+                    {activeModal.shift && !isPastShift && (
+                      <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", alignItems: "center" }}>
+                        {activeModal.shift.status === "PLANNED" &&
+                          activeModal.shift.assignments?.length > 0 && (
+                            <button
+                              type="button"
+                              className="ops-btn-sm ops-btn-sm--primary"
+                              disabled={busy || !canStartNow}
+                              title={canStartNow ? "Bắt đầu ca trực" : "Chỉ có thể bắt đầu khi đang trong khung giờ ca"}
+                              onClick={() => handleShiftAction("start")}
+                            >
+                              Bắt đầu ca
+                            </button>
+                          )}
+                        {activeModal.shift.status === "IN_PROGRESS" && (
+                          <button
+                            type="button"
+                            className="ops-btn-sm ops-btn-sm--outline"
+                            disabled={busy}
+                            onClick={() => handleShiftAction("complete")}
+                          >
+                            Chốt ca
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             <div className="ops-modal__foot">

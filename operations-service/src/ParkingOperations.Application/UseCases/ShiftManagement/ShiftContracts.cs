@@ -41,7 +41,7 @@ public sealed record ShiftOperationResult(bool Success, int StatusCode, string M
 
 public interface IParkingShiftService
 {
-    Task<ShiftWorkspaceDto> LoadManagerWorkspaceAsync(int lotId, string token, CancellationToken ct);
+    Task<ShiftWorkspaceDto> LoadManagerWorkspaceAsync(int lotId, DateOnly? from, DateOnly? to, string token, CancellationToken ct);
     Task<ShiftOperationResult> CreateAsync(CreateShiftRequest request, long managerId, string token, CancellationToken ct);
     Task<ShiftOperationResult> AssignAsync(Guid shiftId, AssignStaffToShiftRequest request, long managerId, string token, CancellationToken ct);
     Task<ShiftOperationResult> StartAsync(Guid shiftId, string token, CancellationToken ct);

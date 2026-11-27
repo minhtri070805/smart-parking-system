@@ -12,12 +12,14 @@ public sealed class ParkingShiftsController(IParkingShiftService shiftService, I
 {
     [HttpGet("workspace")]
     [Authorize(Roles = "MANAGER")]
-    public async Task<IActionResult> Workspace([FromQuery] int lotId, CancellationToken ct)
+    public async Task<IActionResult> Workspace([FromQuery] int lotId, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct)
     {
         if (lotId <= 0) return BadRequest(new { message = "lotId không hợp lệ." });
+        if (from.HasValue && to.HasValue && from.Value > to.Value)
+            return BadRequest(new { message = "Khoảng thời gian from/to không hợp lệ." });
         try
         {
-            return Ok(new { data = await shiftService.LoadManagerWorkspaceAsync(lotId, AccessToken(), ct) });
+            return Ok(new { data = await shiftService.LoadManagerWorkspaceAsync(lotId, from, to, AccessToken(), ct) });
         }
         catch (UnauthorizedAccessException)
         {
