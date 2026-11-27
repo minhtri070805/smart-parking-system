@@ -9,6 +9,7 @@ import {
   StaffSessions,
 } from "../components/staff/StaffLists.jsx";
 import { TicketEntry, TicketVerification } from "../components/staff/TicketOperations.jsx";
+import { PassEntry } from "../components/staff/PassOperations.jsx";
 import "../operations.css";
 import {
   Notice,
@@ -23,6 +24,7 @@ const views = [
   { id: "booking-dispatch", name: "Phân ô xe đặt web", description: "Chọn khu vực và ô đỗ cho xe đã qua cổng" },
   { id: "bookings", name: "Xe đặt qua web", description: "Xác nhận xe đặt trước đến cổng" },
   { id: "entry", name: "Xe vào", description: "Tiếp nhận xe vào khu bình thường" },
+  { id: "pass-entry", name: "Xe vé tháng vào", description: "Kiểm tra vé tháng và cho xe vào khu cố định" },
   { id: "exit", name: "Xe ra", description: "Đối chiếu tại cổng ra" },
   {
     id: "verify",
@@ -214,6 +216,9 @@ function StaffContent() {
           >
             {view.id === "entry" && (
               <TicketEntry {...props} />
+            )}
+            {view.id === "pass-entry" && (
+              <PassEntry {...props} />
             )}
             {view.id === "exit" && (
               <StaffExit

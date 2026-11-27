@@ -15,6 +15,7 @@ const canArea = (duty) => ["SLOT_VERIFIER", "BOTH"].includes(duty);
 // Màn hình Staff nào thuộc loại phân công nào.
 const viewRules = {
   entry: canEnter,
+  "pass-entry": canEnter,
   exit: canExit,
   bookings: canEnter,
   "booking-dispatch": canArea,
