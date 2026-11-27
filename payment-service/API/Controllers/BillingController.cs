@@ -98,13 +98,9 @@ namespace API.Controllers
             decimal amountDue;
             if (invoice == null)
             {
-                var billing = new ParkingSessionBilling
-                {
-                    Id = Guid.NewGuid(), LicensePlate = request.PlateNumber.Trim().ToUpperInvariant(),
-                    VehicleType = Domain.Enums.VehicleType.Seat4, CheckInTime = request.CheckInTime,
-                    CheckOutTime = now, IsMonthlyPass = false, AppliedPricingPolicy = null!
-                };
-                totalFee = _billingEngine.CalculateFee(billing);
+                // Core gửi giờ UTC; bảng giá theo giờ Việt Nam nên phải đổi múi giờ trước khi tính.
+                totalFee = CounterFeeCalculator.Calculate(_billingEngine,
+                    request.PlateNumber.Trim().ToUpperInvariant(), request.CheckInTime, now);
                 amountDue = Math.Max(0m, totalFee - request.PrepaidAmount);
                 invoice = new Invoice
                 {
