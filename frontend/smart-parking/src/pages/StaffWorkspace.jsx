@@ -3,13 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import RequireRole from "../components/RequireRole.jsx";
 import StaffBookings from "../components/staff/StaffBookings.jsx";
 import BookingDispatchQueue from "../components/staff/BookingDispatchQueue.jsx";
-import { StaffExit } from "../components/staff/StaffExit.jsx";
+import GateOperations from "../components/staff/GateOperations.jsx";
 import {
   StaffDispatches,
   StaffSessions,
 } from "../components/staff/StaffLists.jsx";
-import { TicketEntry, TicketVerification } from "../components/staff/TicketOperations.jsx";
-import { PassEntry } from "../components/staff/PassOperations.jsx";
+import { TicketVerification } from "../components/staff/TicketOperations.jsx";
 import "../operations.css";
 import {
   Notice,
@@ -23,9 +22,7 @@ import "../staff.css";
 const views = [
   { id: "booking-dispatch", name: "Phân ô xe đặt web", description: "Chọn khu vực và ô đỗ cho xe đã qua cổng" },
   { id: "bookings", name: "Xe đặt qua web", description: "Xác nhận xe đặt trước đến cổng" },
-  { id: "entry", name: "Xe vào", description: "Tiếp nhận xe vào khu bình thường" },
-  { id: "pass-entry", name: "Xe vé tháng vào", description: "Kiểm tra vé tháng và cho xe vào khu cố định" },
-  { id: "exit", name: "Xe ra", description: "Đối chiếu tại cổng ra" },
+  { id: "entry", name: "Cổng: xe vào / xe ra", description: "Quét biển số cho xe vào hoặc ra bãi" },
   {
     id: "verify",
     name: "Sơ đồ 2D & xác minh ô",
@@ -41,7 +38,9 @@ const views = [
 
 function StaffContent() {
   const [params, setParams] = useSearchParams();
-  const selectedView = params.get("view") || "entry";
+  const requestedView = params.get("view") || "entry";
+  // Liên kết cũ tới màn xe vào/xe ra riêng đều mở màn cổng chung.
+  const selectedView = ["exit", "pass-entry"].includes(requestedView) ? "entry" : requestedView;
   const [selectedLotId, setSelectedLotId] = useState(params.get("lotId") || "");
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -72,8 +71,13 @@ function StaffContent() {
       defaultView ||
       views.find((item) => item.id === "entry");
   useEffect(() => {
-    if (lot && view.id !== selectedView) setParams({ view: view.id }, { replace: true });
-  }, [lot, view.id, selectedView, setParams]);
+    if (!lot || view.id === requestedView) return;
+    setParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.set("view", view.id);
+      return next;
+    }, { replace: true });
+  }, [lot, view.id, requestedView, setParams]);
   const loadCapacity = useCallback(
     async (signal) =>
       lotId
@@ -215,13 +219,7 @@ function StaffContent() {
             key={`${lotId}-${view.id}`}
           >
             {view.id === "entry" && (
-              <TicketEntry {...props} />
-            )}
-            {view.id === "pass-entry" && (
-              <PassEntry {...props} />
-            )}
-            {view.id === "exit" && (
-              <StaffExit
+              <GateOperations
                 {...props}
                 initialSessionId={params.get("sessionId")}
               />

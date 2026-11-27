@@ -9,12 +9,12 @@ import StaffParkingMap from "./StaffParkingMap.jsx";
 
 const Field = ({ label, children }) => <label className="staff-field">{label}{children}</label>;
 
-export function TicketEntry({ lot, onChanged, onBusyChange }) {
+export function TicketEntry({ lot, onChanged, onBusyChange, initialFile = null, onLockChange, onNext }) {
   const load = useCallback(signal => operationsApi(lot.lotId, "zones", null, null, signal), [lot.lotId]);
   const zones = useStaffQuery(load);
   const [zoneId, setZone] = useState("");
   const [ticket, setTicket] = useState("");
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState(initialFile);
   const [imageId, setImageId] = useState(null);
   const [reason, setReason] = useState("");
   const [created, setCreated] = useState(null);
@@ -34,18 +34,21 @@ export function TicketEntry({ lot, onChanged, onBusyChange }) {
         request.current = { eventId: crypto.randomUUID(), zoneId: Number(zoneId), ticketCode: ticket,
           imageId: savedId, manualReason: reason || null };
       }
+      onLockChange?.(true);
       let result;
       try { result = await operationsApi(lot.lotId, "entries", request.current); }
       catch (error) {
         // Server từ chối rõ ràng (4xx): chưa có lượt nào được tạo, mở khóa để sửa mã vé/khu mà không mất ảnh.
         // Lỗi mạng/5xx là kết quả chưa rõ: giữ nguyên eventId để gửi lại an toàn.
-        if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) request.current = null;
+        if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+          request.current = null; onLockChange?.(false);
+        }
         throw error;
       }
-      setCreated(result); onChanged();
+      onLockChange?.(false); setCreated(result); onChanged();
     });
   };
-  const reset = () => { request.current = null; setCreated(null); setTicket(""); setFile(null); setImageId(null); setReason(""); action.setError(null); };
+  const reset = () => { request.current = null; setCreated(null); setTicket(""); setFile(null); setImageId(null); setReason(""); action.setError(null); onLockChange?.(false); onNext?.(); };
   const locked = action.busy || Boolean(request.current);
   return <section className="staff-panel">
     <h2>Cấp vé và tiếp nhận xe</h2>

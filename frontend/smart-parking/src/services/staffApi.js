@@ -230,7 +230,7 @@ export const staffApi = {
       }
     }
     if (!session || session.lotId !== Number(lotId))
-      throw new Error("Không tìm thấy phiên xe tại bãi đang chọn.");
+      throw Object.assign(new Error("Không tìm thấy phiên xe tại bãi đang chọn."), { code: "SESSION_NOT_FOUND" });
     return session;
   },
   async detect(file, lotId, purpose = "ENTRY") {
