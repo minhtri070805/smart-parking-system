@@ -18,11 +18,12 @@ export async function operationsRequest(path, options = {}) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     let friendlyMessage = body.message;
-    if (body.code === "RECOGNITION_SERVICE_UNAVAILABLE" || response.status === 502 || response.status === 503) {
+    const isRecognitionRequest = path.startsWith("/recognition");
+    if (isRecognitionRequest && (body.code === "RECOGNITION_SERVICE_UNAVAILABLE" || response.status === 502 || response.status === 503)) {
       friendlyMessage = "Dịch vụ AI đang khởi động hoặc tạm thời gián đoạn. Vui lòng nhập biển số tay.";
-    } else if (body.code === "GATEWAY_TIMEOUT" || response.status === 504) {
+    } else if (isRecognitionRequest && (body.code === "GATEWAY_TIMEOUT" || response.status === 504)) {
       friendlyMessage = "Nhận diện biển số quá thời gian chờ (timeout). Vui lòng thử lại hoặc nhập tay.";
-    } else if (body.code === "CONFLICT" || response.status === 409) {
+    } else if (isRecognitionRequest && (body.code === "CONFLICT" || response.status === 409)) {
       friendlyMessage = "Thao tác nhận diện đang được xử lý đồng thời. Vui lòng không nhấn liên tục.";
     }
 
