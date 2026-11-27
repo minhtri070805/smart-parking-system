@@ -152,8 +152,13 @@ public sealed class ParkingOperationsService(IApplicationDbContext db,
         Require(r.EventId != Guid.Empty && r.ZoneId > 0, "Thiếu EventId hoặc khu.", status: 400);
         var code = TicketCode(r.TicketCode);
         // Preserve the fingerprint of manual entries issued before the intake contract changed.
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
-            new { lotId, r.ZoneId, code, RecognitionId = (long?)null, r.ImageId, r.ManualReason }))));
+        // Biển số tạm (nếu có) phải hợp lệ; được đưa vào dấu vân tay chỉ khi có, để lượt cũ không gửi biển số giữ nguyên hash.
+        var tempPlate = string.IsNullOrWhiteSpace(r.PlateNumber) ? null : PlateNumberHelper.Normalize(r.PlateNumber);
+        Require(tempPlate == null || PlateNumberHelper.IsValidPlateFormat(tempPlate), "Biển số không hợp lệ.", "INVALID_PLATE", 400);
+        object fingerprint = tempPlate == null
+            ? new { lotId, r.ZoneId, code, RecognitionId = (long?)null, r.ImageId, r.ManualReason }
+            : new { lotId, r.ZoneId, code, RecognitionId = (long?)null, r.ImageId, r.ManualReason, Plate = PlateNumberHelper.NormalizeForComparison(tempPlate) };
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(fingerprint))));
         return await writer.ExecuteAsync(lotId, async () => {
             var previous = await db.ParkingSessions.FirstOrDefaultAsync(s => s.EntryEventId == r.EventId, ct);
             if (previous != null) {
@@ -178,12 +183,12 @@ public sealed class ParkingOperationsService(IApplicationDbContext db,
                     "Ảnh không tồn tại hoặc không thuộc người tiếp nhận.", "INVALID_IMAGE", 403);
             var session = new ParkingSession { LotId = lotId, ZoneId = r.ZoneId, PolicyId = policy?.Id,
                 EntryEventId = r.EventId, EntryRequestHash = hash, EntryImageId = r.ImageId,
-                PlateNumber = "", VerificationStatus = "WAITING_VERIFICATION", Status = "ACTIVE", Revision = 1 };
+                PlateNumber = "", TemporaryPlateNumber = tempPlate, VerificationStatus = "WAITING_VERIFICATION", Status = "ACTIVE", Revision = 1 };
             db.ParkingSessions.Add(session); await db.SaveChangesAsync(ct);
             var ticket = new ParkingTicket { LotId = lotId, Code = code, SessionId = session.Id, IssuedBy = actor };
             db.ParkingTickets.Add(ticket);
             Audit("ISSUE_ENTRY_TICKET", "parking_sessions", session.Id, actor, null,
-                new { session.EntryEventId, session.EntryImageId, session.ZoneId, session.PolicyId, TicketCode = code, r.ManualReason });
+                new { session.EntryEventId, session.EntryImageId, session.ZoneId, session.PolicyId, TicketCode = code, r.ManualReason, TemporaryPlate = tempPlate });
             await db.SaveChangesAsync(ct);
             return await View(session, ct);
         }, ct);
