@@ -84,7 +84,7 @@ public class BookingAndCapacityTests
         await context.SaveChangesAsync();
 
         var authService = new ParkingAuthorizationService(context);
-        var bookingService = new BookingService(context, authService, NullLogger<BookingService>.Instance);
+        var bookingService = new BookingService(context, authService, NullLogger<BookingService>.Instance, TestFakes.Gateway, TestFakes.Email);
         var sessionService = new ParkingSessionService(context, authService, NullLogger<ParkingSessionService>.Instance);
 
         return (bookingService, sessionService, authService, context);
@@ -1145,11 +1145,11 @@ public class BookingAndCapacityTests
         // Each concurrent request has its own DbContext and BookingService instance sharing the same in-memory DB:
         var context1 = new TestSmartParkingDbContext(options);
         var authService1 = new ParkingAuthorizationService(context1);
-        var bookingService1 = new BookingService(context1, authService1, NullLogger<BookingService>.Instance);
+        var bookingService1 = new BookingService(context1, authService1, NullLogger<BookingService>.Instance, TestFakes.Gateway, TestFakes.Email);
 
         var context2 = new TestSmartParkingDbContext(options);
         var authService2 = new ParkingAuthorizationService(context2);
-        var bookingService2 = new BookingService(context2, authService2, NullLogger<BookingService>.Instance);
+        var bookingService2 = new BookingService(context2, authService2, NullLogger<BookingService>.Instance, TestFakes.Gateway, TestFakes.Email);
 
         var task1 = Task.Run(() => bookingService1.CreateBookingAsync(new CreateBookingRequestDto { LotId = 16, VehicleId = 1601 }, 10, Roles.User, "127.0.0.1"));
         var task2 = Task.Run(() => bookingService2.CreateBookingAsync(new CreateBookingRequestDto { LotId = 16, VehicleId = 1602 }, 20, Roles.User, "127.0.0.1"));
@@ -1166,7 +1166,7 @@ public class BookingAndCapacityTests
         await using (var verifyContext = new TestSmartParkingDbContext(options))
         {
             var verifyAuth = new ParkingAuthorizationService(verifyContext);
-            var verifyService = new BookingService(verifyContext, verifyAuth, NullLogger<BookingService>.Instance);
+            var verifyService = new BookingService(verifyContext, verifyAuth, NullLogger<BookingService>.Instance, TestFakes.Gateway, TestFakes.Email);
             var capacity = await verifyService.GetLotCapacityAsync(16, currentUserId: 1, currentUserRole: Roles.Admin);
             Assert.NotNull(capacity);
             Assert.Equal(1, capacity.ActiveReservationsCount);

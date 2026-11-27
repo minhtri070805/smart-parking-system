@@ -273,7 +273,7 @@ public class S5ServiceBoundaryTests
         await using var c = new TestSmartParkingDbContext(options);
         var svc = new ParkingSessionService(c, new ParkingAuthorizationService(c), NullLogger<ParkingSessionService>.Instance);
         var cfg = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["PaymentService:SharedSecret"] = PaymentSecret }).Build();
-        var ctl = new InternalPaymentClearancesController(svc, cfg);
+        var ctl = new InternalPaymentClearancesController(svc, new SmartParking.Infrastructure.Services.BookingService(c, new ParkingAuthorizationService(c), NullLogger<SmartParking.Infrastructure.Services.BookingService>.Instance, TestFakes.Gateway, TestFakes.Email), cfg);
         var http = new DefaultHttpContext();
         http.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(raw));
         var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

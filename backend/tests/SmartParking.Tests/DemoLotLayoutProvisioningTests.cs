@@ -27,7 +27,7 @@ public class DemoLotLayoutProvisioningTests
         await context.SaveChangesAsync();
         var auth = new ParkingAuthorizationService(context);
         return (new ParkingManagementService(context, NullLogger<ParkingManagementService>.Instance),
-                new BookingService(context, auth, NullLogger<BookingService>.Instance),
+                new BookingService(context, auth, NullLogger<BookingService>.Instance, TestFakes.Gateway, TestFakes.Email),
                 new ParkingSessionService(context, auth, NullLogger<ParkingSessionService>.Instance),
                 context);
     }

@@ -54,7 +54,7 @@ public class S5PaymentClearanceAndCapacityTests
         await ctx.SaveChangesAsync();
         var svc = new ParkingSessionService(ctx, new ParkingAuthorizationService(ctx), NullLogger<ParkingSessionService>.Instance);
         var cfg = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["PaymentService:SharedSecret"] = secret }).Build();
-        return (new InternalPaymentClearancesController(svc, cfg), ctx, s.Id);
+        return (new InternalPaymentClearancesController(svc, new SmartParking.Infrastructure.Services.BookingService(ctx, new ParkingAuthorizationService(ctx), NullLogger<SmartParking.Infrastructure.Services.BookingService>.Instance, TestFakes.Gateway, TestFakes.Email), cfg), ctx, s.Id);
     }
 
     private static async Task<IActionResult> PostAsync(InternalPaymentClearancesController ctl, object body, string? secret = Secret, long? ts = null, bool sign = true)
