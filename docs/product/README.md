@@ -8,5 +8,6 @@ Nhóm này mô tả hệ thống phải hoạt động như thế nào, độc l
 - [Main flows](main-flows.md): trình tự xuyên actor/module.
 - [Use cases](use-cases.md): tiền điều kiện, ngoại lệ và nghiệm thu từng hành vi.
 - [User journeys](user-journeys.md): màn hình, bàn giao và checkpoint theo actor.
+- [Subscription implementation plan](subscription-implementation-plan.md): kế hoạch triển khai gói gửi xe cố định theo tháng; các policy chưa duyệt được đánh dấu riêng.
 
 Khi một nội dung lặp lại, tài liệu nguồn được xác định tại [mục lục chính](../README.md#quy-tắc-một-thông-tin-một-nguồn).

@@ -43,12 +43,15 @@ const staffNavItems = [
   ["exit", "/staff?view=exit", "Xe ra"],
   ["bookings", "/staff?view=bookings", "Xe đặt qua web"],
   ["booking-dispatch", "/staff?view=booking-dispatch", "Phân ô xe đặt web"],
-  ["verify", "/staff?view=verify", "Xác minh ô"],
+  ["verify", "/staff?view=verify", "Sơ đồ 2D & xác minh ô"],
   ["sessions", "/staff?view=sessions", "Xe đang gửi"],
   ["dispatches", "/staff?view=dispatches", "Điều phối"],
 ];
 
-// Menu của Staff chỉ chứa chức năng thuộc loại phân công của họ.
-export const staffNavigationFor = (duties) =>
-  staffNavItems.filter(([id]) => canUseStaffView(duties, id)).map(([, target, label]) => [target, label]);
+// Staff luôn thấy đầy đủ workspace để tài khoản mới có giao diện làm việc thống nhất.
+// Quyền thao tác thật được kiểm tra ở Core → Operations theo ca đang chạy; vì vậy
+// chưa được phân ca thì vẫn vào được màn hình nhưng không thể check-in/check-out,
+// xác minh ô hoặc điều phối.
+export const staffNavigationFor = () =>
+  staffNavItems.map(([, target, label]) => [target, label]);
 

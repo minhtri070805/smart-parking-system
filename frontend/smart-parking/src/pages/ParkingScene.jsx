@@ -6,14 +6,13 @@ import { getAuthSession, subscribeAuthSession } from "../services/authSession.js
 import { Feedback, itemsOf, useResource, useMutation, write } from "../components/WorkspaceUI.jsx";
 import { sceneStatuses, sceneToDefinition } from "../services/parkingScene.js";
 import { initialSceneSnapshotState, sceneRequestKey, sceneSnapshotReducer } from "../services/sceneSnapshot.js";
-import { canUseStaffView } from "../services/staffDuty.js";
 import "../parking-scene.css";
 
 function useScene(lotId, revision, identity) {
   const [state, dispatch] = useReducer(sceneSnapshotReducer, initialSceneSnapshotState);
   const requestSequence = useRef(0);
   useEffect(() => {
-    const controller = new AbortController(); let timer;
+    const controller = new AbortController();
     if (!lotId) { dispatch({ type: "reset" }); return () => controller.abort(); }
     const key = sceneRequestKey(lotId, identity);
     async function load() {
@@ -24,10 +23,9 @@ function useScene(lotId, revision, identity) {
         if (!result?.data) throw new Error("API không trả về snapshot bãi đỗ.");
         if (!controller.signal.aborted) dispatch({ type: "success", key, requestId, lotId, data: result.data });
       } catch (e) { if (!controller.signal.aborted) dispatch({ type: "failure", key, requestId, error: e.message }); }
-      finally { if (!controller.signal.aborted) timer = setTimeout(load, 15000); }
     }
     load();
-    return () => { controller.abort(); clearTimeout(timer); };
+    return () => controller.abort();
   }, [lotId, revision, identity]);
   return state;
 }
@@ -51,9 +49,10 @@ export default function ParkingScene() {
   const rawLots = itemsOf(lots.data);
   const choices = rawLots.map(l => ({ id: l.lotId ?? l.id, name: l.lotName ?? l.name, duty: l.duty }));
   const lot = choices.find(l => String(l.id) === lotChoice) || choices[0];
-  const staffDuty = lot?.duty;
-  const canGate = role === "STAFF" && canUseStaffView(staffDuty, "entry");
-  const canArea = role === "STAFF" && canUseStaffView(staffDuty, "verify");
+  // Staff mới vẫn thấy đủ thao tác để biết workspace; Core sẽ kiểm tra ca
+  // đang chạy trước khi thực hiện bất kỳ nghiệp vụ nào.
+  const canGate = role === "STAFF" && Boolean(lot);
+  const canArea = role === "STAFF" && Boolean(lot);
   const state = useScene(lot?.id, revision, `${session?.userProfile.id || "guest"}:${role || ""}`);
   const scene = state.data?.id === lot?.id ? state.data : null;
   const definition = useMemo(() => sceneToDefinition(scene), [JSON.stringify(scene?.floors), scene?.id, scene?.name]);
@@ -72,7 +71,7 @@ export default function ParkingScene() {
     <div className="parking-toolbar"><label>Bãi đỗ<select aria-label="Bãi đỗ" disabled={action.busy || lots.loading} value={lot?.id || ""} onChange={e => { setLotChoice(e.target.value); setFloorChoice(""); setSelectedId(null); setNextStatus(""); setParams({ lotId: e.target.value }, { replace: true }); }}>
       {!choices.length && <option value="">Chưa có bãi</option>}{choices.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
       <label>Tầng<select aria-label="Tầng" disabled={action.busy || !floor} value={floor?.id || ""} onChange={e => selectFloor(e.target.value)}>{!floor && <option value="">Chưa có tầng</option>}{floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
-      <div className="parking-sync"><i className={state.stale || state.error ? "is-stale" : ""} /><div><strong>{state.stale ? "Dữ liệu có thể đã cũ" : state.error ? "Chưa đồng bộ" : state.loading ? "Đang đồng bộ…" : scene ? "Dữ liệu hệ thống" : "Đang tải bãi"}</strong><small>{scene ? `Cập nhật ${new Date(scene.generatedAtUtc).toLocaleTimeString("vi-VN")} · v${scene.snapshotVersion ?? "cũ"}` : "Tự cập nhật mỗi 15 giây"}</small></div></div>
+      <div className="parking-sync"><i className={state.stale || state.error ? "is-stale" : ""} /><div><strong>{state.stale ? "Dữ liệu có thể đã cũ" : state.error ? "Chưa đồng bộ" : state.loading ? "Đang đồng bộ…" : scene ? "Dữ liệu hệ thống" : "Đang tải bãi"}</strong><small>{scene ? `Cập nhật ${new Date(scene.generatedAtUtc).toLocaleTimeString("vi-VN")} · v${scene.snapshotVersion ?? "cũ"}` : "Bấm Làm mới để tải dữ liệu"}</small></div></div>
       <button className="btn btn--outline" disabled={state.loading || action.busy} onClick={refresh}>↻ Làm mới</button>
     </div>
     <Feedback error={lots.error || state.error || action.error} message={action.message} />

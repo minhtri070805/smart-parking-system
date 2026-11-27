@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -10,6 +11,8 @@ using SmartParking.Persistence.Data;
 using SmartParking.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 var key = builder.Configuration["Recognition:InternalKey"];
 if (string.IsNullOrWhiteSpace(key) || Encoding.UTF8.GetByteCount(key) < 32)
     throw new InvalidOperationException("Recognition:InternalKey requires at least 32 bytes.");

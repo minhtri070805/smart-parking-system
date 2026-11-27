@@ -58,7 +58,7 @@ public class StaffLotAssignmentTests
     [InlineData(StaffDuties.GateIn, null, true)]
     [InlineData(StaffDuties.GateOut, null, true)]
     [InlineData(StaffDuties.GateIn, 1, false)]
-    [InlineData(StaffDuties.SlotVerifier, null, false)]
+    [InlineData(StaffDuties.SlotVerifier, null, true)]
     [InlineData(StaffDuties.SlotVerifier, 1, true)]
     [InlineData(StaffDuties.Gate, null, true)]
     [InlineData(StaffDuties.Gate, 1, false)]
@@ -90,6 +90,30 @@ public class StaffLotAssignmentTests
         Assert.False(await auth.CanOperateAreaAsync(staff.Id, "ADMIN", 1, "SLOT_VERIFIER", 2, 1));
         Assert.False(await auth.CanOperateAreaAsync(staff.Id, "STAFF", 1, "GATE_IN", 1, 1));
     }
+
+    [Fact]
+    public async Task SlotVerifierAssignmentWithoutZoneAppliesToEveryZoneOnItsFloor()
+    {
+        var (service, context, admin, _, staff, _, lot, _) = await SetupContextAsync();
+        context.ParkingZones.Add(new ParkingZone { Id = 3, LotId = lot.Id, FloorId = 1, Code = "Z3", Name = "Khu 1B" });
+        await context.SaveChangesAsync();
+
+        var saved = await service.CreateAssignmentAsync(new CreateStaffAssignmentRequestDto
+        {
+            UserId = staff.Id,
+            LotId = lot.Id,
+            FloorId = 1,
+            Duty = StaffDuties.SlotVerifier
+        }, admin.Id, null);
+
+        Assert.True(saved.Success);
+        Assert.Null(saved.Data!.ZoneId);
+        var auth = new ParkingAuthorizationService(context);
+        Assert.True(await auth.CanOperateAreaAsync(staff.Id, Roles.Staff, lot.Id, StaffDuties.SlotVerifier, 1, 1));
+        Assert.True(await auth.CanOperateAreaAsync(staff.Id, Roles.Staff, lot.Id, StaffDuties.SlotVerifier, 1, 3));
+        Assert.False(await auth.CanOperateAreaAsync(staff.Id, Roles.Staff, lot.Id, StaffDuties.SlotVerifier, 2, 2));
+    }
+
     [Fact]
     public async Task ManagerCanAssignAndRevokeStaffOnlyWithinManagedLots()
     {

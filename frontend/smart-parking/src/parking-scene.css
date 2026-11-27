@@ -62,3 +62,39 @@
 @media (max-width: 1200px) { .parking-workbench { grid-template-columns: minmax(0,1fr) 260px; gap: 12px; } .parking-inspector { padding: 13px; } }
 @media (max-width: 950px) { .parking-workbench { grid-template-columns: 1fr; } .parking-inspector { padding: 18px; } .parking-slot-list { grid-template-columns: repeat(3,1fr); max-height: 260px; } .parking-slot-detail { max-width: none; } .parking-quick-actions { flex-wrap: wrap; } }
 @media (max-width: 600px) { .parking-toolbar { flex-wrap: wrap; padding: 13px; gap: 12px; } .parking-toolbar label { flex: 1 1 40%; } .parking-sync { width: 100%; } .parking-summary { grid-template-columns: repeat(3,1fr); gap: 8px; } .parking-stat { padding: 10px 12px; } .parking-stat strong { font-size: 22px; } .parking-stat span { font-size: 9px; } .parking-canvas-wrap { height: 480px; } .parking-slot-list { grid-template-columns: repeat(2,1fr); } .parking-live-badge { display: none; } }
+@media (max-width: 767px) {
+  .parking-scene-page {
+    min-width: 0;
+    padding-top: 18px;
+  }
+  .parking-toolbar {
+    align-items: stretch;
+  }
+  .parking-toolbar label {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .parking-sync {
+    min-width: 0;
+  }
+  .parking-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .parking-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .parking-inspector {
+    min-width: 0;
+  }
+  .parking-canvas-wrap {
+    height: min(60vh, 480px);
+    min-height: 320px;
+  }
+  .parking-slot-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .parking-quick-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

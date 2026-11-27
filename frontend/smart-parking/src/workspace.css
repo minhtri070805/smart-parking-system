@@ -245,3 +245,65 @@
 .assignment-selected-staff .assignment-cancel { background: #dc2626; color: #fff; border: 1px solid #dc2626; }
 .assignment-selected-staff .assignment-cancel:hover:not(:disabled) { background: #b91c1c; border-color: #b91c1c; }
 .assignment-selected-staff .assignment-cancel:focus-visible { outline: 3px solid #fecaca; outline-offset: 2px; }
+
+@media (max-width: 767px) {
+  .workspace,
+  .customer-page,
+  .staff-workspace,
+  .admin-dashboard {
+    min-width: 0;
+    padding-top: 20px;
+    padding-bottom: 28px;
+  }
+  .workspace-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .workspace-heading h1 {
+    font-size: 26px;
+    overflow-wrap: anywhere;
+  }
+  .workspace-actions,
+  .workspace-pager {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .workspace-form,
+  .workspace-detail,
+  .manager-permissions__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-form button,
+  .workspace-actions > button,
+  .workspace-actions > a {
+    width: 100%;
+  }
+  .workspace-filters {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .workspace-filters label {
+    min-width: 0;
+  }
+  .workspace-tabs {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .workspace-tabs a {
+    flex: 0 0 auto;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .workspace-table {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+  .workspace-detail img {
+    max-width: 100%;
+  }
+}

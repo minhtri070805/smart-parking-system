@@ -528,3 +528,20 @@
 }
 
 
+@media (max-width: 767px) {
+  .operations-form-grid,
+  .operations-slot-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .operations-settings-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .operations-settings-toolbar .staff-button {
+    width: 100%;
+  }
+  .operations-settings-actions > button,
+  .operations-settings-actions > a {
+    flex: 1 1 100%;
+  }
+}

@@ -31,6 +31,9 @@ public class SmartParkingDbContext : DbContext, IApplicationDbContext
     public DbSet<ParkingZone> ParkingZones => Set<ParkingZone>();
     public DbSet<ParkingPolicy> ParkingPolicies => Set<ParkingPolicy>();
     public DbSet<ParkingTicket> ParkingTickets => Set<ParkingTicket>();
+    public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
+    public DbSet<ParkingPass> ParkingPasses => Set<ParkingPass>();
+    public DbSet<SubscriptionPaymentIntent> SubscriptionPaymentIntents => Set<SubscriptionPaymentIntent>();
 
     public virtual Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {

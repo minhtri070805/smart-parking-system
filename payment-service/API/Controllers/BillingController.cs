@@ -137,7 +137,7 @@ namespace API.Controllers
                 sessionId = request.SessionId, amount = amountDue, totalFee,
                 transactionRef = refCode, paymentMethod = "CASH", paidAt
             });
-            var coreBaseUrl = config["Core:BaseUrl"] ?? "http://localhost:5295";
+            var coreBaseUrl = config["Services:Core:BaseUrl"] ?? "http://localhost:5295/";
             if (string.IsNullOrWhiteSpace(secret) || System.Text.Encoding.UTF8.GetByteCount(secret) < 32)
                 return StatusCode(503, new { message = "Chưa cấu hình khóa Payment Service–Core." });
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -265,7 +265,7 @@ namespace API.Controllers
                         paymentMethod = "VNPAY",
                         paidAt
                     });
-                    var coreBaseUrl = config["Core:BaseUrl"] ?? "http://localhost:5295";
+                    var coreBaseUrl = config["Services:Core:BaseUrl"] ?? "http://localhost:5295/";
                     var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                     using var clearance = new HttpRequestMessage(HttpMethod.Post,
                         $"{coreBaseUrl.TrimEnd('/')}/api/internal/payment-clearances/booking")
@@ -388,7 +388,7 @@ namespace API.Controllers
                             else
                             {
                                 var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                                var coreBaseUrl = config["Core:BaseUrl"] ?? "http://localhost:5295";
+                                var coreBaseUrl = config["Services:Core:BaseUrl"] ?? "http://localhost:5295/";
                                 using var clearance = new HttpRequestMessage(HttpMethod.Post,
                                     $"{coreBaseUrl.TrimEnd('/')}/api/internal/payment-clearances/booking")
                                 {

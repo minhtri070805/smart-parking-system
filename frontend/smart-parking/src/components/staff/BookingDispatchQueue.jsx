@@ -7,8 +7,7 @@ import {
   StaffError,
   useStaffAction,
 } from "./StaffUI.jsx";
-
-const POLL_INTERVAL_MS = 15_000;
+import StaffParkingMap from "./StaffParkingMap.jsx";
 
 export default function BookingDispatchQueue({
   lot,
@@ -18,6 +17,8 @@ export default function BookingDispatchQueue({
 }) {
   const [bookings, setBookings] = useState(null);
   const [slots, setSlots] = useState(null);
+  const [floors, setFloors] = useState(null);
+  const [sessions, setSessions] = useState(null);
   const [queueError, setQueueError] = useState(null);
   const [slotError, setSlotError] = useState(null);
   const [search, setSearch] = useState("");
@@ -31,7 +32,6 @@ export default function BookingDispatchQueue({
 
   useEffect(() => {
     let active = true;
-    let timeoutId;
     let controller;
     const load = async () => {
       controller = new AbortController();
@@ -47,31 +47,38 @@ export default function BookingDispatchQueue({
         }
       } catch (error) {
         if (active && !controller.signal.aborted) setQueueError(error);
-      } finally {
-        if (active) timeoutId = window.setTimeout(load, POLL_INTERVAL_MS);
       }
     };
     load();
     return () => {
       active = false;
       controller?.abort();
-      window.clearTimeout(timeoutId);
     };
   }, [lot.lotId, revision, retry, selectedId]);
 
   useEffect(() => {
     if (!selectedId) {
       setSlots(null);
+      setFloors(null);
+      setSessions(null);
       setSlotError(null);
       return undefined;
     }
     const controller = new AbortController();
     setSlots(null);
+    setFloors(null);
+    setSessions(null);
     setSlotError(null);
-    staffApi
-      .lotSlots(lot.lotId, controller.signal)
-      .then(({ slots: result }) => {
-        if (!controller.signal.aborted) setSlots(result);
+    Promise.all([
+      staffApi.lotSlots(lot.lotId, controller.signal),
+      staffApi.activeSessions(lot.lotId, controller.signal),
+    ])
+      .then(([layout, resultSessions]) => {
+        if (!controller.signal.aborted) {
+          setSlots(layout.slots);
+          setFloors(layout.floors);
+          setSessions(resultSessions);
+        }
       })
       .catch((error) => {
         if (!controller.signal.aborted) setSlotError(error);
@@ -81,6 +88,9 @@ export default function BookingDispatchQueue({
 
   const selectedBooking = bookings?.find(
     (booking) => String(booking.id) === selectedId,
+  );
+  const selectedSession = sessions?.find(
+    (session) => String(session.id) === String(selectedBooking?.sessionId),
   );
   const openSlots = useMemo(
     () =>
@@ -160,7 +170,7 @@ export default function BookingDispatchQueue({
           <div>
             <span className="staff-eyebrow">HÀNG CHỜ ĐIỀU PHỐI</span>
             <h2 id="booking-dispatch-title">Xe đặt qua web chờ phân ô</h2>
-            <p>Danh sách cập nhật tự động mỗi 15 giây sau khi nhân viên cổng check-in.</p>
+            <p>Dữ liệu tải khi mở màn hình hoặc khi bạn bấm Làm mới.</p>
           </div>
           <span className="staff-count">{bookings?.length ?? "—"}</span>
         </div>
@@ -263,6 +273,27 @@ export default function BookingDispatchQueue({
                         ))}
                       </select>
                     </label>
+                    {floors && sessions && selectedSession && (
+                      <div className="staff-booking-map">
+                        <p className="staff-booking-map-hint">
+                          Chọn một ô trống trên sơ đồ để gán xe{" "}
+                          <strong>{selectedBooking.plateNumber}</strong>.
+                        </p>
+                        <StaffParkingMap
+                          floors={floors}
+                          slots={slots || []}
+                          sessions={sessions}
+                          session={selectedSession}
+                          mode="assign"
+                          selectedSlotId={slotId}
+                          disabled={action.busy}
+                          onSelect={(slot) => {
+                            setZoneId(String(slot.zoneId));
+                            setSlotId(String(slot.id));
+                          }}
+                        />
+                      </div>
+                    )}
                     {slots && openSlots.length === 0 && (
                       <Notice kind="warning">Không có ô trống khả dụng trong bãi này.</Notice>
                     )}

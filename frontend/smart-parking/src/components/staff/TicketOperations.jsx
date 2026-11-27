@@ -5,6 +5,7 @@ import { validatePhoto } from "../../services/staffApi.js";
 import { formatVietnameseCarPlateInput, validateVietnameseCarPlate } from "../../services/plateNumber.js";
 import { Notice, StaffError, useStaffAction, useStaffQuery, SafePhoto } from "./StaffUI.jsx";
 import StaffVerification from "./StaffVerification.jsx";
+import StaffParkingMap from "./StaffParkingMap.jsx";
 
 const Field = ({ label, children }) => <label className="staff-field">{label}{children}</label>;
 
@@ -100,6 +101,16 @@ export function TicketVerification({ lot, revision, onChanged, onBusyChange, ini
   };
   const session = query.data?.sessions.find(s => s.id === selected?.id && s.revision === selected.revision);
   const move = session?.verificationStatus === "VERIFIED";
+  const hasModernSessions = query.data?.sessions.some(s => s.eventId);
+  const canSelectSlot = slot => Boolean(
+    session &&
+    slot.physicalStatus === "EMPTY" &&
+    slot.isActive &&
+    slot.floorActive &&
+    slot.zoneId === session.zoneId &&
+    (slot.allowedFuelType === "ANY" ||
+      slot.allowedFuelType === (move ? session.fuelType : fuel)),
+  );
   const submit = e => { e.preventDefault(); action.run(async () => {
     if (!session) throw new Error("Lượt đã thay đổi. Chọn lại trong danh sách.");
     const confirmedPlate = move ? undefined : validateVietnameseCarPlate(plate);
@@ -108,7 +119,32 @@ export function TicketVerification({ lot, revision, onChanged, onBusyChange, ini
       : { actualSlotId: Number(slotId), expectedRevision: session.revision, plateNumber: confirmedPlate, fuelType: fuel, reason, vehicleObserved: observed });
     select(null); setEvidence(null); onChanged(); query.reload();
   }); };
-  return <><div className="staff-work-grid">
+  return <>{query.data && (!query.data.sessions.length || hasModernSessions) && <section className="staff-panel staff-map-panel" aria-label="Sơ đồ 2D bãi đỗ">
+    <div className="staff-panel-heading">
+      <div>
+        <span className="staff-eyebrow">SƠ ĐỒ BÃI ĐỖ</span>
+        <h2>Chọn ô xe thực tế trên sơ đồ 2D</h2>
+        <p>{session ? `Đang xác minh xe ${session.temporaryPlateNumber || session.plateNumber || "chưa có biển số"}. Chọn ô phù hợp, nhập biển số và xác nhận xe.` : "Sơ đồ theo bố trí bãi đỗ. Chọn lượt xe bên dưới để bật các ô phù hợp và xác minh biển số."}</p>
+      </div>
+    </div>
+    <div className="staff-slot-legend">
+      <span><i className="is-empty" /> Trống</span>
+      <span><i className="is-occupied" /> Có xe</span>
+      <span><i className="is-blocked" /> Đã giữ / không thể chọn</span>
+    </div>
+    <StaffParkingMap
+      floors={query.data.layout.floors}
+      slots={query.data.layout.slots}
+      sessions={query.data.sessions}
+      session={session}
+      mode="verify"
+      selectedSlotId={slotId}
+      disabled={action.busy || query.loading || Boolean(query.error)}
+      canSelectSlot={canSelectSlot}
+      onSelect={slot => setSlot(String(slot.id))}
+    />
+  </section>}
+  <div className="staff-work-grid">
     <section className="staff-panel"><h2>Hàng chờ và xe đã xác minh</h2>
       <StaffError error={query.error} />
       <button className="staff-button" disabled={action.busy || query.loading} onClick={query.reload}>Tải lại danh sách</button>

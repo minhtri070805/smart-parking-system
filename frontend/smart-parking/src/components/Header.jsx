@@ -58,6 +58,7 @@ export default function Header({ workspace = false }) {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [notificationReadIds, setNotificationReadIds] = useState(() => new Set());
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountDetails, setAccountDetails] = useState(null);
   const [accountAssignedLots, setAccountAssignedLots] = useState([]);
@@ -88,6 +89,7 @@ export default function Header({ workspace = false }) {
   useEffect(() => {
     setProfileOpen(false);
     setNotificationOpen(false);
+    setMobileNavOpen(false);
   }, [pathname, search]);
 
   useEffect(() => {
@@ -100,8 +102,7 @@ export default function Header({ workspace = false }) {
       .then((items) => { if (!controller.signal.aborted) setNotifications(Array.isArray(items) ? items : []); })
       .catch(() => { if (!controller.signal.aborted) setNotifications([]); });
     load();
-    const timer = window.setInterval(load, 60000);
-    return () => { controller.abort(); window.clearInterval(timer); };
+    return () => controller.abort();
   }, [session?.userProfile?.role, session?.userProfile?.id]);
 
   useEffect(() => {
@@ -112,6 +113,15 @@ export default function Header({ workspace = false }) {
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [notificationOpen]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setMobileNavOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [mobileNavOpen]);
 
   useEffect(() => {
     if (!profileOpen) return undefined;
@@ -230,7 +240,7 @@ export default function Header({ workspace = false }) {
       setAccountSaving(false);
     }
   }
-  // Staff chỉ thấy menu thuộc loại phân công của mình (trực cổng hoặc trực khu vực).
+  // Staff luôn thấy đủ menu; API nghiệp vụ mới quyết định quyền theo ca đang chạy.
   const [staffDuties, setStaffDuties] = useState(null);
   useEffect(() => {
     if (role !== "STAFF") { setStaffDuties(null); return undefined; }
@@ -277,7 +287,7 @@ export default function Header({ workspace = false }) {
     }
   }
   return (
-    <header className={`header ${workspace ? "header--workspace" : ""}`} ref={headerRef}>
+    <header className={`header ${workspace ? "header--workspace" : ""} ${session ? "" : "header--anonymous"}`} ref={headerRef}>
       <div className="container header__inner">
         <Link
           className="header__brand"
@@ -380,7 +390,26 @@ export default function Header({ workspace = false }) {
             </p>
           )}
         </div>
-        <nav className="header__nav" aria-label="Điều hướng chính">
+        <button
+          type="button"
+          className={`header__mobile-toggle ${mobileNavOpen ? "is-open" : ""}`}
+          aria-label={mobileNavOpen ? "Đóng menu điều hướng" : "Mở menu điều hướng"}
+          aria-expanded={mobileNavOpen}
+          aria-controls="header-mobile-nav"
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+        <nav
+          id="header-mobile-nav"
+          className={`header__nav ${mobileNavOpen ? "is-mobile-open" : ""}`}
+          aria-label="Điều hướng chính"
+          onClick={(event) => {
+            if (event.target.closest("a")) setMobileNavOpen(false);
+          }}
+        >
           {session ? (
             navItems.map(([target, label]) => (
               <Link
@@ -409,8 +438,22 @@ export default function Header({ workspace = false }) {
               <AnchorLink id="he-thong">Hệ thống</AnchorLink>
             </>
           )}
+          {!session && (
+            <div className="header__mobile-authlinks">
+              <Link className="btn btn--outline" to="/register">Đăng ký</Link>
+              <Link className="btn btn--primary" to="/login">Đăng nhập</Link>
+            </div>
+          )}
         </nav>
       </div>
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="header__mobile-backdrop"
+          aria-label="Đóng menu điều hướng"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
       {session && accountModalOpen && (
         <div
           className="header__account-backdrop"

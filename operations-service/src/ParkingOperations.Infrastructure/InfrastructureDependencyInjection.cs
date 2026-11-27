@@ -13,6 +13,7 @@ public static class InfrastructureDependencyInjection
     {
         services.AddOperationsPersistence(configuration);
         services.AddScoped<IParkingShiftService, ParkingShiftService>();
+        services.AddScoped<IShiftDutyService, ShiftDutyService>();
         services.AddScoped<ICashReconciliationService, CashReconciliationService>();
 
         var coreBaseUrl = configuration["CoreApi:BaseUrl"];
