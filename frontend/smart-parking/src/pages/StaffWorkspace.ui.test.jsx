@@ -108,6 +108,8 @@ beforeEach(() => {
       ]);
     if (path.endsWith("/operations/zones")) return result([{ id: 1, code: "VL", name: "Vãng lai", type: "TRANSIENT", isActive: true }]);
     if (path.endsWith("/operations/sessions")) return result(model.sessions);
+    if (path.endsWith("/operations/passes/lookup"))
+      return result({ canEnter: false, reason: "PASS_NOT_FOUND", message: "Không tìm thấy vé tháng của xe này tại bãi.", plateNumber: url.searchParams.get("plate") });
     if (path.endsWith("/operations/layout")) return result({ floors: [{ id: 1, zoneId: 1, name: "Tầng B1", isActive: true }], slots: model.slots.map(s => ({ ...s, zoneId: 1, floorName: "Tầng B1", floorActive: true, zoneActive: true, allowedFuelType: "ANY" })) });
     if (path.endsWith("/operations/entries")) {
       if (model.denyCheckIn) return Response.json({ message: "Bạn không có quyền nghiệp vụ cổng tại bãi này." }, { status: 403 });
@@ -288,7 +290,12 @@ afterEach(() => {
 });
 
 describe("Staff workspace", () => {
+  async function scanWalkIn(user) {
+    await user.type(await screen.findByLabelText("Biển số xe"), "30H12345");
+    await user.click(screen.getByRole("button", { name: "Kiểm tra" }));
+  }
   async function entryDraft(user, ticket = "VE-001") {
+    await scanWalkIn(user);
     await screen.findByRole("option", { name: "VL · Vãng lai" });
     await user.selectOptions(screen.getByLabelText("Khu bình thường"), "1");
     await user.type(screen.getByLabelText("Mã vé"), ticket);
@@ -297,7 +304,7 @@ describe("Staff workspace", () => {
   it("notifies other pages of new bookings and opens the booking page", async () => {
     const user = userEvent.setup();
     mount();
-    await screen.findByRole("heading", { name: "Cấp vé và tiếp nhận xe" });
+    await screen.findByRole("heading", { name: "Cổng: xe vào / xe ra" });
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.includes("/v1/bookings?"))).toBe(true));
     model.bookings.push({
       id: 504, lotId: 1, username: "customer", plateNumber: "51A-50404",
@@ -541,7 +548,7 @@ describe("Staff workspace", () => {
     fireEvent.submit(button.closest("form")); fireEvent.submit(button.closest("form"));
     await waitFor(() => expect(requests("/entries")).toHaveLength(1));
     expect(screen.getByRole("combobox", { name: "Bãi đang làm việc" }).disabled).toBe(true);
-    expect(screen.getByRole("link", { name: "Xe ra" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Cổng: xe vào / xe ra" })).toBeTruthy();
     resolveWrite(result({ id: 20, ticketCode: "VE-001", verificationStatus: "WAITING_VERIFICATION" }));
     await screen.findByText(/Đã cấp vé VE-001/);
     expect(screen.getByRole("combobox", { name: "Bãi đang làm việc" }).disabled).toBe(false);
@@ -550,8 +557,8 @@ describe("Staff workspace", () => {
   it("clears photos and ticket drafts when switching assigned lots", async () => {
     const user = userEvent.setup(); mount(); await entryDraft(user);
     await user.selectOptions(screen.getByRole("combobox", { name: "Bãi đang làm việc" }), "2");
-    expect(screen.getByLabelText("Mã vé").value).toBe("");
-    expect(screen.getByLabelText("Lý do tiếp nhận").value).toBe("");
+    expect(screen.queryByLabelText("Mã vé")).toBeNull();
+    expect(screen.getByLabelText("Biển số xe").value).toBe("");
     expect(requests("/entries")).toHaveLength(0);
   });
 

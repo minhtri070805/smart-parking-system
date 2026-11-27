@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { PassEntry } from "./PassOperations.jsx";
+import GateOperations from "./GateOperations.jsx";
 import { StaffExit } from "./StaffExit.jsx";
 import { TicketVerification } from "./TicketOperations.jsx";
 import { clearAuthSession, setAuthSession } from "../../services/authSession.js";
@@ -31,6 +31,8 @@ beforeEach(() => {
     lookup: () => ok(validPass),
     entry: (body) => ok({ session: { id: 77, plateNumber: body.plateNumber }, pass: validPass, replay: false }),
     session: null,
+    byPlate: () => Response.json({ message: "not found" }, { status: 404 }),
+    detect: null,
     checkOut: null,
     sessions: [],
   };
@@ -44,6 +46,13 @@ beforeEach(() => {
     if (path.endsWith("/operations/pass-entries") && method === "POST") return model.entry(JSON.parse(options.body));
     if (path.endsWith("/operations/sessions")) return ok(model.sessions);
     if (path.endsWith("/operations/layout")) return ok({ floors: [], slots: [] });
+    if (path.includes("/parking-sessions/by-plate/")) return model.byPlate();
+    if (path === "/api/v1/parking-sessions/active") return ok({ items: [], totalCount: 0, totalPages: 0 });
+    if (path.endsWith("/operations/tickets/VE-0042")) return ok({ id: 10, ticketCode: "VE-0042", ticketStatus: "ISSUED" });
+    if (path === "/api/v1/images") return ok({ id: 88, url: "https://images.example.invalid/gate.jpg" });
+    if (path.endsWith("/recognition/detect")) return Response.json(model.detect);
+    if (path.endsWith("/detections/501/confirm-exit"))
+      return ok({ ...model.detect, confirmedAt: "2026-11-27T05:00:00Z", confirmedPlateNumber: "51F-123.45", matchedParkingSessionId: 10 });
     if (path === "/api/v1/parking-sessions/10" && method === "GET") return ok(model.session);
     if (path === "/api/v1/parking-sessions/10/check-out" && method === "POST") return model.checkOut(JSON.parse(options.body));
     return Response.json({ message: `unexpected ${method} ${path}` }, { status: 404 });
@@ -58,28 +67,33 @@ afterEach(() => {
 
 const router = (ui) =>
   render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>{ui}</MemoryRouter>);
-const mountEntry = (props = {}) => {
+const mountGate = (props = {}) => {
   const onChanged = vi.fn();
-  router(<PassEntry lot={lot} onChanged={onChanged} onBusyChange={() => {}} {...props} />);
+  router(<GateOperations lot={lot} revision={0} onChanged={onChanged} onBusyChange={() => {}} {...props} />);
   return { onChanged };
 };
 const checkPlate = async (user, plate = "51F12345") => {
   await user.type(await screen.findByLabelText("Biển số xe"), plate);
-  await user.click(screen.getByRole("button", { name: "Kiểm tra vé tháng" }));
+  await user.click(screen.getByRole("button", { name: "Kiểm tra" }));
 };
+const noPass = (reason, message) => () => ok({ ...validPass, canEnter: false, reason, message });
+const photo = () => new File(["photo"], "gate.jpg", { type: "image/jpeg" });
+const fixedZoneReady = () => screen.findByRole("option", { name: "G · Tầng G vé tháng" });
 
-describe("PassEntry", () => {
+describe("Gate screen: monthly pass entry", () => {
   it("checks the plate, then lets a valid pass holder in through the fixed zone", async () => {
     const user = userEvent.setup();
-    const { onChanged } = mountEntry();
+    const { onChanged } = mountGate();
     await checkPlate(user);
 
     expect(await screen.findByText(/Vé tháng còn hiệu lực/)).toBeTruthy();
     expect(screen.getByText(/Gói 1 tháng/)).toBeTruthy();
     expect(screen.getByText(/còn 25 ngày/)).toBeTruthy();
     expect(calls("GET", "/passes/lookup")[0][0]).toContain("plate=51F-123.45");
+    expect(screen.queryByLabelText("Mã vé")).toBeNull();
 
     // Chỉ khu cố định được đề nghị; khu vãng lai không có trong danh sách.
+    await fixedZoneReady();
     const zone = screen.getByLabelText("Khu vé tháng");
     expect([...zone.options].map((o) => o.textContent)).toEqual(["Chọn khu", "G · Tầng G vé tháng"]);
     expect(zone.value).toBe("11");
@@ -98,41 +112,21 @@ describe("PassEntry", () => {
     expect(screen.queryByText(/Đã cho xe/)).toBeNull();
   });
 
-  it.each([
-    ["PASS_EXPIRED", "Vé tháng của xe này đã hết hạn.", /Khách có thể gia hạn/],
-    ["PASS_NOT_FOUND", "Không tìm thấy vé tháng của xe này tại bãi.", /làn vãng lai/],
-    ["PASS_SUSPENDED", "Vé tháng của xe này đang bị tạm khóa.", /quản lý bãi/],
-    ["ALREADY_INSIDE", "Xe này đang có một lượt gửi chưa kết thúc.", /màn Xe ra/],
-  ])("explains %s and offers no way to let the car in", async (reason, message, hint) => {
-    model.lookup = () => ok({ ...validPass, canEnter: false, reason, message });
+  it("saves the photo taken at the scan step with the pass entry", async () => {
+    model.detect = { id: 501, plateNumber: "51F-123.45", confidence: 0.9 };
     const user = userEvent.setup();
-    mountEntry();
-    await checkPlate(user);
-
-    expect(await screen.findByText(message)).toBeTruthy();
-    expect(screen.getByText(hint)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Cho xe vào" })).toBeNull();
-    expect(calls("POST", "/pass-entries")).toHaveLength(0);
+    mountGate();
+    await user.upload(await screen.findByLabelText(/Chọn \/ chụp ảnh/), photo());
+    await waitFor(() => expect(screen.getByLabelText("Biển số xe").value).toBe("51F-123.45"));
+    expect(String(calls("POST", "/recognition/detect")[0][0])).toContain("purpose=EXIT");
+    await user.click(screen.getByRole("button", { name: "Kiểm tra" }));
+    await fixedZoneReady();
+    await user.click(screen.getByRole("button", { name: "Cho xe vào" }));
+    await screen.findByText(/Lượt #77/);
+    expect(JSON.parse(calls("POST", "/pass-entries")[0][1].body)).toMatchObject({ imageId: 88 });
   });
 
-  it("rejects a malformed plate without calling the API", async () => {
-    const user = userEvent.setup();
-    mountEntry();
-    await checkPlate(user, "ABC");
-    expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(calls("GET", "/passes/lookup")).toHaveLength(0);
-  });
-
-  it("forgets the previous result when the plate is edited", async () => {
-    const user = userEvent.setup();
-    mountEntry();
-    await checkPlate(user);
-    await screen.findByRole("button", { name: "Cho xe vào" });
-    await user.type(screen.getByLabelText("Biển số xe"), "9");
-    expect(screen.queryByRole("button", { name: "Cho xe vào" })).toBeNull();
-  });
-
-  it("keeps the same event id when the result of the entry is unknown, so a retry cannot duplicate the visit", async () => {
+  it("keeps the same event id when the entry result is unknown and locks the scan step meanwhile", async () => {
     let attempts = 0;
     model.entry = (body) => {
       attempts += 1;
@@ -141,21 +135,22 @@ describe("PassEntry", () => {
         : ok({ session: { id: 77, plateNumber: body.plateNumber }, pass: validPass, replay: true });
     };
     const user = userEvent.setup();
-    mountEntry();
+    mountGate();
     await checkPlate(user);
-    await user.click(await screen.findByRole("button", { name: "Cho xe vào" }));
+    await fixedZoneReady();
+    await user.click(screen.getByRole("button", { name: "Cho xe vào" }));
 
     const retry = await screen.findByRole("button", { name: "Gửi lại cùng lượt xe" });
-    expect(screen.getByLabelText("Biển số xe").disabled).toBe(true);
+    expect(screen.getByLabelText("Biển số xe").closest("fieldset").disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Kiểm tra" }).disabled).toBe(true);
     await user.click(retry);
     expect(await screen.findByText(/đã được ghi nhận trước đó/)).toBeTruthy();
 
     const [first, second] = calls("POST", "/pass-entries").map(([, o]) => JSON.parse(o.body));
-    expect(second.eventId).toBe(first.eventId);
     expect(second).toEqual(first);
   });
 
-  it("unlocks the form after the server clearly refuses, using a fresh event id next time", async () => {
+  it("unlocks after the server clearly refuses, using a fresh event id next time", async () => {
     let attempts = 0;
     model.entry = (body) => {
       attempts += 1;
@@ -164,11 +159,12 @@ describe("PassEntry", () => {
         : ok({ session: { id: 78, plateNumber: body.plateNumber }, pass: validPass, replay: false });
     };
     const user = userEvent.setup();
-    mountEntry();
+    mountGate();
     await checkPlate(user);
-    await user.click(await screen.findByRole("button", { name: "Cho xe vào" }));
+    await fixedZoneReady();
+    await user.click(screen.getByRole("button", { name: "Cho xe vào" }));
     expect(await screen.findByText("Xe này đang có một lượt gửi chưa kết thúc.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Gửi lại cùng lượt xe" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Kiểm tra" }).disabled).toBe(false);
     await user.click(screen.getByRole("button", { name: "Cho xe vào" }));
     await screen.findByText(/Lượt #78/);
     const [first, second] = calls("POST", "/pass-entries").map(([, o]) => JSON.parse(o.body));
@@ -178,17 +174,134 @@ describe("PassEntry", () => {
   it("warns when the lot has no active fixed zone and blocks entry", async () => {
     model.zones = [zones[1]];
     const user = userEvent.setup();
-    mountEntry();
+    mountGate();
     await checkPlate(user);
     expect(await screen.findByText(/chưa có khu vé tháng đang hoạt động/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cho xe vào" }).disabled).toBe(true);
   });
 
-  it("does not let anyone in while the lot is closed", async () => {
+  it("still checks plates while the lot is closed but lets nobody in", async () => {
     const user = userEvent.setup();
-    mountEntry({ lot: { ...lot, isActive: false } });
-    expect(await screen.findByRole("button", { name: "Kiểm tra vé tháng" }).then((b) => b.disabled)).toBe(true);
-    expect(user).toBeTruthy();
+    mountGate({ lot: { ...lot, isActive: false } });
+    await checkPlate(user);
+    expect((await screen.findByRole("button", { name: "Cho xe vào" })).disabled).toBe(true);
+  });
+});
+
+describe("Gate screen: choosing the branch", () => {
+  it("offers the walk-in form to a car without a pass", async () => {
+    model.lookup = noPass("PASS_NOT_FOUND", "Không tìm thấy vé tháng của xe này tại bãi.");
+    const user = userEvent.setup();
+    mountGate();
+    await checkPlate(user);
+    expect(await screen.findByRole("heading", { name: "Cấp vé và tiếp nhận xe" })).toBeTruthy();
+    expect(screen.getByText(/Xe vãng lai · 51F-123.45/)).toBeTruthy();
+    expect(screen.getByText(/Nếu xe đang đi ra, hãy tra theo mã vé/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cho xe vào" })).toBeNull();
+  });
+
+  it.each([
+    ["PASS_EXPIRED", "Vé tháng của xe này đã hết hạn.", /Khách có thể gia hạn/],
+    ["PASS_SUSPENDED", "Vé tháng của xe này đang bị tạm khóa.", /quản lý bãi trước/],
+    ["PASS_UNPAID", "Vé tháng của xe này chưa được thanh toán.", /hoàn tất thanh toán/],
+  ])("explains %s above the walk-in form", async (reason, message, hint) => {
+    model.lookup = noPass(reason, message);
+    const user = userEvent.setup();
+    mountGate();
+    await checkPlate(user);
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(screen.getByText(hint)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Cấp vé và tiếp nhận xe" })).toBeTruthy();
+    expect(calls("POST", "/pass-entries")).toHaveLength(0);
+  });
+
+  it("offers no entry at all when Core says the car is already inside", async () => {
+    model.lookup = noPass("ALREADY_INSIDE", "Xe này đang có một lượt gửi chưa kết thúc.");
+    const user = userEvent.setup();
+    mountGate();
+    await checkPlate(user);
+    expect(await screen.findByText("Xe này đang có một lượt gửi chưa kết thúc.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cho xe vào" })).toBeNull();
+    expect(screen.queryByLabelText("Mã vé")).toBeNull();
+  });
+
+  it("goes to the exit branch for a car that is inside, without asking for a second photo", async () => {
+    model.session = passSession;
+    model.byPlate = () => ok(passSession);
+    model.checkOut = () => ok({ ...passSession, status: "COMPLETED", checkOutTime: "2026-11-27T05:00:00Z" });
+    const user = userEvent.setup();
+    mountGate();
+    await checkPlate(user);
+
+    expect(await screen.findByText(/Xe vào bằng vé tháng — không thu phí/)).toBeTruthy();
+    expect(calls("GET", "/passes/lookup")).toHaveLength(0);
+    expect(screen.queryByLabelText("Biển số thực tế tại cổng ra")).toBeNull();
+    expect(screen.getByText(/Biển số tại cổng ra:/)).toBeTruthy();
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }));
+    await screen.findByText(/Phiên đã kết thúc/);
+
+    await user.click(screen.getByRole("button", { name: "Tiếp nhận xe tiếp theo" }));
+    expect(screen.getByLabelText("Biển số xe").value).toBe("");
+    expect(screen.queryByText(/Phiên đã kết thúc/)).toBeNull();
+  });
+
+  it("asks staff to confirm an AI exit match before checking out", async () => {
+    model.session = passSession;
+    model.byPlate = () => ok(passSession);
+    // AI tự khớp phiên ngay lúc quét nhưng chưa có ai xác nhận.
+    model.detect = { id: 501, plateNumber: "51F-123.45", confirmedPlateNumber: "51F-123.45", matchedParkingSessionId: 10, confirmedAt: null };
+    model.checkOut = () => ok({ ...passSession, status: "COMPLETED", checkOutTime: "2026-11-27T05:00:00Z" });
+    const user = userEvent.setup();
+    mountGate();
+    await user.upload(await screen.findByLabelText(/Chọn \/ chụp ảnh/), photo());
+    await waitFor(() => expect(screen.getByLabelText("Biển số xe").value).toBe("51F-123.45"));
+    await user.click(screen.getByRole("button", { name: "Kiểm tra" }));
+    await screen.findByText(/Xe vào bằng vé tháng — không thu phí/);
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }));
+    await screen.findByText(/Phiên đã kết thúc/);
+    expect(calls("POST", "/detections/501/confirm-exit")).toHaveLength(1);
+    expect(JSON.parse(calls("POST", "/check-out")[0][1].body)).toMatchObject({
+      exitRecognitionId: 501, checkOutImageUrl: "https://images.example.invalid/gate.jpg",
+    });
+  });
+
+  it("does not treat a failed lookup as an arriving car", async () => {
+    model.byPlate = () => Response.json({ message: "Máy chủ đang lỗi." }, { status: 500 });
+    const user = userEvent.setup();
+    mountGate();
+    await checkPlate(user);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(calls("GET", "/passes/lookup")).toHaveLength(0);
+    expect(screen.queryByLabelText("Mã vé")).toBeNull();
+  });
+
+  it("rejects a malformed plate without calling the API", async () => {
+    const user = userEvent.setup();
+    mountGate();
+    await checkPlate(user, "ABC");
+    expect(calls("GET", "/passes/lookup")).toHaveLength(0);
+  });
+
+  it("forgets the previous branch when the plate is edited", async () => {
+    const user = userEvent.setup();
+    mountGate();
+    await checkPlate(user);
+    await screen.findByRole("button", { name: "Cho xe vào" });
+    await user.type(screen.getByLabelText("Biển số xe"), "{backspace}9");
+    expect(screen.queryByRole("button", { name: "Cho xe vào" })).toBeNull();
+  });
+
+  it("finds a car by ticket code and then asks for the exit gate plate", async () => {
+    model.session = { ...passSession, verificationStatus: "VERIFIED" };
+    const user = userEvent.setup();
+    mountGate();
+    await user.type(await screen.findByLabelText("Mã vé cần tìm"), "VE-0042");
+    await user.click(screen.getByRole("button", { name: "Tìm xe đang gửi" }));
+    expect(await screen.findByLabelText("Biển số thực tế tại cổng ra")).toBeTruthy();
+    expect(screen.getByLabelText("Mã vé đã đối chiếu").value).toBe("VE-0042");
+    expect(screen.getByRole("button", { name: /Thu tiền tại quầy/ })).toBeTruthy();
   });
 });
 
@@ -197,7 +310,7 @@ const passSession = {
   verificationStatus: "MONTHLY_PASS", checkInTime: "2026-11-27T01:00:00Z", totalFee: 0,
 };
 
-describe("StaffExit for a monthly pass session", () => {
+describe("Exit branch opened from a session link", () => {
   const mountExit = () =>
     router(<StaffExit lot={lot} revision={0} initialSessionId="10" onChanged={() => {}} onBusyChange={() => {}} />);
 
@@ -239,11 +352,10 @@ describe("StaffExit for a monthly pass session", () => {
 });
 
 describe("Staff menu", () => {
-  it("lists the monthly pass entry right after the regular entry", () => {
+  it("has a single gate entry for cars coming in and going out", () => {
     const items = staffNavigationFor();
-    const labels = items.map(([, label]) => label);
-    expect(labels.indexOf("Xe vé tháng vào")).toBe(labels.indexOf("Xe vào vãng lai") + 1);
-    expect(items).toContainEqual(["/staff?view=pass-entry", "Xe vé tháng vào"]);
+    expect(items[0]).toEqual(["/staff?view=entry", "Cổng: xe vào / xe ra"]);
+    expect(items.filter(([href]) => /view=(entry|exit|pass-entry)$/.test(href))).toHaveLength(1);
   });
 });
 
