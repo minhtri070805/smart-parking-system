@@ -52,6 +52,8 @@ public class ParkingSessionService : IParkingSessionService
         if (!await _authService.CanOperateAreaAsync(actorId.Value, actorRole, session.LotId, StaffDuties.GateOut,
                 session.CurrentSlot?.FloorId, session.ZoneId ?? session.CurrentSlot?.ZoneId, ct))
             return (false, "Phiên xe nằm ngoài tầng hoặc khu vực được phân công.", null);
+        if (session.VerificationStatus == VerificationStatuses.MonthlyPass)
+            return (false, "Xe vé tháng không phát sinh phí; không thu tiền tại quầy.", null);
         if (session.Status == SessionStatuses.Paid)
             return (true, "Phiên xe đã thanh toán trước đó.", new CounterPaymentReceipt("", "", session.TotalFee, 0));
         if (session.Status != SessionStatuses.Active)
@@ -612,7 +614,10 @@ public class ParkingSessionService : IParkingSessionService
                 // P0: chỉ cho xe ra khi Payment Service đã xác nhận thanh toán (status PAID, đặt qua
                 // RecordPaymentClearanceAsync trusted flow). Kiểm tra lại dưới lock/transaction sau reload.
                 // AllowExitWithoutPayment từ client KHÔNG phải bypass; ngoại lệ phí 0 cần contract được duyệt.
-                if (session.Status != SessionStatuses.Paid)
+                // Ngoại lệ duy nhất: xe vào bằng vé tháng (đã được staff đối chiếu vé còn hiệu lực lúc vào) không phát sinh phí.
+                // Giá trị MONTHLY_PASS chỉ được đặt bởi ParkingOperationsService.EnterWithPass.
+                var isPassSession = session.VerificationStatus == VerificationStatuses.MonthlyPass;
+                if (session.Status != SessionStatuses.Paid && !isPassSession)
                 {
                     await transaction.RollbackAsync(ct);
                     return (false, "Chưa có xác nhận thanh toán (payment clearance) từ Payment Service; không thể cho xe ra hoặc giải phóng ô đỗ.", null);
@@ -620,7 +625,7 @@ public class ParkingSessionService : IParkingSessionService
 
                 var oldStatus = session.Status;
                 // Ticketed admissions cannot exit before slot verification and a valid ticket check.
-                if (session.EntryEventId.HasValue)
+                if (session.EntryEventId.HasValue && !isPassSession)
                 {
                     if (session.VerificationStatus != "VERIFIED" || !PlateNumberHelper.IsMatch(request.ConfirmedPlateNumber, session.PlateNumber))
                         return (false, "Cần xác minh xe tại ô và đối chiếu biển số trước khi ra bãi.", null);
@@ -681,7 +686,8 @@ public class ParkingSessionService : IParkingSessionService
                         ReleasedSlotId = session.CurrentSlotId,
                         ActorRole = actorRole,
                         IpAddress = ipAddress,
-                        ConfirmationType = "MANUAL_STAFF_VERIFIED",
+                        ConfirmationType = isPassSession ? "MONTHLY_PASS" : "MANUAL_STAFF_VERIFIED",
+                        PassCovered = isPassSession,
                         AllowExitWithoutPayment = request.AllowExitWithoutPayment,
                         ExemptionReason = request.ExemptionReason
                     },
@@ -1804,6 +1810,8 @@ public class ParkingSessionService : IParkingSessionService
                     if (sameRef.Any(x => x.TargetId != session.Id.ToString()))
                         return (false, $"Mã giao dịch '{trimmedRef}' đã được sử dụng cho một phiên gửi xe khác.", null);
 
+                    if (session.VerificationStatus == VerificationStatuses.MonthlyPass)
+                        return (false, $"Phiên #{session.Id} là xe vé tháng, không phát sinh thanh toán.", null);
                     if (session.Status == SessionStatuses.Paid)
                     {
                         var replay = sameRef.FirstOrDefault();

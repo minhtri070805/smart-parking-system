@@ -13,28 +13,36 @@ import {
   useStaffAction,
 } from "./StaffUI.jsx";
 
+// Nhánh xe ra của màn Cổng. Có gateCapture khi xe được tìm từ bước quét: dùng luôn ảnh và biển số đó.
 export function StaffExit({
   lot,
   revision,
   initialSessionId,
+  initialTicketCode = "",
+  gateCapture,
+  onGateCapture,
   onChanged,
   onBusyChange,
+  onNext,
 }) {
-  const [mode, setMode] = useState("plate");
-  const [exitTicketCode, setExitTicketCode] = useState("");
-  const [query, setQuery] = useState("");
+  const [exitTicketCode, setExitTicketCode] = useState(initialTicketCode || "");
   const [session, setSession] = useState(null);
   const lookupId = useRef(initialSessionId || null);
   const [lookupError, setLookupError] = useState(null);
   const [looking, setLooking] = useState(false);
-  const [capture, setCapture] = useState(emptyCapture);
+  const [ownCapture, setOwnCapture] = useState(emptyCapture);
+  const capture = gateCapture ?? ownCapture;
+  const setCapture = onGateCapture ?? setOwnCapture;
   const [captureBusy, setCaptureBusy] = useState(false);
   const [checked, setChecked] = useState(false);
   const [rechecking, setRechecking] = useState(false);
   const [checkedAt, setCheckedAt] = useState(null);
   const action = useStaffAction(onBusyChange);
   const busy = action.busy || captureBusy || rechecking;
-  const isTicketed = Boolean(session?.verificationStatus && session.verificationStatus !== "LEGACY");
+  // Xe vào bằng vé tháng: không có vé giấy và không thu phí; xe ra chỉ cần đối chiếu biển số.
+  const isPass = session?.verificationStatus === "MONTHLY_PASS";
+  const isTicketed = Boolean(session?.verificationStatus && session.verificationStatus !== "LEGACY" && !isPass);
+  const canExit = isPass || session?.status === "PAID";
   useEffect(() => {
     lookupId.current = initialSessionId || null;
   }, [initialSessionId]);
@@ -58,16 +66,6 @@ export function StaffExit({
       });
     return () => controller.abort();
   }, [initialSessionId, lot.lotId, revision]);
-  const clearLookup = () => {
-    setExitTicketCode("");
-    setSession(null);
-    lookupId.current = null;
-    setCapture(emptyCapture());
-    setChecked(false);
-    setCheckedAt(null);
-    setLookupError(null);
-    action.setError(null);
-  };
   // Đọc lại trạng thái thật từ Core sau khi Payment clearance; UI không bao giờ tự đặt PAID.
   const recheck = async () => {
     if (rechecking || !session) return;
@@ -85,24 +83,6 @@ export function StaffExit({
       setLookupError(error);
     } finally {
       setRechecking(false);
-      onBusyChange(false);
-    }
-  };
-  const lookup = async (event) => {
-    event.preventDefault();
-    if (looking) return;
-    clearLookup();
-    setLooking(true);
-    onBusyChange(true);
-    try {
-      const found = await staffApi.findSession(lot.lotId, query, mode);
-      setExitTicketCode(found.ticketCode || "");
-      lookupId.current = found.id;
-      setSession(found);
-    } catch (error) {
-      setLookupError(error);
-    } finally {
-      setLooking(false);
       onBusyChange(false);
     }
   };
@@ -133,66 +113,15 @@ export function StaffExit({
           "Chưa xác nhận được kết quả xe ra. Hãy tra cứu lại phiên trước khi gửi lại.",
         );
       setSession(updatedSession);
-      setCapture(emptyCapture());
+      // Ảnh quét ở cổng được giữ lại tới khi staff bấm sang xe tiếp theo.
+      if (!gateCapture) setCapture(emptyCapture());
       setChecked(false);
       onChanged();
     });
   };
   return (
     <div className="staff-side-stack">
-      <section className="staff-panel">
-        <div className="staff-panel-heading">
-          <span className="staff-icon-tile">
-            <StaffIcon name="exit" size={24} />
-          </span>
-          <div>
-            <h2>Tra cứu xe tại cổng ra</h2>
-            <p>
-              Tìm đúng phiên trong bãi {lot.lotName} trước khi đối chiếu xe.
-            </p>
-          </div>
-        </div>
-        <form className="staff-search-form" onSubmit={lookup}>
-          <label className="staff-field">
-            Tra cứu theo
-            <select
-              value={mode}
-              disabled={busy || looking}
-              onChange={(event) => {
-                setMode(event.target.value);
-                setQuery("");
-                clearLookup();
-              }}
-            >
-              <option value="plate">Biển số xe</option>
-              <option value="ticket">Mã vé</option>
-              <option value="id">Mã phiên</option>
-            </select>
-          </label>
-          <label className="staff-field">
-            {mode === "id" ? "Mã phiên" : mode === "ticket" ? "Mã vé" : "Biển số cần tìm"}
-            <input
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                clearLookup();
-              }}
-              placeholder={mode === "id" ? "Ví dụ: 1024" : "Ví dụ: 51F-123.45"}
-              disabled={busy || looking}
-              required
-              autoComplete="off"
-            />
-          </label>
-          <button
-            type="submit"
-            className="staff-button staff-button--primary"
-            disabled={looking || busy}
-          >
-            {looking ? "Đang tìm…" : "Tìm phiên xe"}
-          </button>
-        </form>
-        <StaffError error={lookupError} />
-      </section>
+      <StaffError error={lookupError} />
       {looking && <Notice>Đang tải thông tin phiên xe…</Notice>}
       {session && !looking && (
         <div className="staff-work-grid">
@@ -201,7 +130,13 @@ export function StaffExit({
               <h2>Thông tin lúc xe vào</h2>
             </div>
             <SessionInfo session={session} />
-            {session.status === "ACTIVE" && (
+            {isPass && session.status === "ACTIVE" && (
+              <Notice kind="success">
+                <strong>Xe vào bằng vé tháng — không thu phí.</strong> Đối chiếu biển số tại cổng ra rồi xác nhận
+                xe ra. Không cần thanh toán.
+              </Notice>
+            )}
+            {!isPass && session.status === "ACTIVE" && (
               <Notice kind="warning">
                 {isTicketed && session.verificationStatus !== "VERIFIED" ? (
                   <>
@@ -239,7 +174,7 @@ export function StaffExit({
                 )}
               </Notice>
             )}
-            {session.status === "ACTIVE" &&
+            {!isPass && session.status === "ACTIVE" &&
               (!isTicketed || session.verificationStatus === "VERIFIED") && (
                 <div style={{ marginTop: 12 }}>
                   <p>Khách thanh toán tiền mặt tại quầy trước khi checkout.</p>
@@ -283,6 +218,12 @@ export function StaffExit({
                     <input required maxLength={40} disabled={busy} value={exitTicketCode} onChange={event => setExitTicketCode(event.target.value)} />
                   </label>
                 )}
+                {gateCapture ? (
+                  <p>
+                    Biển số tại cổng ra: <strong>{capture.plate}</strong>. Nếu sai, sửa ở bước quét phía trên rồi bấm
+                    Kiểm tra lại.
+                  </p>
+                ) : (
                 <PlateCapture
                   title="Ảnh tại cổng ra"
                   plateLabel="Biển số thực tế tại cổng ra"
@@ -296,12 +237,13 @@ export function StaffExit({
                     onBusyChange(value);
                   }}
                 />
+                )}
                 <label className="staff-check">
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={(event) => setChecked(event.target.checked)}
-                    disabled={busy || session.status !== "PAID"}
+                    disabled={busy || !canExit}
                     required
                   />
                   <span>
@@ -311,7 +253,7 @@ export function StaffExit({
                 <button
                   type="submit"
                   className="staff-button staff-button--primary staff-submit"
-                  disabled={busy || session.status !== "PAID"}
+                  disabled={busy || !canExit}
                 >
                   <StaffIcon name="exit" />
                   {action.busy ? "Đang ghi nhận…" : "Xác nhận xe đã ra bãi"}
@@ -321,15 +263,10 @@ export function StaffExit({
           )}
         </div>
       )}
-      {!session && !looking && (
-        <div className="staff-empty">
-          <StaffIcon name="exit" size={38} />
-          <h3>Đối chiếu đúng xe, đúng lượt gửi</h3>
-          <p>
-            Nhập biển số hoặc mã phiên để xem ảnh vào, vị trí đỗ và trạng thái
-            thanh toán.
-          </p>
-        </div>
+      {session?.status === "COMPLETED" && onNext && (
+        <button type="button" className="staff-button staff-button--primary" onClick={onNext}>
+          Tiếp nhận xe tiếp theo
+        </button>
       )}
     </div>
   );

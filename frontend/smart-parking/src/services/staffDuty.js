@@ -14,8 +14,7 @@ const canArea = (duty) => ["SLOT_VERIFIER", "BOTH"].includes(duty);
 
 // Màn hình Staff nào thuộc loại phân công nào.
 const viewRules = {
-  entry: canEnter,
-  exit: canExit,
+  entry: (duty) => canEnter(duty) || canExit(duty),
   bookings: canEnter,
   "booking-dispatch": canArea,
   verify: canArea,
@@ -39,8 +38,7 @@ export const dutyKinds = (duties) => {
 };
 
 const staffNavItems = [
-  ["entry", "/staff?view=entry", "Xe vào vãng lai"],
-  ["exit", "/staff?view=exit", "Xe ra"],
+  ["entry", "/staff?view=entry", "Cổng: xe vào / xe ra"],
   ["bookings", "/staff?view=bookings", "Xe đặt qua web"],
   ["booking-dispatch", "/staff?view=booking-dispatch", "Phân ô xe đặt web"],
   ["verify", "/staff?view=verify", "Sơ đồ 2D & xác minh ô"],

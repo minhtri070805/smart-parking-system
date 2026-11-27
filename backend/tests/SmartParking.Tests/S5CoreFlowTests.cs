@@ -99,7 +99,7 @@ public class S5CoreFlowTests
             await using var c = Ctx();
             var svc = new ParkingSessionService(c, new ParkingAuthorizationService(c), NullLogger<ParkingSessionService>.Instance);
             var cfg = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["PaymentService:SharedSecret"] = Secret }).Build();
-            var ctl = new InternalPaymentClearancesController(svc, cfg);
+            var ctl = new InternalPaymentClearancesController(svc, new SmartParking.Infrastructure.Services.BookingService(c, new ParkingAuthorizationService(c), NullLogger<SmartParking.Infrastructure.Services.BookingService>.Instance, TestFakes.Gateway, TestFakes.Email), cfg);
             var raw = JsonSerializer.Serialize(body);
             var http = new DefaultHttpContext();
             http.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(raw));

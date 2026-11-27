@@ -230,7 +230,7 @@ export const staffApi = {
       }
     }
     if (!session || session.lotId !== Number(lotId))
-      throw new Error("Không tìm thấy phiên xe tại bãi đang chọn.");
+      throw Object.assign(new Error("Không tìm thấy phiên xe tại bãi đang chọn."), { code: "SESSION_NOT_FOUND" });
     return session;
   },
   async detect(file, lotId, purpose = "ENTRY") {
@@ -300,7 +300,7 @@ export const staffApi = {
     const fresh = await staffApi.session(sessionId);
     if (!fresh || fresh.lotId !== Number(lotId))
       throw new Error("Phiên xe không thuộc bãi đang chọn.");
-    if (fresh.status !== "PAID")
+    if (fresh.status !== "PAID" && fresh.verificationStatus !== "MONTHLY_PASS")
       throw new Error(
         "Phiên xe chưa được xác nhận thanh toán. Vui lòng hoàn tất thu phí trước khi cho xe ra.",
       );

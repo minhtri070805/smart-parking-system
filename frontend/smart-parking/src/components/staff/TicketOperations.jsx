@@ -9,12 +9,12 @@ import StaffParkingMap from "./StaffParkingMap.jsx";
 
 const Field = ({ label, children }) => <label className="staff-field">{label}{children}</label>;
 
-export function TicketEntry({ lot, onChanged, onBusyChange }) {
+export function TicketEntry({ lot, onChanged, onBusyChange, initialFile = null, plateNumber = "", onLockChange, onNext }) {
   const load = useCallback(signal => operationsApi(lot.lotId, "zones", null, null, signal), [lot.lotId]);
   const zones = useStaffQuery(load);
   const [zoneId, setZone] = useState("");
   const [ticket, setTicket] = useState("");
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState(initialFile);
   const [imageId, setImageId] = useState(null);
   const [reason, setReason] = useState("");
   const [created, setCreated] = useState(null);
@@ -31,21 +31,25 @@ export function TicketEntry({ lot, onChanged, onBusyChange }) {
           const result = await apiRequest("/v1/images", { method: "POST", body });
           savedId = result.data.id; setImageId(savedId);
         }
+        // Biển số AI đã đọc ở bước quét đi kèm lượt vào để Staff khu vực đối chiếu; không có thì không gửi.
         request.current = { eventId: crypto.randomUUID(), zoneId: Number(zoneId), ticketCode: ticket,
-          imageId: savedId, manualReason: reason || null };
+          imageId: savedId, manualReason: reason || null, ...(plateNumber ? { plateNumber } : {}) };
       }
+      onLockChange?.(true);
       let result;
       try { result = await operationsApi(lot.lotId, "entries", request.current); }
       catch (error) {
         // Server từ chối rõ ràng (4xx): chưa có lượt nào được tạo, mở khóa để sửa mã vé/khu mà không mất ảnh.
         // Lỗi mạng/5xx là kết quả chưa rõ: giữ nguyên eventId để gửi lại an toàn.
-        if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) request.current = null;
+        if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+          request.current = null; onLockChange?.(false);
+        }
         throw error;
       }
-      setCreated(result); onChanged();
+      onLockChange?.(false); setCreated(result); onChanged();
     });
   };
-  const reset = () => { request.current = null; setCreated(null); setTicket(""); setFile(null); setImageId(null); setReason(""); action.setError(null); };
+  const reset = () => { request.current = null; setCreated(null); setTicket(""); setFile(null); setImageId(null); setReason(""); action.setError(null); onLockChange?.(false); onNext?.(); };
   const locked = action.busy || Boolean(request.current);
   return <section className="staff-panel">
     <h2>Cấp vé và tiếp nhận xe</h2>
@@ -101,7 +105,7 @@ export function TicketVerification({ lot, revision, onChanged, onBusyChange, ini
   };
   const session = query.data?.sessions.find(s => s.id === selected?.id && s.revision === selected.revision);
   const move = session?.verificationStatus === "VERIFIED";
-  const hasModernSessions = query.data?.sessions.some(s => s.eventId);
+  const hasModernSessions = query.data?.sessions.some(s => s.eventId && s.verificationStatus !== "MONTHLY_PASS");
   const canSelectSlot = slot => Boolean(
     session &&
     slot.physicalStatus === "EMPTY" &&
@@ -150,7 +154,7 @@ export function TicketVerification({ lot, revision, onChanged, onBusyChange, ini
       <button className="staff-button" disabled={action.busy || query.loading} onClick={query.reload}>Tải lại danh sách</button>
       {query.loading && <Notice>Đang tải dữ liệu…</Notice>}
       {!query.loading && !query.error && !query.data?.sessions.length && <p>Không có lượt xe đang mở.</p>}
-      <div className="operations-session-list">{!query.error && query.data?.sessions.filter(s => s.eventId).map(s => <button className={`operations-session ${s.id === selected?.id ? "is-selected" : ""}`} disabled={action.busy} key={s.id} onClick={() => choose(s)}>
+      <div className="operations-session-list">{!query.error && query.data?.sessions.filter(s => s.eventId && s.verificationStatus !== "MONTHLY_PASS").map(s => <button className={`operations-session ${s.id === selected?.id ? "is-selected" : ""}`} disabled={action.busy} key={s.id} onClick={() => choose(s)}>
         <strong>{s.ticketCode} · #{s.id}</strong><span>{s.plateNumber || s.temporaryPlateNumber || "Chưa đọc được biển số"}</span>
         <small>{s.verificationStatus === "WAITING_VERIFICATION" ? "Chờ xác minh" : `Đã đỗ · ${s.slotCode}`}</small>
       </button>)}</div>

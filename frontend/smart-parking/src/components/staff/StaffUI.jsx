@@ -191,7 +191,10 @@ export function SessionInfo({ session, image = true }) {
           <span className="staff-eyebrow">PHIÊN #{session.id}</span>
           <h3 className="staff-plate">{session.plateNumber}</h3>
         </div>
-        <StatusBadge status={session.status} />
+        <span>
+          {session.verificationStatus === "MONTHLY_PASS" && <span className="staff-badge staff-badge--pass">Vé tháng</span>}{" "}
+          <StatusBadge status={session.status} />
+        </span>
       </div>
       <dl className="staff-facts">
         <div>
@@ -213,9 +216,11 @@ export function SessionInfo({ session, image = true }) {
         <div>
           <dt>Phí đã ghi nhận</dt>
           <dd>
-            {session.status === "ACTIVE" && !session.totalFee
-              ? "Chưa tính phí"
-              : formatMoney(session.totalFee)}
+            {session.verificationStatus === "MONTHLY_PASS"
+              ? "Không thu phí (vé tháng)"
+              : session.status === "ACTIVE" && !session.totalFee
+                ? "Chưa tính phí"
+                : formatMoney(session.totalFee)}
           </dd>
         </div>
         <div>

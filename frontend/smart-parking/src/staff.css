@@ -767,6 +767,10 @@
   color: #8b6570;
   background: #f6edf0;
 }
+.staff-badge--pass {
+  color: #1d579e;
+  background: #e6f0ff;
+}
 .staff-panel .staff-search-form {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr) auto;

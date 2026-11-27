@@ -308,7 +308,7 @@ public class ParkingOperationsTests
         f.Db.Vehicles.Add(new Vehicle { Id = 1, UserId = 1, PlateNumber = "51F12345" });
         f.Db.Bookings.Add(new Booking { Id = 1, LotId = 1, UserId = 1, VehicleId = 1, PlateNumber = "51F12345", StartTime = DateTime.UtcNow.AddHours(2), PolicyId = 1 });
         await f.Db.SaveChangesAsync();
-        var bookingService = new BookingService(f.Db, new ParkingAuthorizationService(f.Db), NullLogger<BookingService>.Instance);
+        var bookingService = new BookingService(f.Db, new ParkingAuthorizationService(f.Db), NullLogger<BookingService>.Instance, TestFakes.Gateway, TestFakes.Email);
         var result = await bookingService.CancelBookingAsync(1, new SmartParking.Application.DTOs.Bookings.CancelBookingRequestDto { Reason = "Test" }, 1, "ADMIN", null);
         Assert.False(result.Success); Assert.Equal(409, result.StatusCode);
         Assert.Equal("PENDING", (await f.Db.Bookings.FindAsync(1L))!.Status);
