@@ -25,7 +25,6 @@ export const roleNavigation = {
   STAFF: [
     ["/parking", "3D"],
     ["/staff?view=entry", "Xe vào vãng lai"],
-    ["/staff?view=pass-entry", "Xe vé tháng vào"],
     ["/staff?view=bookings", "Xe đặt qua web"],
     ["/staff?view=exit", "Xe ra"],
   ],

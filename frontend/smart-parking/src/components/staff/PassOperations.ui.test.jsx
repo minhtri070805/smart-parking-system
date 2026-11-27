@@ -6,6 +6,7 @@ import { PassEntry } from "./PassOperations.jsx";
 import { StaffExit } from "./StaffExit.jsx";
 import { TicketVerification } from "./TicketOperations.jsx";
 import { clearAuthSession, setAuthSession } from "../../services/authSession.js";
+import { staffNavigationFor } from "../../services/staffDuty.js";
 
 const lot = { lotId: 1, lotName: "Bãi Trung Tâm", isActive: true };
 const ok = (data) => Response.json({ data });
@@ -234,6 +235,15 @@ describe("StaffExit for a monthly pass session", () => {
     expect(screen.queryByText(/không thu phí\./)).toBeNull();
     expect(screen.getByRole("button", { name: "Xác nhận xe đã ra bãi" }).disabled).toBe(true);
     expect(screen.getByRole("checkbox").disabled).toBe(true);
+  });
+});
+
+describe("Staff menu", () => {
+  it("lists the monthly pass entry right after the regular entry", () => {
+    const items = staffNavigationFor();
+    const labels = items.map(([, label]) => label);
+    expect(labels.indexOf("Xe vé tháng vào")).toBe(labels.indexOf("Xe vào vãng lai") + 1);
+    expect(items).toContainEqual(["/staff?view=pass-entry", "Xe vé tháng vào"]);
   });
 });
 
