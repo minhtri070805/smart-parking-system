@@ -224,6 +224,31 @@ public sealed class ParkingShiftService(OperationsDbContext db, ICoreStaffAccess
         return new StaffShiftOperationResult(true, 200, "Clock-out thành công. Ca đã chuyển sang chờ đối soát.", ToStaffShiftDto(assignment));
     }
 
+    public async Task<StaffShiftOperationResult> ReconcileAssignmentAsync(
+        Guid shiftId, Guid assignmentId, ReconcileAssignmentRequest request, long managerId, string token, CancellationToken ct)
+    {
+        var assignment = await db.ShiftAssignments
+            .Include(x => x.Shift)
+            .FirstOrDefaultAsync(x => x.Id == assignmentId && x.ShiftId == shiftId, ct);
+
+        if (assignment is null)
+            return new StaffShiftOperationResult(false, 404, "Không tìm thấy phân công trong ca trực.");
+        if (!await coreAccess.IsCallerAssignedToLotAsync(token, assignment.Shift.LotId, ct))
+            return new StaffShiftOperationResult(false, 403, "Bạn không được phân công quản lý bãi này.");
+        if (assignment.Status != ShiftAssignmentStatuses.PendingReconciliation && assignment.Status != ShiftAssignmentStatuses.Verified)
+            return new StaffShiftOperationResult(false, 409, "Nhân viên chưa Clock-out nên chưa thể đối soát.");
+
+        assignment.SystemCashAmount = request.SystemCashAmount;
+        assignment.AdjustmentAmount = request.AdjustmentAmount ?? 0m;
+        assignment.AdjustmentNote = string.IsNullOrWhiteSpace(request.AdjustmentNote) ? null : request.AdjustmentNote.Trim();
+        assignment.Status = ShiftAssignmentStatuses.Verified;
+        assignment.VerifiedBy = managerId;
+        assignment.VerifiedAt = UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        return new StaffShiftOperationResult(true, 200, "Đã đối soát và xác nhận ca của nhân viên.", ToStaffShiftDto(assignment));
+    }
+
     private static StaffShiftDto ToStaffShiftDto(ShiftAssignment a) => new(
         a.ShiftId,
         a.Shift.LotId,

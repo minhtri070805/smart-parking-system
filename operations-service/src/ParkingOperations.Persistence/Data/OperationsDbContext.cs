@@ -8,6 +8,8 @@ public sealed class OperationsDbContext(DbContextOptions<OperationsDbContext> op
     public DbSet<ParkingShift> ParkingShifts => Set<ParkingShift>();
     public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
     public DbSet<CashReconciliation> CashReconciliations => Set<CashReconciliation>();
+    public DbSet<PayrollBatch> PayrollBatches => Set<PayrollBatch>();
+    public DbSet<PayrollItem> PayrollItems => Set<PayrollItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

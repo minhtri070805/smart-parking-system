@@ -44,6 +44,13 @@ public sealed class ClockOutShiftRequest
     [Range(0, 1_000_000_000)] public decimal? HandoverCashAmount { get; init; }
 }
 
+public sealed class ReconcileAssignmentRequest
+{
+    [Range(0, 1_000_000_000)] public decimal? SystemCashAmount { get; init; }
+    [Range(-100_000_000, 100_000_000)] public decimal? AdjustmentAmount { get; init; }
+    [MaxLength(500)] public string? AdjustmentNote { get; init; }
+}
+
 public sealed record StaffShiftDto(
     Guid ShiftId,
     int LotId,
@@ -77,4 +84,5 @@ public interface IParkingShiftService
     Task<StaffShiftOperationResult> GetMyShiftDetailAsync(Guid shiftId, long staffId, CancellationToken ct);
     Task<StaffShiftOperationResult> ClockInAsync(Guid shiftId, long staffId, CancellationToken ct);
     Task<StaffShiftOperationResult> ClockOutAsync(Guid shiftId, long staffId, ClockOutShiftRequest request, CancellationToken ct);
+    Task<StaffShiftOperationResult> ReconcileAssignmentAsync(Guid shiftId, Guid assignmentId, ReconcileAssignmentRequest request, long managerId, string token, CancellationToken ct);
 }

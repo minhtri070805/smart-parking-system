@@ -84,6 +84,26 @@ public sealed class ParkingShiftsController(IParkingShiftService shiftService, I
         }
     }
 
+    [HttpPost("{id:guid}/assignments/{assignmentId:guid}/reconcile")]
+    [Authorize(Roles = "MANAGER")]
+    public async Task<IActionResult> ReconcileAssignment(Guid id, Guid assignmentId, [FromBody] ReconcileAssignmentRequest request, CancellationToken ct)
+    {
+        if (!TryActor(out var managerId))
+            return Unauthorized(new { message = "Không xác định được người dùng từ access token." });
+        try
+        {
+            var result = await shiftService.ReconcileAssignmentAsync(id, assignmentId, request, managerId, AccessToken(), ct);
+            return !result.Success
+                ? StatusCode(result.StatusCode, new { message = result.Message })
+                : Ok(new { message = result.Message, data = result.Data });
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "Core authorization check failed while reconciling assignment {AssignmentId}", assignmentId);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Không xác minh được quyền với Core. Hãy thử lại sau." });
+        }
+    }
+
     private IActionResult ToActionResult(ShiftOperationResult result, bool created = false) =>
         !result.Success ? StatusCode(result.StatusCode, new { message = result.Message })
         : created ? StatusCode(StatusCodes.Status201Created, new { message = result.Message, data = result.Data })

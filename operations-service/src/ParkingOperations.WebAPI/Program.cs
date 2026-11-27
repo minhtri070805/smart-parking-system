@@ -65,6 +65,7 @@ if (string.IsNullOrWhiteSpace(jwtIssuer) || string.IsNullOrWhiteSpace(jwtAudienc
     throw new InvalidOperationException("Operations Service requires the Core Jwt:Issuer, Jwt:Audience, and shared Jwt:SecretKey of at least 32 bytes.");
 
 builder.Services.AddOperationsInfrastructure(builder.Configuration);
+builder.Services.AddScoped<ParkingOperations.Application.UseCases.Payroll.IPayrollService, PayrollService>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
