@@ -9,7 +9,7 @@ import StaffParkingMap from "./StaffParkingMap.jsx";
 
 const Field = ({ label, children }) => <label className="staff-field">{label}{children}</label>;
 
-export function TicketEntry({ lot, onChanged, onBusyChange, initialFile = null, onLockChange, onNext }) {
+export function TicketEntry({ lot, onChanged, onBusyChange, initialFile = null, plateNumber = "", onLockChange, onNext }) {
   const load = useCallback(signal => operationsApi(lot.lotId, "zones", null, null, signal), [lot.lotId]);
   const zones = useStaffQuery(load);
   const [zoneId, setZone] = useState("");
@@ -31,8 +31,9 @@ export function TicketEntry({ lot, onChanged, onBusyChange, initialFile = null, 
           const result = await apiRequest("/v1/images", { method: "POST", body });
           savedId = result.data.id; setImageId(savedId);
         }
+        // Biển số AI đã đọc ở bước quét đi kèm lượt vào để Staff khu vực đối chiếu; không có thì không gửi.
         request.current = { eventId: crypto.randomUUID(), zoneId: Number(zoneId), ticketCode: ticket,
-          imageId: savedId, manualReason: reason || null };
+          imageId: savedId, manualReason: reason || null, ...(plateNumber ? { plateNumber } : {}) };
       }
       onLockChange?.(true);
       let result;

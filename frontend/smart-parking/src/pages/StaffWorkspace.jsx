@@ -222,6 +222,7 @@ function StaffContent() {
               <GateOperations
                 {...props}
                 initialSessionId={params.get("sessionId")}
+                onOpen={open}
               />
             )}
             {view.id === "booking-dispatch" && (
