@@ -20,6 +20,8 @@ import AdminPeople from "./pages/AdminPeople.jsx";
 import AdminAuditLogs from "./pages/AdminAuditLogs.jsx";
 import CustomerSessions from "./pages/CustomerSessions.jsx";
 import MyTickets from "./pages/MyTickets.jsx";
+import MonthlyPass from "./pages/MonthlyPass.jsx";
+import PaymentResult from "./pages/PaymentResult.jsx";
 import RevenuePage from "./pages/RevenuePage.jsx";
 import ProjectInformation from "./pages/ProjectInformation.jsx";
 import ManagerOperations from "./pages/ManagerOperations.jsx";
@@ -28,7 +30,7 @@ import BookingWorkflowDemo from "./pages/BookingWorkflowDemo.jsx";
 export default function App() {
   const { pathname, hash } = useLocation();
   const session = useSyncExternalStore(subscribeAuthSession, getAuthSession, getAuthSession);
-  const workspace = ["/admin", "/manager", "/staff", "/customer", "/parking", "/booking-demo"].some(p => pathname.startsWith(p));
+  const workspace = ["/admin", "/manager", "/staff", "/customer", "/parking", "/booking-demo", "/payment"].some(p => pathname.startsWith(p));
   const authPage = pathname === "/login" || pathname === "/register";
   useEffect(() => {
     if (hash)
@@ -54,6 +56,8 @@ export default function App() {
           <Route path="/parking/slots" element={<RequireRole role={["ADMIN", "MANAGER"]}><ParkingSlotManagement role={session?.userProfile.role} /></RequireRole>} />
           <Route path="/customer/sessions" element={<CustomerSessions />} />
           <Route path="/customer/my-tickets" element={<MyTickets />} />
+          <Route path="/customer/monthly-pass" element={<MonthlyPass />} />
+          <Route path="/payment/result" element={<PaymentResult />} />
           <Route path="/customer/profile" element={<CustomerProfile />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/parking-settings" element={<AdminParkingSettings />} />
