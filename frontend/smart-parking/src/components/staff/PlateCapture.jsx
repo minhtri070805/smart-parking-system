@@ -28,7 +28,8 @@ export async function prepareCapture(capture, update, lotId, sessionId) {
   if (
     capture.recognition?.id &&
     (!platesMatch(capture.recognition.confirmedPlateNumber, capture.plate) ||
-      (sessionId && capture.recognition.matchedParkingSessionId !== sessionId))
+      // AI có thể tự khớp phiên ngay lúc quét; Core vẫn đòi staff xác nhận trước khi cho ra.
+      (sessionId && (capture.recognition.matchedParkingSessionId !== sessionId || !capture.recognition.confirmedAt)))
   ) {
     const result = sessionId
       ? await staffApi.confirmExitDetection(
