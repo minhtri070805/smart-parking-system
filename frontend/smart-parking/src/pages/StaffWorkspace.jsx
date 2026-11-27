@@ -20,7 +20,7 @@ import { staffApi } from "../services/staffApi.js";
 import "../staff.css";
 
 const views = [
-  { id: "booking-dispatch", name: "Phân ô xe đặt web", description: "Chọn khu vực và ô đỗ cho xe đã qua cổng" },
+  { id: "booking-dispatch", name: "Điều phối vị trí", description: "Xác nhận xe đã đỗ vào ô nào và gán ô cho xe đã qua cổng" },
   { id: "bookings", name: "Xe đặt qua web", description: "Xác nhận xe đặt trước đến cổng" },
   { id: "entry", name: "Cổng: xe vào / xe ra", description: "Quét biển số cho xe vào hoặc ra bãi" },
   {

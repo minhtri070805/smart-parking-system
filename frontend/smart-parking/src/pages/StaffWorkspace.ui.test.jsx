@@ -315,7 +315,8 @@ describe("Staff workspace", () => {
     });
     await user.click(screen.getByRole("button", { name: "Làm mới" }));
     await user.click(await screen.findByRole("button", { name: "Xem xe đặt qua web" }));
-    expect(screen.getByRole("link", { name: "Xe đặt qua web" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByRole("link", { name: "Xe đặt qua web" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Xe đặt qua web" })).toBeTruthy();
     expect(await screen.findByText("51A-50404", { selector: ".staff-plate" })).toBeTruthy();
   });
 
