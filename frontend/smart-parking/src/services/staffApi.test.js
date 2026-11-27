@@ -142,6 +142,13 @@ describe("staff operation boundaries", () => {
     });
   });
 
+  it("shows booking check-in only to gate duty and slot assignment only to area duty", () => {
+    expect(canUseStaffView("GATE", "bookings")).toBe(true);
+    expect(canUseStaffView("GATE", "booking-dispatch")).toBe(false);
+    expect(canUseStaffView("SLOT_VERIFIER", "bookings")).toBe(false);
+    expect(canUseStaffView("SLOT_VERIFIER", "booking-dispatch")).toBe(true);
+  });
+
   it("excludes a slot held by another open session even if its sensor says EMPTY", () => {
     const other = { ...session, id: 11, currentSlotId: slot.id };
     expect(slotIsSelectable(slot, session, [session, other], "assign")).toBe(

@@ -54,5 +54,15 @@ export async function loadNotifications(role, signal) {
       href: "/manager?view=sessions",
     });
   }
+  if (role === "STAFF" && lots[0]?.lotId) {
+    const response = await apiRequest(`/v1/bookings?lotId=${lots[0].lotId}&status=PENDING&pageNumber=1&pageSize=5`, { signal });
+    const pending = itemsOf(response?.data);
+    if (pending.length) notices.unshift({
+      id: "staff-pending-bookings",
+      title: `${pending.length} booking chờ xử lý`,
+      body: "Kiểm tra hàng chờ xe đặt qua web.",
+      href: "/staff?view=bookings",
+    });
+  }
   return notices;
 }
