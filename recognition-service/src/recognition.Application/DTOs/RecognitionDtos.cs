@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace recognition.Application.DTOs;
 
 public sealed record StaffDetectionDto(
@@ -54,13 +56,20 @@ public sealed record ConfirmExitRecognitionRequest(
 );
 
 public sealed record AiPlateDetectionData(
+    [property: JsonPropertyName("plate_number")]
     string PlateNumber,
+    [property: JsonPropertyName("raw_plate_number")]
     string RawPlateNumber,
     double Confidence,
+    [property: JsonPropertyName("is_legit")]
     bool IsLegit,
+    [property: JsonPropertyName("vehicle_confidence")]
     double? VehicleConfidence,
+    [property: JsonPropertyName("vehicle_bbox")]
     IReadOnlyList<int>? VehicleBbox,
+    [property: JsonPropertyName("plate_bbox")]
     IReadOnlyList<int>? PlateBbox,
+    [property: JsonPropertyName("inference_time_ms")]
     double InferenceTimeMs
 );
 

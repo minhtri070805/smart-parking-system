@@ -189,6 +189,9 @@ Khi phục vụ UI từ origin khác, cấu hình `Cors:AllowedOrigins` trong Op
 đặt `VITE_OPERATIONS_API_BASE_URL` lúc build frontend. Development mặc định gọi
 `http://localhost:5174`.
 
+Swagger UI chỉ bật trong Development tại `http://localhost:5174/swagger`; Swagger
+JSON có thể xem tại `http://localhost:5174/swagger/v1/swagger.json`.
+
 ## Điều kiện chưa được phép làm
 
 - Không dùng Operations Service cho demo chính hiện tại.
