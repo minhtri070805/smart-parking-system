@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
 import AnchorLink from "../components/AnchorLink.jsx";
+import useScrollReveal from "../components/useScrollReveal.js";
 import { apiRequest } from "../services/api.js";
 import {
   getAuthSession,
   subscribeAuthSession,
 } from "../services/authSession.js";
-import useScrollReveal from "../components/useScrollReveal.js";
 import "../home.css";
 
 const highlights = [
@@ -259,7 +259,7 @@ export default function Home() {
     <div className="home" ref={revealRef}>
 {/* ---------- Giới thiệu ---------- */}
       <section id="gioi-thieu" className="container hero" data-enter>
-        <div className="hero__text" data-scroll-reveal>
+        <div className="hero__text">
           <span className="tag">Một hệ thống cho 4 vai trò</span>
           <h1>Hệ thống quản lý bãi đỗ xe</h1>
           <p className="lead">
@@ -295,8 +295,12 @@ export default function Home() {
       </section>
 
       {/* ---------- Cách thức hoạt động ---------- */}
-      <section id="cach-hoat-dong" className="band band--white">
-        <div className="container section" data-scroll-reveal>
+      <section
+        id="cach-hoat-dong"
+        className="band band--white"
+        data-scroll-reveal
+      >
+        <div className="container section">
           <SectionHead
             tag="Cách thức hoạt động"
             title="Quy trình cho từng vai trò"
@@ -332,7 +336,11 @@ export default function Home() {
       </section>
 
       {/* ---------- Hệ thống ---------- */}
-      <section id="he-thong" className="container section" data-scroll-reveal>
+      <section
+        id="he-thong"
+        className="container section"
+        data-scroll-reveal
+      >
         <SectionHead tag="Hệ thống" title="Công cụ vận hành bãi đỗ" />
         <div className="grid-2">
           <article className="card card--dark home-interactive-card">
@@ -432,7 +440,7 @@ export default function Home() {
       </section>
 
       {!session && (
-        <section className="container cta-wrap" data-scroll-reveal>
+        <section className="container cta-wrap">
           <div className="cta">
             <div>
               <h2>Bắt đầu sử dụng Smart-Parking</h2>

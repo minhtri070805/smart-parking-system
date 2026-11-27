@@ -24,6 +24,31 @@ export function Logo({ small = false }) {
     </span>
   );
 }
+
+function NavIcon({ target }) {
+  const path = target.split("?")[0];
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": true,
+  };
+  if (path === "/parking") return <svg {...common}><path d="M4 17V9l8-4 8 4v8"/><path d="M7 17v-5h10v5M3 20h18"/><path d="M9 15h6"/></svg>;
+  if (path.includes("people")) return <svg {...common}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+  if (path.includes("audit")) return <svg {...common}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>;
+  if (path.includes("revenue")) return <svg {...common}><path d="M3 3v18h18"/><path d="M7 16l4-5 4 3 5-7"/></svg>;
+  if (path.includes("shift")) return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>;
+  if (path.includes("ticket")) return <svg {...common}><path d="M3 9a2 2 0 0 0 0 4v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4a2 2 0 0 0 0-4V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M13 5v2M13 11v2M13 17v2"/></svg>;
+  if (path.includes("profile")) return <svg {...common}><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>;
+  if (path.includes("session") || target.includes("view=sessions")) return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>;
+  if (path.includes("settings") || path.includes("slots")) return <svg {...common}><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></svg>;
+  return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
+}
 export default function Header({ workspace = false }) {
   const headerRef = useRef(null);
   useEffect(() => {
@@ -333,7 +358,7 @@ export default function Header({ workspace = false }) {
                     <small>{roleLabel}</small>
                   </span>
                   <span className="header__profile-caret" aria-hidden="true">
-                    ▾
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m4 6 4 4 4-4" /></svg>
                   </span>
                 </button>
                 {profileOpen && (
@@ -395,6 +420,7 @@ export default function Header({ workspace = false }) {
                   navIsActive(target, pathname, search) ? "page" : undefined
                 }
               >
+                <NavIcon target={target} />
                 {label}
               </Link>
             ))
@@ -440,7 +466,7 @@ export default function Header({ workspace = false }) {
                 aria-label="Đóng"
                 onClick={() => setAccountModalOpen(false)}
               >
-                ✕
+                <svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="m5 5 10 10M15 5 5 15" /></svg>
               </button>
             </div>
             {canEditProfile ? (

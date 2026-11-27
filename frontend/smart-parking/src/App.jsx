@@ -1,29 +1,39 @@
 import { Link, Navigate, Routes, Route, useLocation } from "react-router-dom";
-import { useEffect, useSyncExternalStore } from "react";
-import ParkingScene from "./pages/ParkingScene.jsx";
-import ParkingSlotManagement from "./pages/ParkingSlotManagement.jsx";
+import { lazy, Suspense, useEffect, useSyncExternalStore } from "react";
 import RequireRole from "./components/RequireRole.jsx";
 import { getAuthSession, subscribeAuthSession } from "./services/authSession.js";
 import "./app-shell.css";
 import Header from "./components/Header.jsx";
 import Footer from "./components/Footer.jsx";
-import Home from "./pages/Home.jsx";
-import Login from "./pages/Login.jsx";
-import Register from "./pages/Register.jsx";
-import CustomerDashboard from "./pages/CustomerDashboard.jsx";
-import CustomerProfile from "./pages/CustomerProfile.jsx";
-import ManagerWorkspace from "./pages/ManagerWorkspace.jsx";
-import AdminDashboard from "./pages/AdminDashboard.jsx";
-import AdminParkingSettings from "./pages/AdminParkingSettings.jsx";
-import StaffWorkspace from "./pages/StaffWorkspace.jsx";
-import AdminPeople from "./pages/AdminPeople.jsx";
-import AdminAuditLogs from "./pages/AdminAuditLogs.jsx";
-import CustomerSessions from "./pages/CustomerSessions.jsx";
-import MyTickets from "./pages/MyTickets.jsx";
-import RevenuePage from "./pages/RevenuePage.jsx";
-import ProjectInformation from "./pages/ProjectInformation.jsx";
-import ManagerOperations from "./pages/ManagerOperations.jsx";
-import BookingWorkflowDemo from "./pages/BookingWorkflowDemo.jsx";
+
+const Home = lazy(() => import("./pages/Home.jsx"));
+const Login = lazy(() => import("./pages/Login.jsx"));
+const Register = lazy(() => import("./pages/Register.jsx"));
+const CustomerDashboard = lazy(() => import("./pages/CustomerDashboard.jsx"));
+const CustomerProfile = lazy(() => import("./pages/CustomerProfile.jsx"));
+const CustomerSessions = lazy(() => import("./pages/CustomerSessions.jsx"));
+const MyTickets = lazy(() => import("./pages/MyTickets.jsx"));
+const ManagerWorkspace = lazy(() => import("./pages/ManagerWorkspace.jsx"));
+const ManagerOperations = lazy(() => import("./pages/ManagerOperations.jsx"));
+const RevenuePage = lazy(() => import("./pages/RevenuePage.jsx"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard.jsx"));
+const AdminParkingSettings = lazy(() => import("./pages/AdminParkingSettings.jsx"));
+const AdminPeople = lazy(() => import("./pages/AdminPeople.jsx"));
+const AdminAuditLogs = lazy(() => import("./pages/AdminAuditLogs.jsx"));
+const StaffWorkspace = lazy(() => import("./pages/StaffWorkspace.jsx"));
+const ParkingScene = lazy(() => import("./pages/ParkingScene.jsx"));
+const ParkingSlotManagement = lazy(() => import("./pages/ParkingSlotManagement.jsx"));
+const ProjectInformation = lazy(() => import("./pages/ProjectInformation.jsx"));
+const BookingWorkflowDemo = lazy(() => import("./pages/BookingWorkflowDemo.jsx"));
+
+function RouteLoader() {
+  return (
+    <div className="route-loader" role="status" aria-live="polite">
+      <span className="route-loader__spinner" aria-hidden="true" />
+      <span>Đang mở trang…</span>
+    </div>
+  );
+}
 
 export default function App() {
   const { pathname, hash } = useLocation();
@@ -42,6 +52,7 @@ export default function App() {
     <div className={`app-frame ${workspace ? "app-frame--workspace" : authPage ? "app-frame--auth" : ""}`}>
       <Header workspace={workspace} />
       <main id="main-content">
+        <Suspense fallback={<RouteLoader />}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
@@ -80,6 +91,7 @@ export default function App() {
             }
           />
         </Routes>
+        </Suspense>
       </main>
       {!workspace && !authPage && (
           <Footer />

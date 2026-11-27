@@ -1,0 +1,1 @@
+import{r as a,s as i,g as r,j as s,h as t,i as u}from"./index-2TtpcZ0z.js";function l({children:o}){const e=a.useSyncExternalStore(i,r,r);return e?e.userProfile.role!=="USER"?s.jsx(t,{to:u(e.userProfile.role),replace:!0}):o:s.jsx(t,{to:"/login",replace:!0})}export{l as R};
