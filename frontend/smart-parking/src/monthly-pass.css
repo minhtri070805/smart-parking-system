@@ -10,7 +10,7 @@
 .mp-pass__head strong { font-size: 18px; letter-spacing: 0.4px; }
 .mp-pass dl { margin: 0; display: grid; gap: 6px; }
 .mp-pass dl div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
-.mp-pass dt { color: #64748b; }
+.mp-pass dt { color: #64748b; white-space: nowrap; }
 .mp-pass dd { margin: 0; text-align: right; font-weight: 600; }
 .mp-pass__left { margin-top: 10px; color: #0f6a4b; font-weight: 700; }
 .mp-pass__note { margin-top: 10px; font-size: 13px; color: #92400e; }
