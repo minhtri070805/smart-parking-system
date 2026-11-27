@@ -83,6 +83,7 @@ function DashboardContent({ publicView = false }) {
   const [vehiclePickerOpen, setVehiclePickerOpen] = useState(false);
   const [bookingPlateNumber, setBookingPlateNumber] = useState("");
   const [bookingStartTime, setBookingStartTime] = useState("");
+  const [bookingStartTimeChanged, setBookingStartTimeChanged] = useState(false);
   const [bookingNotes, setBookingNotes] = useState("");
   const [bookingSaving, setBookingSaving] = useState(false);
   const [bookingError, setBookingError] = useState("");
@@ -424,6 +425,7 @@ function DashboardContent({ publicView = false }) {
     setVehiclePickerOpen(false);
     const startTime = new Date();
     setBookingStartTime(localDateTimeValue(startTime));
+    setBookingStartTimeChanged(false);
     setBookingOpen(true);
     window.setTimeout(() => {
       document.getElementById("customer-booking-form")?.scrollIntoView({
@@ -440,7 +442,14 @@ function DashboardContent({ publicView = false }) {
     setBookingMessage("");
 
     try {
-      const startTime = new Date(bookingStartTime);
+      const startTime = bookingStartTimeChanged
+        ? new Date(bookingStartTime)
+        : new Date(bookingStartTime);
+      if (startTime && startTime.getTime() <= Date.now()) {
+        throw new Error(
+          "Thời gian bắt đầu đã qua. Vui lòng chọn thời gian hiện tại hoặc trong tương lai.",
+        );
+      }
       if (bookingVehicles.length > 0 && !selectedVehicle && !bookingUseCustomPlate) {
         throw new Error("Vui lòng chọn xe bạn sẽ sử dụng.");
       }
@@ -901,7 +910,10 @@ function DashboardContent({ publicView = false }) {
                   name="startTime"
                   value={bookingStartTime}
                   min={localDateTimeValue()}
-                  onChange={(event) => setBookingStartTime(event.target.value)}
+                  onChange={(event) => {
+                    setBookingStartTime(event.target.value);
+                    setBookingStartTimeChanged(true);
+                  }}
                   required
                 />
               </label>

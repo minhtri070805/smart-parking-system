@@ -26,8 +26,8 @@ const views = [
   { id: "exit", name: "Xe ra", description: "Đối chiếu tại cổng ra" },
   {
     id: "verify",
-    name: "Xác minh ô",
-    description: "Ghép xe với vị trí thực tế",
+    name: "Sơ đồ 2D & xác minh ô",
+    description: "Xem bãi, cập nhật biển số và xác minh ô xe",
   },
   { id: "sessions", name: "Xe đang gửi", description: "Tra cứu phiên tại bãi" },
   {
@@ -60,11 +60,15 @@ function StaffContent() {
   // Tài khoản Staff luôn thấy đầy đủ workspace. Backend sẽ chặn thao tác nếu
   // chưa được Manager đưa vào một ca đang chạy với nhiệm vụ phù hợp.
   const visibleViews = views;
+  const defaultView = lot?.duty === "SLOT_VERIFIER"
+    ? views.find((item) => item.id === "verify")
+    : views.find((item) => item.id === "entry");
   // "Xe đặt qua web" mở từ sidebar/thông báo, không có tab riêng trong dãy tab.
-  const view =
-    visibleViews.find((item) => item.id === selectedView) ||
-    visibleViews[0] ||
-    views.find((item) => item.id === "entry");
+  const view = lot?.duty === "SLOT_VERIFIER" && selectedView === "entry"
+    ? defaultView
+    : visibleViews.find((item) => item.id === selectedView) ||
+      defaultView ||
+      views.find((item) => item.id === "entry");
   useEffect(() => {
     if (lot && view.id !== selectedView) setParams({ view: view.id }, { replace: true });
   }, [lot, view.id, selectedView, setParams]);

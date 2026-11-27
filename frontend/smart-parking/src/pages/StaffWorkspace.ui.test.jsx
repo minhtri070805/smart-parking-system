@@ -53,6 +53,7 @@ function mount(view = "entry", extra = "") {
 
 beforeEach(() => {
   model = {
+    duty: undefined,
     sessions: [{ ...primary }],
     dispatches: [],
     bookings: [],
@@ -102,7 +103,7 @@ beforeEach(() => {
       typeof options.body === "string" ? JSON.parse(options.body) : {};
     if (path.endsWith("/staff-assignments/my-lots"))
       return result([
-        { lotId: 1, lotName: "Bãi Trung Tâm", isActive: true },
+        { lotId: 1, lotName: "Bãi Trung Tâm", isActive: true, duty: model.duty },
         { lotId: 2, lotName: "Bãi Phía Đông", isActive: true },
       ]);
     if (path.endsWith("/operations/zones")) return result([{ id: 1, code: "VL", name: "Vãng lai", type: "TRANSIENT", isActive: true }]);
@@ -366,8 +367,16 @@ describe("Staff workspace", () => {
     mount("booking-dispatch");
     await screen.findByText("51A-50505", { selector: ".staff-plate" });
     await user.click(screen.getByRole("button", { name: "Chọn xe để phân ô" }));
-    await user.selectOptions(await screen.findByLabelText("Khu vực"), "1");
-    await user.selectOptions(screen.getByLabelText("Ô đỗ còn trống"), "101");
+    const map = await screen.findByRole("region", {
+      name: "Sơ đồ 2D tầng Tầng B1",
+    });
+    await user.click(
+      within(map).getByRole("button", {
+        name: /S-01.*Cảm biến: trống/,
+      }),
+    );
+    expect(screen.getByLabelText("Khu vực").value).toBe("1");
+    expect(screen.getByLabelText("Ô đỗ còn trống").value).toBe("101");
     await user.click(screen.getByRole("button", { name: "Cập nhật ô đỗ" }));
 
     expect(await screen.findByText(/Đã gán xe 51A-50505 vào Khu B1 · S-01/)).toBeTruthy();
@@ -549,14 +558,39 @@ describe("Staff workspace", () => {
   it("confirms plate fuel and actual slot with the server revision", async () => {
     model.sessions = [{ ...primary, eventId: "event-1", ticketCode: "VE-001", temporaryPlateNumber: "51F12345", zoneId: 1, revision: 1, verificationStatus: "WAITING_VERIFICATION" }];
     const user = userEvent.setup(); mount("verify");
+    const map = await screen.findByRole("region", {
+      name: "Sơ đồ 2D tầng Tầng B1",
+    });
+    expect(
+      within(map).getByRole("button", {
+        name: /S-01.*Cảm biến: trống/,
+      }).disabled,
+    ).toBe(true);
     await user.click(await screen.findByRole("button", { name: /VE-001 · #10/ }));
     await user.selectOptions(screen.getByLabelText("Nhiên liệu đã xác nhận"), "PETROL");
-    await user.selectOptions(screen.getByLabelText("Ô thực tế"), "101");
+    await user.click(
+      within(map).getByRole("button", {
+        name: /S-01.*Cảm biến: trống/,
+      }),
+    );
+    expect(screen.getByLabelText("Ô thực tế").value).toBe("101");
     await user.click(screen.getByRole("checkbox", { name: /Đã đối chiếu xe thực tế/ }));
     await user.click(screen.getByRole("button", { name: "Xác minh và ghi nhận Có xe" }));
     await waitFor(() => expect(requests("/verify")).toHaveLength(1));
     expect(JSON.parse(requests("/verify")[0][1].body)).toMatchObject({ actualSlotId: 101, plateNumber: "51F12345", fuelType: "PETROL", expectedRevision: 1, vehicleObserved: true });
     expect(requests("/verify-slot")).toHaveLength(0);
+  });
+
+  it("opens the 2D parking map by default for assigned coordinators", async () => {
+    model.duty = "SLOT_VERIFIER";
+    model.sessions = [];
+    mount("entry");
+
+    expect(
+      await screen.findByRole("region", {
+        name: "Sơ đồ 2D tầng Tầng B1",
+      }),
+    ).toBeTruthy();
   });
 
   it("blocks exit while payment is unconfirmed", async () => {
@@ -632,6 +666,11 @@ describe("Staff workspace", () => {
     mount("verify", "&sessionId=10");
     const photo = await screen.findByAltText("Ảnh vào của xe 51F-123.45");
     expect(photo.getAttribute("src")).toBe("https://images.example.invalid/gate.jpg");
+    expect(
+      await screen.findByRole("region", {
+        name: "Sơ đồ 2D tầng Tầng B1",
+      }),
+    ).toBeTruthy();
     await user.click(
       await screen.findByRole("button", { name: /S-01.*Cảm biến: trống/ }),
     );

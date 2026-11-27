@@ -43,7 +43,7 @@ const staffNavItems = [
   ["exit", "/staff?view=exit", "Xe ra"],
   ["bookings", "/staff?view=bookings", "Xe đặt qua web"],
   ["booking-dispatch", "/staff?view=booking-dispatch", "Phân ô xe đặt web"],
-  ["verify", "/staff?view=verify", "Xác minh ô"],
+  ["verify", "/staff?view=verify", "Sơ đồ 2D & xác minh ô"],
   ["sessions", "/staff?view=sessions", "Xe đang gửi"],
   ["dispatches", "/staff?view=dispatches", "Điều phối"],
 ];
